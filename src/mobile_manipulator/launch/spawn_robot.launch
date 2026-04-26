@@ -36,7 +36,7 @@
   </rosparam>
 
   <node name="arm_controller_spawner" pkg="controller_manager" type="spawner"
-        args="ur5_arm_controller" output="screen" />
+        args="ur5_arm_controller gripper_controller" output="screen" />
 
   <node pkg="robot_localization" type="ekf_localization_node" name="ekf_localization">
     <rosparam command="load" file="$(find husky_control)/config/localization.yaml" />

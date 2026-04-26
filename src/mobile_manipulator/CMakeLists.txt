@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(mobile_manipulator)
 
-## Compile as C++11, supported in ROS Kinetic and newer
-# add_compile_options(-std=c++11)
+## Compile as C++17
+add_compile_options(-std=c++17)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -15,10 +15,17 @@ find_package(catkin REQUIRED COMPONENTS
   xacro
   actionlib
   move_base_msgs
+  cv_bridge
+  image_transport
 )
+find_package(OpenCV REQUIRED)
+find_package(Boost REQUIRED COMPONENTS system filesystem)
 
+# Find and link CUDA
+find_package(CUDA QUIET)
+
+# Moved CUDA build target below catkin_package
 ## System dependencies are found with CMake's conventions
-# find_package(Boost REQUIRED COMPONENTS system)
 
 
 ## Uncomment this if the package has a setup.py. This macro ensures
@@ -138,6 +145,30 @@ include_directories(
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
 # add_executable(${PROJECT_NAME}_node src/mobile_manipulator_node.cpp)
+if(NOT ${CUDA_FOUND})
+    message(WARNING "CUDA not found, TRTengine will not be built")
+else()
+    message(STATUS "CUDA version ${CUDA_VERSION_STRING} found")
+    include_directories(
+        ${CUDA_INCLUDE_DIRS}
+        /usr/local/cuda/include
+        ${OpenCV_INCLUDE_DIRS}
+    )
+
+    add_executable(trt_yolo_node 
+        src/trt_yolo_node.cc
+        src/TRT_InferenceEngine/TensorRT_InferenceEngine.cpp
+    )
+    target_link_libraries(trt_yolo_node 
+        ${catkin_LIBRARIES} 
+        ${OpenCV_LIBRARIES} 
+        nvinfer 
+        nvonnxparser
+        ${CUDA_LIBRARIES}
+        ${Boost_LIBRARIES}
+    )
+endif()
+
 add_executable(navigation_client src/navigation_client.cc)
 
 ## Rename C++ executable without prefix
@@ -164,10 +195,12 @@ target_link_libraries(navigation_client ${catkin_LIBRARIES})
 
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
-# catkin_install_python(PROGRAMS
-#   scripts/my_python_script
-#   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-# )
+catkin_install_python(PROGRAMS
+  scripts/get_semantic_coords.py
+  scripts/semantic_labeler.py
+  scripts/visualize_semantic_map.py
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
 
 ## Mark executables for installation
 ## See http://docs.ros.org/melodic/api/catkin/html/howto/format1/building_executables.html
