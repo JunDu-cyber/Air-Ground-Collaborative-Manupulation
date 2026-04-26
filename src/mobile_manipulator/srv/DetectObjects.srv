@@ -1,0 +1,7 @@
+# Request: send an image to run detection on
+sensor_msgs/Image image
+---
+# Response: detection results + annotated image
+mobile_manipulator/Detection[] detections
+sensor_msgs/Image annotated_image
+float32 inference_time_ms

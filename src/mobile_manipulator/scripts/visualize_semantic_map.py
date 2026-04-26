@@ -68,6 +68,30 @@ def create_nav_arrow_marker(region, m_id):
     m.color.a = 0.9
     return m
 
+def create_point_marker(region, m_id):
+    m = Marker()
+    m.header.frame_id = "map"
+    m.header.stamp = rospy.Time.now()
+    m.ns = "nav_points"
+    m.id = m_id
+    m.type = Marker.SPHERE
+    m.action = Marker.ADD
+    
+    m.pose.position.x = region['x']
+    m.pose.position.y = region['y']
+    m.pose.position.z = 0.05
+    m.pose.orientation.w = 1.0
+    
+    m.scale.x = 0.15
+    m.scale.y = 0.15
+    m.scale.z = 0.15
+    
+    m.color.r = 1.0
+    m.color.g = 0.65
+    m.color.b = 0.0
+    m.color.a = 1.0
+    return m
+
 def create_text_marker(region, m_id):
     m = Marker()
     m.header.frame_id = "map"
@@ -82,8 +106,9 @@ def create_text_marker(region, m_id):
     m.pose.position.z = 0.6 # Float above nav arrow
     m.pose.orientation.w = 1.0
     
-    m.text = region['name']
-    m.scale.z = 0.25 # text size
+    room = region.get('room', 'unknown')
+    m.text = f"{region['name']}\nRoom: {room}\nGoal: ({region['x']:.2f}, {region['y']:.2f})"
+    m.scale.z = 0.20 # Shrink text slightly so the multi-line fits nicely
     
     m.color.r = 1.0
     m.color.g = 1.0
@@ -135,6 +160,7 @@ def main():
             for region in data['regions']:
                 marker_array.markers.append(create_polygon_marker(region, m_id))
                 marker_array.markers.append(create_nav_arrow_marker(region, m_id))
+                marker_array.markers.append(create_point_marker(region, m_id))
                 marker_array.markers.append(create_text_marker(region, m_id))
                 m_id += 1
                 

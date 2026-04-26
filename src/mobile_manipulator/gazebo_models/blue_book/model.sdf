@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+  <model name="blue_book">
+    <link name="link">
+      <inertial>
+        <mass>0.35</mass>
+        <inertia>
+          <ixx>0.00068</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>0.00120</iyy><iyz>0</iyz>
+          <izz>0.00182</izz>
+        </inertia>
+      </inertial>
+      <collision name="collision">
+        <geometry>
+          <box><size>0.20 0.15 0.03</size></box>
+        </geometry>
+        <surface>
+          <friction><ode><mu>0.8</mu><mu2>0.8</mu2></ode></friction>
+          <contact><ode><max_vel>0.01</max_vel><min_depth>0.001</min_depth></ode></contact>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <geometry>
+          <box><size>0.20 0.15 0.03</size></box>
+        </geometry>
+        <material>
+          <ambient>0.1 0.15 0.6 1</ambient>
+          <diffuse>0.15 0.2 0.75 1</diffuse>
+          <specular>0.3 0.3 0.3 1</specular>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>
