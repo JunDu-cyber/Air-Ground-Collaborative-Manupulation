@@ -1,0 +1,42 @@
+DWAPlannerROS:
+  # --- Velocity limits ---
+  max_vel_x:           1.0    # Husky max ~1.0 m/s; was 0.5
+  min_vel_x:           0.0
+  max_vel_y:           0.0
+  min_vel_y:           0.0
+  max_vel_trans:       1.0    # was 0.5
+  min_vel_trans:       0.0
+  max_vel_theta:       1.2    # was 0.8
+  min_vel_theta:       0.1
+
+  # --- Acceleration limits ---
+  acc_lim_x:     2.0          # was 0.8 — snappier acceleration
+  acc_lim_y:     0.0
+  acc_lim_theta: 1.5          # was 0.8
+
+  # --- Goal tolerance ---
+  xy_goal_tolerance:  0.15
+  yaw_goal_tolerance: 0.1
+  latch_xy_goal_tolerance: false
+
+  # --- Trajectory sampling ---
+  sim_time:          1.0      # was 1.5 — faster replanning indoors
+  sim_granularity:   0.025
+  angular_sim_granularity: 0.025
+  vx_samples:        20
+  vy_samples:        0
+  vtheta_samples:    40
+  use_dwa:           true
+
+  # --- Scoring ---
+  path_distance_bias:    20.0
+  goal_distance_bias:    24.0
+  occdist_scale:         0.1
+  forward_point_distance: 0.5
+  stop_time_buffer:       0.2
+  scaling_speed:          0.5   # was 0.25 — start scaling later
+  max_scaling_factor:     0.5   # was 0.2 — allow 50% speed near obstacles (was 20%!)
+
+  # --- Oscillation prevention ---
+  oscillation_reset_dist:  0.05
+  oscillation_reset_angle: 0.2

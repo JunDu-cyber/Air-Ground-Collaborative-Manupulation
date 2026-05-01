@@ -1,24 +1,24 @@
-min_particles: 500
-max_particles: 2000
-kld_err: 0.05
+min_particles: 1000
+max_particles: 5000
+kld_err: 0.02
 kld_z: 0.99
 
 # Motion model — differential drive
 robot_model_type: diff
-alpha1: 0.2   # rotation noise from rotation
-alpha2: 0.2   # rotation noise from translation
-alpha3: 0.1   # translation noise from translation
-alpha4: 0.1   # translation noise from rotation
+alpha1: 0.1
+alpha2: 0.1
+alpha3: 0.05
+alpha4: 0.05
 
-# Laser model
+# Laser model — use more beams for better scan correlation
 laser_model_type: likelihood_field
-laser_max_beams: 60
-laser_z_hit: 0.5
-laser_z_short: 0.05
+laser_max_beams: 180
+laser_z_hit: 0.95
+laser_z_short: 0.1
 laser_z_max: 0.05
-laser_z_rand: 0.5
+laser_z_rand: 0.05
 laser_sigma_hit: 0.2
-laser_min_range: 0.1
+laser_min_range: 0.2
 laser_max_range: 10.0
 
 # Frames
@@ -26,17 +26,21 @@ base_frame_id: base_link
 odom_frame_id: odom
 global_frame_id: map
 
-# Update frequency
-update_min_d: 0.2       # update after 20cm movement
-update_min_a: 0.3       # update after ~17 degrees rotation
-resample_interval: 2
-transform_tolerance: 0.3
+# Update on every scan so latest_tf_valid_ becomes true immediately at startup.
+# Without this, map->odom TF is never published until the robot physically moves.
+update_min_d: 0.0
+update_min_a: 0.0
+resample_interval: 1
+transform_tolerance: 5.0
 recovery_alpha_slow: 0.001
 recovery_alpha_fast: 0.1
 
-# Initial pose — set to your robot's spawn position
-initial_pose_x: 1.5
-initial_pose_y: 0.5
+# Initial pose in the toolboxMap frame.
+# slam_toolbox starts its map frame at odom (0,0), so the robot spawning at
+# Gazebo (0,0) corresponds to map (0,0).  The launch file overrides these at
+# runtime, so this is just the fallback default.
+initial_pose_x: 0.0
+initial_pose_y: 0.0
 initial_pose_a: 0.0
 initial_cov_xx: 0.25
 initial_cov_yy: 0.25

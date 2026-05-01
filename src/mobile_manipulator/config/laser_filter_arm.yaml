@@ -1,0 +1,18 @@
+scan_filter_chain:
+
+  # The SICK LMS1xx is at 25.7 cm height — level with the Husky chassis and wheels.
+  # The robot's own body (side panels, wheels, bumpers) appears in the scan.
+  # From the LiDAR's position (+0.3 m forward on the robot):
+  #   front bumper  ~0.20 m  at   0°
+  #   side chassis  ~0.34 m  at ±90°
+  #   rear corners  ~0.50 m  at ±135°
+  # Setting lower_threshold to 0.45 m clears all of these with a small margin.
+  # Real obstacles (walls, furniture) are typically further than 0.45 m.
+  - name: robot_body_filter
+    type: laser_filters/LaserScanRangeFilter
+    params:
+      use_message_range_limits: false
+      lower_threshold: 0.45
+      upper_threshold: 30.0
+      lower_replacement_value: .inf
+      upper_replacement_value: .inf

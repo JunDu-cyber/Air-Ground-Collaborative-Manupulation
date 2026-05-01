@@ -2,6 +2,9 @@ build/
 devel/
 logs/
 .catkin_tools/
+build_isolated/
+devel_isolated/
+install_isolated/
 
 .idea/
 .vscode/

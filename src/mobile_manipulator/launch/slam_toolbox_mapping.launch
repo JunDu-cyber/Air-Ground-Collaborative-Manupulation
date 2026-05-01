@@ -1,0 +1,30 @@
+<launch>
+  <param name="use_sim_time" value="true"/>
+
+  <!-- Filter UR5 arm self-hits from the LiDAR before SLAM sees the scan.
+       Republishes /front/scan → /front/scan_filtered -->
+  <node pkg="laser_filters" type="scan_to_scan_filter_chain"
+        name="laser_filter" output="screen">
+    <rosparam command="load"
+              file="$(find mobile_manipulator)/config/laser_filter_arm.yaml"/>
+    <remap from="scan"          to="/front/scan"/>
+    <remap from="scan_filtered" to="/front/scan_filtered"/>
+  </node>
+
+  <!-- slam_toolbox async SLAM — graph-based with loop closure.
+       Replaces GMapping. No source build needed: apt install ros-noetic-slam-toolbox -->
+  <node pkg="slam_toolbox" type="async_slam_toolbox_node"
+        name="slam_toolbox" output="screen">
+    <rosparam command="load"
+              file="$(find mobile_manipulator)/config/slam_toolbox/slam_toolbox_mapping.yaml"/>
+  </node>
+
+  <!-- Teleoperation for driving during mapping -->
+  <node pkg="rqt_robot_steering" type="rqt_robot_steering"
+        name="rqt_robot_steering">
+    <param name="default_topic" value="husky_velocity_controller/cmd_vel"/>
+  </node>
+
+  <node pkg="rviz" type="rviz" name="rviz"
+        args="-d $(find mobile_manipulator)/rviz/mapping.rviz"/>
+</launch>

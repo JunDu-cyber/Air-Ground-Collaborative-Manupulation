@@ -1,49 +1,76 @@
 <launch>
-  <!-- ── your gmapping node, unchanged ── -->
-  <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping" output="screen">
-    <remap from="scan" to="/front/scan"/>
-    <param name="base_frame" value="base_link"/>
-    <param name="odom_frame" value="odom"/>
-    <param name="map_frame"  value="map"/>
-    <param name="map_update_interval" value="2.0"/>
-    <param name="maxUrange" value="10.0"/>
-    <param name="maxRange" value="12.0"/>
-    <param name="srr" value="0.1"/>
-    <param name="srt" value="0.2"/>
-    <param name="str" value="0.1"/>
-    <param name="stt" value="0.2"/>
-    <param name="xmin" value="-10.0"/>
-    <param name="ymin" value="-10.0"/>
-    <param name="xmax" value="10.0"/>
-    <param name="ymax" value="10.0"/>
-    <param name="delta" value="0.05"/>
+
+  <!-- ── Filter robot body self-hits before any consumer sees the scan ── -->
+  <node pkg="laser_filters" type="scan_to_scan_filter_chain"
+        name="laser_filter" output="screen">
+    <rosparam command="load"
+              file="$(find mobile_manipulator)/config/laser_filter_arm.yaml"/>
+    <remap from="scan"          to="/front/scan"/>
+    <remap from="scan_filtered" to="/front/scan_filtered"/>
   </node>
 
-  <!-- ── ADD: move_base (minimal, no yaml needed) ── -->
+  <!-- ── slam_toolbox async mapping ── -->
+  <node pkg="slam_toolbox" type="async_slam_toolbox_node"
+        name="slam_toolbox" output="screen">
+    <rosparam command="load"
+              file="$(find mobile_manipulator)/config/slam_toolbox/slam_toolbox_mapping.yaml"/>
+  </node>
+
+  <!-- ── move_base ── -->
   <node pkg="move_base" type="move_base" name="move_base" output="screen">
     <remap from="cmd_vel" to="husky_velocity_controller/cmd_vel"/>
     <param name="base_global_planner" value="navfn/NavfnROS"/>
     <param name="base_local_planner"  value="base_local_planner/TrajectoryPlannerROS"/>
 
-    <!-- global costmap -->
-    <param name="global_costmap/global_frame"      value="map"/>
-    <param name="global_costmap/robot_base_frame"  value="base_link"/>
-    <param name="global_costmap/update_frequency"  value="2.0"/>
-    <param name="global_costmap/static_map"        value="true"/>
-    <param name="global_costmap/robot_radius"      value="0.55"/>
-    <param name="global_costmap/inflation_radius"  value="0.7"/>
+    <!-- ── global costmap (post-Hydro plugin style) ──────────────────────
+         Using explicit plugins bypasses the pre-Hydro fallback and lets us
+         set origin_x/origin_y so the costmap is always centered on (0,0).
+         slam_toolbox's initial OccupancyGrid origin is slightly > 0 in x,
+         which puts the LiDAR at (0.43,0) outside the map bounds when using
+         static_map:true (costmap takes its bounds from the map message).
+         Fixing this by owning the bounds here and subscribing to /map via
+         static_layer for frontier/wall data. -->
+    <param name="global_costmap/global_frame"       value="map"/>
+    <param name="global_costmap/robot_base_frame"   value="base_link"/>
+    <param name="global_costmap/update_frequency"   value="2.0"/>
+    <param name="global_costmap/publish_frequency"  value="1.0"/>
+    <param name="global_costmap/static_map"         value="false"/>
+    <param name="global_costmap/rolling_window"     value="false"/>
+    <param name="global_costmap/width"              value="30.0"/>
+    <param name="global_costmap/height"             value="30.0"/>
+    <param name="global_costmap/resolution"         value="0.05"/>
+    <param name="global_costmap/origin_x"           value="-15.0"/>
+    <param name="global_costmap/origin_y"           value="-15.0"/>
+    <param name="global_costmap/robot_radius"       value="0.55"/>
+    <param name="global_costmap/inflation_radius"   value="0.7"/>
 
-    <!-- global costmap laser source -->
-    <param name="global_costmap/obstacle_layer/observation_sources" value="laser"/>
-    <param name="global_costmap/obstacle_layer/laser/topic"       value="/front/scan"/>
-    <param name="global_costmap/obstacle_layer/laser/data_type"   value="LaserScan"/>
-    <param name="global_costmap/obstacle_layer/laser/marking"     value="true"/>
-    <param name="global_costmap/obstacle_layer/laser/clearing"    value="true"/>
+    <rosparam param="global_costmap/plugins">
+      [{"name": "static_layer",   "type": "costmap_2d::StaticLayer"},
+       {"name": "obstacle_layer", "type": "costmap_2d::ObstacleLayer"},
+       {"name": "inflation_layer","type": "costmap_2d::InflationLayer"}]
+    </rosparam>
 
-    <!-- local costmap -->
+    <!-- static_layer tracks slam_toolbox's growing map;
+         track_unknown_space keeps unmapped cells as NO_INFORMATION
+         so explore_lite can detect frontiers between free and unknown -->
+    <param name="global_costmap/static_layer/map_topic"            value="/map"/>
+    <param name="global_costmap/static_layer/subscribe_to_updates" value="true"/>
+    <param name="global_costmap/static_layer/track_unknown_space"  value="true"/>
+
+    <param name="global_costmap/obstacle_layer/observation_sources"           value="laser"/>
+    <param name="global_costmap/obstacle_layer/laser/topic"                   value="/front/scan_filtered"/>
+    <param name="global_costmap/obstacle_layer/laser/data_type"               value="LaserScan"/>
+    <param name="global_costmap/obstacle_layer/laser/marking"                 value="true"/>
+    <param name="global_costmap/obstacle_layer/laser/clearing"                value="true"/>
+    <param name="global_costmap/obstacle_layer/laser/max_obstacle_height"     value="2.0"/>
+    <param name="global_costmap/obstacle_layer/laser/obstacle_range"          value="10.0"/>
+    <param name="global_costmap/obstacle_layer/laser/raytrace_range"          value="10.5"/>
+
+    <!-- ── local costmap ── -->
     <param name="local_costmap/global_frame"      value="odom"/>
     <param name="local_costmap/robot_base_frame"  value="base_link"/>
     <param name="local_costmap/update_frequency"  value="5.0"/>
+    <param name="local_costmap/publish_frequency" value="2.0"/>
     <param name="local_costmap/static_map"        value="false"/>
     <param name="local_costmap/rolling_window"    value="true"/>
     <param name="local_costmap/width"             value="4.0"/>
@@ -51,23 +78,31 @@
     <param name="local_costmap/resolution"        value="0.05"/>
     <param name="local_costmap/robot_radius"      value="0.55"/>
     <param name="local_costmap/inflation_radius"  value="0.7"/>
-    <param name="local_costmap/obstacle_layer/observation_sources" value="laser"/>
-    <param name="local_costmap/obstacle_layer/laser/topic"       value="/front/scan"/>
-    <param name="local_costmap/obstacle_layer/laser/data_type"   value="LaserScan"/>
-    <param name="local_costmap/obstacle_layer/laser/marking"     value="true"/>
-    <param name="local_costmap/obstacle_layer/laser/clearing"    value="true"/>
+
+    <rosparam param="local_costmap/plugins">
+      [{"name": "obstacle_layer", "type": "costmap_2d::ObstacleLayer"},
+       {"name": "inflation_layer","type": "costmap_2d::InflationLayer"}]
+    </rosparam>
+
+    <param name="local_costmap/obstacle_layer/observation_sources"       value="laser"/>
+    <param name="local_costmap/obstacle_layer/laser/topic"               value="/front/scan_filtered"/>
+    <param name="local_costmap/obstacle_layer/laser/data_type"           value="LaserScan"/>
+    <param name="local_costmap/obstacle_layer/laser/marking"             value="true"/>
+    <param name="local_costmap/obstacle_layer/laser/clearing"            value="true"/>
+    <param name="local_costmap/obstacle_layer/laser/obstacle_range"      value="5.0"/>
+    <param name="local_costmap/obstacle_layer/laser/raytrace_range"      value="5.5"/>
 
     <!-- local planner -->
-    <param name="TrajectoryPlannerROS/max_vel_x"               value="0.5"/>
-    <param name="TrajectoryPlannerROS/min_vel_x"               value="0.1"/>
-    <param name="TrajectoryPlannerROS/max_vel_theta"            value="0.8"/>
-    <param name="TrajectoryPlannerROS/min_in_place_vel_theta"   value="0.4"/>
-    <param name="TrajectoryPlannerROS/holonomic_robot"          value="false"/>
-    <param name="TrajectoryPlannerROS/xy_goal_tolerance"        value="0.15"/>
-    <param name="TrajectoryPlannerROS/yaw_goal_tolerance"       value="0.1"/>
+    <param name="TrajectoryPlannerROS/max_vel_x"              value="0.5"/>
+    <param name="TrajectoryPlannerROS/min_vel_x"              value="0.1"/>
+    <param name="TrajectoryPlannerROS/max_vel_theta"          value="0.8"/>
+    <param name="TrajectoryPlannerROS/min_in_place_vel_theta" value="0.4"/>
+    <param name="TrajectoryPlannerROS/holonomic_robot"        value="false"/>
+    <param name="TrajectoryPlannerROS/xy_goal_tolerance"      value="0.15"/>
+    <param name="TrajectoryPlannerROS/yaw_goal_tolerance"     value="0.1"/>
   </node>
 
-  <!-- ── ADD: explore_lite for autonomous frontier exploration ── -->
+  <!-- ── explore_lite frontier exploration ── -->
   <node pkg="explore_lite" type="explore" name="explore" output="screen">
     <param name="robot_base_frame"      value="base_link"/>
     <param name="costmap_topic"         value="move_base/global_costmap/costmap"/>
@@ -81,11 +116,12 @@
     <param name="transform_tolerance"   value="0.3"/>
   </node>
 
-  <!-- ── keep or swap: rqt_steering useful as manual override ── -->
+  <!-- ── manual override steering ── -->
   <node pkg="rqt_robot_steering" type="rqt_robot_steering" name="rqt_robot_steering">
     <param name="default_topic" value="husky_velocity_controller/cmd_vel"/>
   </node>
 
   <node pkg="rviz" type="rviz" name="rviz"
         args="-d $(find mobile_manipulator)/rviz/mapping.rviz"/>
+
 </launch>

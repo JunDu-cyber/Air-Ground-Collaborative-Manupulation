@@ -446,31 +446,12 @@
             </plugin>
         </sensor>
     </gazebo>
-    <!-- Add Tower -->
-    <link name="base_laser_mount">
-        <visual>
-            <origin rpy="0 0 -1.570795" xyz="0 0 0" />
-            <geometry>
-                <!-- Origin of this mesh is the base of the bracket. -->
-                <mesh filename="package://husky_description/meshes/accessories/lms1xx_mount.dae" />
-            </geometry>
-        </visual>
-        <collision>
-            <origin rpy="0 0 0" xyz="0 0 .0585" />
-            <geometry>
-                <box size=".1 .108 .117" />
-            </geometry>
-        </collision>
-        <inertial>
-            <mass value="0.1" />
-            <origin xyz="0 0 0" rpy="0 0 0" />
-            <inertia ixx="0.03" iyy="0.03" izz="0.03" ixy="0.0" ixz="0.0" iyz="0.0" />
-        </inertial>
-    </link>
-    <!-- Join SICK to Tower -->
+    <!-- Add Virtual Link -->
+    <link name="base_laser_mount" />
+    <!-- Join Sick to Virtual Link -->
     <joint name="base_laser_joint" type="fixed">
         <!-- This offset is from the base of the bracket to the LIDAR's focal point. -->
-        <origin rpy="3.14159 0 0" xyz="0.0352 0 0.0566" />
+        <origin rpy="0 0 0" xyz="0.055 0 0.0365" />
         <parent link="base_laser_mount" />
         <child link="base_laser" />
     </joint>
@@ -478,7 +459,7 @@
     <joint name="base_laser_mount_joint" type="fixed">
         <child link="base_laser_mount" />
         <parent link="top_plate_link" />
-        <origin rpy="0.0 0.0 0.0" xyz="0.3 0.0 0.0" />
+        <origin rpy="0.0 0.0 0.0" xyz="0.3 0.0 -0.10" />
     </joint>
     <!--
     Base UR robot series xacro macro.
@@ -1052,10 +1033,10 @@
     <transmission name="trans_hande_right_finger_joint">
         <type>transmission_interface/SimpleTransmission</type>
         <joint name="hande_right_finger_joint">
-            <hardwareInterface>hardware_interface/PositionJointInterface</hardwareInterface>
+            <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
         </joint>
         <actuator name="hande_right_finger_joint_motor">
-            <hardwareInterface>hardware_interface/PositionJointInterface</hardwareInterface>
+            <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
             <mechanicalReduction>1</mechanicalReduction>
         </actuator>
     </transmission>

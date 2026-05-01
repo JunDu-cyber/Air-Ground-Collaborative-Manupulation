@@ -2,6 +2,7 @@
 
 import sys
 import math
+import threading
 import rospy
 import actionlib
 import tf2_ros
@@ -61,6 +62,94 @@ class MasterControl:
             rospy.logerr("Action server not available!")
             return False
         return self.nav_client.get_state() == actionlib.GoalStatus.SUCCEEDED
+
+    def get_current_pose(self):
+        """Returns (x, y, yaw_rad) in the map frame, or None on TF failure."""
+        try:
+            from tf.transformations import euler_from_quaternion
+            transform = self.tf_buffer.lookup_transform(
+                "map", "base_link", rospy.Time(0), rospy.Duration(2.0)
+            )
+            t = transform.transform.translation
+            q = transform.transform.rotation
+            _, _, yaw = euler_from_quaternion([q.x, q.y, q.z, q.w])
+            return t.x, t.y, yaw
+        except Exception as e:
+            rospy.logwarn(f"[POSE] Could not get current pose: {e}")
+            return None
+
+    # Arm joint configs for scanning: [shoulder_pan, shoulder_lift, elbow, wrist1, wrist2, wrist3]
+    #
+    # Camera frame has Z-axis pointing forward (into the scene).
+    # Goal: keep the forearm roughly horizontal and set wrist_1 so the camera Z
+    # sweeps forward at table/shelf height, not at the floor.
+    #
+    # shoulder_lift=-0.8, elbow=1.2  → forearm angled forward and slightly up
+    # wrist_1=-0.4                   → small downward tilt; camera Z ≈ horizontal
+    # wrist_2=-1.57                  → roll to keep camera upright
+    #
+    # Tune shoulder_lift / elbow / wrist_1 in RViz if the camera still dips.
+    SCAN_JOINT_CONFIGS = [
+        [ 0.00, -0.80,  1.20, -0.40, -1.57, 0.0],  # forward centre
+        [ 0.52, -0.80,  1.20, -0.40, -1.57, 0.0],  # left  ~30°
+        [-0.52, -0.80,  1.20, -0.40, -1.57, 0.0],  # right ~30°
+        [ 1.05, -0.80,  1.20, -0.40, -1.57, 0.0],  # left  ~60°
+        [-1.05, -0.80,  1.20, -0.40, -1.57, 0.0],  # right ~60°
+        [ 0.00, -1.10,  1.40, -0.30, -1.57, 0.0],  # forward, look slightly down (near-base objects)
+    ]
+
+    def scan_with_arm(self, target_class: str) -> tuple:
+        """
+        Sweeps the UR5 arm through SCAN_JOINT_CONFIGS while running YOLO
+        continuously in a parallel thread at camera frame rate (~50 fps).
+        The arm stops immediately on the first positive detection.
+        Returns (u, v) or (None, None).
+        """
+        found   = {'u': None, 'v': None}
+        stop_ev = threading.Event()
+
+        def _detect_loop():
+            rospy.wait_for_service('/yolo/detect')
+            proxy = rospy.ServiceProxy('/yolo/detect', DetectObjects)
+            while not stop_ev.is_set() and not rospy.is_shutdown():
+                try:
+                    img = rospy.wait_for_message(
+                        "/camera/color/image_raw", Image, timeout=0.05
+                    )
+                    req = DetectObjectsRequest()
+                    req.image = img
+                    resp = proxy(req)
+                    for det in resp.detections:
+                        if det.class_name == target_class:
+                            found['u'] = int(det.center_u)
+                            found['v'] = int(det.center_v)
+                            stop_ev.set()
+                            return
+                except Exception:
+                    pass
+
+        rospy.loginfo(f"[SCAN] Continuous YOLO scan for '{target_class}' during arm sweep...")
+        t = threading.Thread(target=_detect_loop, daemon=True)
+        t.start()
+
+        for i, joints in enumerate(self.SCAN_JOINT_CONFIGS):
+            if stop_ev.is_set():
+                break
+            rospy.loginfo(f"[SCAN] Arm pose {i+1}/{len(self.SCAN_JOINT_CONFIGS)}...")
+            self.arm_group.set_joint_value_target(joints)
+            self.arm_group.go(wait=True)   # YOLO thread runs freely during motion
+            self.arm_group.stop()
+            self.arm_group.clear_pose_targets()
+
+        stop_ev.set()
+        self.arm_group.stop()
+        t.join(timeout=2.0)
+
+        if found['u'] is not None:
+            rospy.loginfo(f"[SCAN] Found '{target_class}' at pixel ({found['u']}, {found['v']}).")
+        else:
+            rospy.logwarn(f"[SCAN] '{target_class}' not found after full arm sweep.")
+        return found['u'], found['v']
 
     def call_yolo_service(self, target_class="cup"):
         rospy.loginfo(f"Waiting for YOLO service to find '{target_class}'...")

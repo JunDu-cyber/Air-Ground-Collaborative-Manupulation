@@ -26,21 +26,22 @@ class ChatSession:
         tools_str = json.dumps(tools).replace('"type_"', '"type"')
         self.tools = json.loads(tools_str)
         # Dynamically verify / discover a supported model!
+        clean_model = model_name.replace("models/", "")
         try:
-            models_resp = requests.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}").json()
-            available = [m["name"].replace("models/", "") for m in models_resp.get("models", []) 
+            models_resp = requests.get(
+                f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}",
+                timeout=10
+            ).json()
+            available = [m["name"].replace("models/", "") for m in models_resp.get("models", [])
                         if "generateContent" in m.get("supportedGenerationMethods", [])]
-            
-            clean_model = model_name.replace("models/", "")
-            if clean_model not in available:
-                # Fallback sequentially: try any flash model, then any pro model, then whatever is there
+
+            if available and clean_model not in available:
                 fallbacks = [m for m in available if "flash" in m.lower()] + \
                             [m for m in available if "pro" in m.lower()] + available
-                if fallbacks:
-                    clean_model = fallbacks[0]
-                    print(f"[GenAI REST] Substituted model: {clean_model}")
-        except Exception:
-            clean_model = model_name.replace("models/", "")
+                clean_model = fallbacks[0]
+                print(f"[GenAI REST] '{model_name}' not found; using '{clean_model}'")
+        except Exception as e:
+            print(f"[GenAI REST] Model discovery failed ({e}); proceeding with '{clean_model}'")
 
         self.url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={api_key}"
         self.history = []
@@ -90,5 +91,5 @@ class GenerativeModel:
 class types:
     Part = MockPart
 
-def configure(**kwargs):
+def configure(**_):
     pass

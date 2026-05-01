@@ -1,9 +1,15 @@
-robot_radius: 0.55
-inflation_radius: 0.7
+# Husky physical footprint: 990 mm long x 670 mm wide
+# Using actual polygon avoids the over-inflated circle (was 0.55 m radius)
+# which blocked every corridor narrower than 1.1 m in this house map.
+footprint: [[-0.50, 0.34], [0.50, 0.34], [0.50, -0.34], [-0.50, -0.34]]
+footprint_padding: 0.01
+inflation_radius: 0.8
+# Gazebo sim TF stamps lag 1-3 s behind the clock; raise tolerance to match
+transform_tolerance: 0.5
 observation_sources: laser
 laser:
   sensor_frame: base_laser
   data_type: LaserScan
-  topic: /front/scan
+  topic: /front/scan_filtered
   marking: true
   clearing: true

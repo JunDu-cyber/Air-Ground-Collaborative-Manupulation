@@ -1,11 +1,11 @@
 <launch>
   <param name="use_sim_time" value="true"/>
 
-  <!-- Override on command line if the robot spawns elsewhere:
-       roslaunch mobile_manipulator navigation.launch initial_pose_x:=0.0 ... -->
-  <arg name="initial_pose_x"   default="0.0"/>
-  <arg name="initial_pose_y"   default="0.0"/>
-  <arg name="initial_pose_yaw" default="0.0"/>
+  <!-- Serialized map saved during mapping via:
+       rosservice call /slam_toolbox/serialize_map \
+         "filename: '$(find mobile_manipulator)/maps/slam_toolbox_map'"
+       This writes slam_toolbox_map.posegraph + slam_toolbox_map.data -->
+  <arg name="map" default="$(find mobile_manipulator)/maps/slam_toolbox_map"/>
 
   <!-- ── 0. Filter robot body self-hits (same as mapping) ── -->
   <node pkg="laser_filters" type="scan_to_scan_filter_chain"
@@ -16,30 +16,16 @@
     <remap from="scan_filtered" to="/front/scan_filtered"/>
   </node>
 
-  <!-- ── 1. Load the saved map ── -->
-  <node pkg="map_server" type="map_server" name="map_server"
-        args="$(find mobile_manipulator)/maps/toolboxMap.yaml"
-        output="screen"/>
-
-  <!-- ── 2. AMCL localization ── -->
-  <node pkg="amcl" type="amcl" name="amcl" output="screen">
+  <!-- ── 1. slam_toolbox in localization mode ── -->
+  <node pkg="slam_toolbox" type="localization_slam_toolbox_node"
+        name="slam_toolbox" output="screen">
     <rosparam command="load"
-              file="$(find mobile_manipulator)/config/nav/amcl.yaml"/>
-    <remap from="scan" to="/front/scan_filtered"/>
-    <param name="initial_pose_x" value="$(arg initial_pose_x)"/>
-    <param name="initial_pose_y" value="$(arg initial_pose_y)"/>
-    <param name="initial_pose_a" value="$(arg initial_pose_yaw)"/>
+              file="$(find mobile_manipulator)/config/slam_toolbox/slam_toolbox_localization.yaml"/>
+    <param name="map_file_name"    value="$(arg map)"/>
+    <param name="map_start_at_dock" value="true"/>
   </node>
 
-  <!-- Publish initial pose so AMCL sets map->odom TF without needing RViz -->
-  <node pkg="mobile_manipulator" type="publish_initial_pose.py"
-        name="initial_pose_publisher" output="screen">
-    <param name="x"   value="$(arg initial_pose_x)"/>
-    <param name="y"   value="$(arg initial_pose_y)"/>
-    <param name="yaw" value="$(arg initial_pose_yaw)"/>
-  </node>
-
-  <!-- ── 3. move_base ── -->
+  <!-- ── 2. move_base ── -->
   <node pkg="move_base" type="move_base" name="move_base" output="screen">
     <remap from="cmd_vel" to="husky_velocity_controller/cmd_vel"/>
 
@@ -66,12 +52,18 @@
     <param name="conservative_reset_dist"     value="3.0"/>
   </node>
 
+  <!-- Initial pose so slam_toolbox localizes without manual RViz interaction -->
+  <node pkg="mobile_manipulator" type="publish_initial_pose.py"
+        name="initial_pose_publisher" output="screen">
+    <param name="x"   value="0.0"/>
+    <param name="y"   value="0.0"/>
+    <param name="yaw" value="0.0"/>
+  </node>
+
   <node name="visualization_semanticMap" pkg="mobile_manipulator" type="visualize_semantic_map.py"
         output="screen"/>
-
-  <!-- ── 4. RViz ── -->
+  <!-- ── 3. RViz ── -->
   <node pkg="rviz" type="rviz" name="rviz"
         args="-d $(find mobile_manipulator)/rviz/mapping.rviz"
         output="screen"/>
-
 </launch>

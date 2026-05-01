@@ -15,36 +15,44 @@ from mobile_manipulator.master_control import MasterControl
 # ==========================================
 # 0. THE MAP READER (Reads your YAML)
 # ==========================================
-def load_semantic_map(yaml_path: str) -> tuple[dict, dict]:
+def load_semantic_map(yaml_path: str) -> tuple[dict, dict, dict]:
     """
     Reads the YAML file and returns:
-      1. semantic_dict: {name: {x, y, yaw_rad}} for coordinate lookup
-      2. room_groups:   {room: [name1, name2, ...]} for LLM context
+      1. semantic_dict:     {name: {x, y, yaw_rad, room}} for coordinate lookup
+      2. room_groups:       {room: [name1, name2, ...]} for LLM context
+      3. object_inventory:  {object_class: location_name} built from 'objects' fields
     """
     try:
         with open(yaml_path, 'r') as file:
             data = yaml.safe_load(file)
-            
+
         semantic_dict = {}
         room_groups = defaultdict(list)
-        
+        object_inventory = {}
+
         for region in data.get('regions', []):
             name = region['name'].lower()
             room = region.get('room', 'unknown').lower()
-            
+
             semantic_dict[name] = {
                 'x': region['x'],
                 'y': region['y'],
-                'yaw_rad': region['yaw'], # Keeping track that this is in radians!
+                'yaw_rad': region['yaw'],
                 'room': room
             }
             room_groups[room].append(name)
-            
-        rospy.loginfo(f"Loaded Semantic Map with {len(semantic_dict)} regions across {len(room_groups)} rooms.")
-        return semantic_dict, dict(room_groups)
+
+            for obj in region.get('objects', []):
+                object_inventory[obj.lower()] = name
+
+        rospy.loginfo(
+            f"Loaded semantic map: {len(semantic_dict)} regions, "
+            f"{len(room_groups)} rooms, {len(object_inventory)} objects."
+        )
+        return semantic_dict, dict(room_groups), object_inventory
     except Exception as e:
         rospy.logerr(f"Failed to load semantic map: {e}")
-        return {}, {}
+        return {}, {}, {}
 
 
 # ==========================================
@@ -108,35 +116,19 @@ robot_tools_json = [
 # ==========================================
 class GeminiHardenedAgent:
     def __init__(self):
-        rospy.init_node('gemini_robot_brain', anonymous=True)
         genai.configure(api_key=os.environ["GEMINI_API_KEY"])
         self.mc = MasterControl()
-        
-        # 1. Load YAML Semantic Map (coordinates hidden from Gemini)
+
+        # Load YAML Semantic Map — also populates object_inventory from 'objects' fields.
+        # To add a new grabbable object: add it to the region's 'objects' list in semantic_map.yaml.
         map_path = os.path.expanduser("~/learning_ws/src/mobile_manipulator/config/semantic_map.yaml")
-        self.semantic_map, self.room_groups = load_semantic_map(map_path)
-        
-        # 2. Dynamic Object Inventory — updated at runtime after YOLO detections
-        #    Seed it with known initial placements; will grow as the robot discovers new objects.
-        #    All object names are COCO-80 classes so YOLOv8 can detect them.
-        #    Objects marked [SPAWNED] have a matching Gazebo model in the world.
-        self.object_inventory = {
-            # ---- bedroom ----
-            "cup":          "nightstand_right",   # [SPAWNED] red_cup on nightstand
-            "book":         "reading_desk",       # [SPAWNED] blue_book on reading desk
-            # ---- living room ----
-            "remote":       "coffee_table",       # [SPAWNED] black_remote on coffee table
-            "bottle":       "coffee_table",       # [SPAWNED] green_bottle on coffee table
-            # ---- kitchen / dining ----
-            "sports ball":  "kitchen_table",      # [SPAWNED] cricket_ball on kitchen table
-            "bowl":         "cooking_bench",      # [SPAWNED] white_bowl on cooking bench
-        }
-        
+        self.semantic_map, self.room_groups, self.object_inventory = load_semantic_map(map_path)
+
         # 3. Build the system prompt from map data (auto-generated, never hardcoded)
         system_prompt = self._build_system_prompt()
-        
+
         self.model = genai.GenerativeModel(
-            model_name='gemini-1.5-flash',
+            model_name='gemini-2.5-flash',
             tools=robot_tools_json,
             system_instruction=system_prompt
         )
@@ -157,14 +149,14 @@ class GeminiHardenedAgent:
             loc_str = ", ".join(sorted(locations))
             room_lines.append(f"  - {room}: {loc_str}")
         rooms_section = "\n".join(room_lines)
-        
+
         # Build object inventory section
         if self.object_inventory:
             inv_lines = [f"  - {obj} → {loc}" for obj, loc in sorted(self.object_inventory.items())]
             inventory_section = "\n".join(inv_lines)
         else:
             inventory_section = "  (No objects discovered yet.)"
-        
+
         return (
             "You are an autonomous mobile manipulator robot (Husky base + UR5 arm) in a house.\n"
             "\n"
@@ -195,14 +187,21 @@ class GeminiHardenedAgent:
         """
         object_name = object_name.lower()
         location_name = location_name.lower()
-        
+
         old_location = self.object_inventory.get(object_name)
         self.object_inventory[object_name] = location_name
-        
+
         if old_location and old_location != location_name:
             rospy.loginfo(f"[INVENTORY] Updated: '{object_name}' moved from '{old_location}' → '{location_name}'")
         else:
             rospy.loginfo(f"[INVENTORY] Registered: '{object_name}' at '{location_name}'")
+
+    # ------------------------------------------
+    # Active Object Search
+    # ------------------------------------------
+    def _scan_for_object(self, target_class: str) -> tuple:
+        """Sweeps the UR5 arm through viewing poses to find target_class with YOLO."""
+        return self.mc.scan_with_arm(target_class)
 
     # ------------------------------------------
     # Tool Executor
@@ -213,7 +212,7 @@ class GeminiHardenedAgent:
             try:
                 valid_cmd = DriveCommand(**args_dict)
                 target_name = valid_cmd.location_name.lower()
-                
+
                 # Check the YAML map data
                 if target_name not in self.semantic_map:
                     available = ", ".join(sorted(self.semantic_map.keys()))
@@ -241,7 +240,7 @@ class GeminiHardenedAgent:
                 valid_cmd = PickCommand(**args_dict)
                 rospy.loginfo(f"Valid pick command received for: {valid_cmd.target_class}")
                 
-                u, v = self.mc.call_yolo_service(target_class=valid_cmd.target_class)
+                u, v = self._scan_for_object(target_class=valid_cmd.target_class)
                 if u is not None and v is not None:
                     pose = self.mc.get_3d_coordinates(u, v)
                     if pose and self.mc.execute_pick(pose):
@@ -323,14 +322,13 @@ class GeminiHardenedAgent:
             )
 
         rospy.loginfo(f"[ROBOT]: {response.text}\n")
+        return response.text
 
 
 if __name__ == '__main__':
     try:
+        rospy.init_node('gemini_robot_brain', anonymous=True)
         agent = GeminiHardenedAgent()
-        
-        # Test the integrated YAML + LLM Logic!
         agent.give_command("Can you grab my cup please?")
-        
     except rospy.ROSInterruptException:
         pass
