@@ -258,8 +258,8 @@ class RobotAgent:
                 cmd = PickCommand(**args)
                 u, v, w = self._scan_for_object(cmd.target_class)
                 if u is not None:
-                    pose = self.mc.get_3d_coordinates(u, v, w)
-                    if pose and self.mc.execute_pick(pose, cmd.target_class):
+                    pose, diameter = self.mc.get_3d_coordinates(u, v, w)
+                    if pose and self.mc.execute_pick(pose, cmd.target_class, diameter):
                         loc = self._get_current_location()
                         if loc:
                             self.update_inventory(cmd.target_class, loc)

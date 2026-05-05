@@ -197,6 +197,7 @@ class MasterControl:
             return None, None
 
     def get_3d_coordinates(self, u, v, bbox_width_px=None):
+        """Returns (PoseStamped in ur5_base_link, diameter_m) or (None, 0.0) on failure."""
         cam_info = rospy.wait_for_message("/camera/color/camera_info", CameraInfo, timeout=5.0)
         fx, cx, fy, cy = cam_info.K[0], cam_info.K[2], cam_info.K[4], cam_info.K[5]
 
@@ -211,15 +212,13 @@ class MasterControl:
         valid = patch[(patch > 0.05) & (patch < 5.0) & ~np.isnan(patch)]
         if len(valid) == 0:
             rospy.logwarn(f"[DEPTH] No valid readings in patch around ({u},{v})")
-            return None
+            return None, 0.0
         z_near = float(np.percentile(valid, 20))
 
-        # Treat the object as a cylinder.  The bounding-box width in pixels, scaled
-        # by depth and focal length, gives the physical diameter seen by the camera.
-        # The cylinder centre is one radius further along the optical ray than the
-        # near surface, so we shift z before back-projecting.
+        diameter_m = 0.0
         if bbox_width_px and bbox_width_px > 0:
             radius = float(bbox_width_px) * z_near / (2.0 * fx)
+            diameter_m = 2.0 * radius
             z_center = z_near + radius
             rospy.loginfo(f"[DEPTH] near={z_near:.3f} m  bbox_w={bbox_width_px}px "
                           f"→ r={radius:.3f} m  center={z_center:.3f} m")
@@ -227,7 +226,6 @@ class MasterControl:
             z_center = z_near
             rospy.loginfo(f"[DEPTH] z={z_near:.3f} m  ({len(valid)} valid pixels, 20th-pct)")
 
-        # Back-project the centre point (same pixel, deeper z).
         x_cam = (u - cx) * z_center / fx
         y_cam = (v - cy) * z_center / fy
 
@@ -240,13 +238,13 @@ class MasterControl:
         target_pose.pose.orientation.w = 1.0
 
         try:
-            return self.tf_buffer.transform(target_pose, "ur5_base_link", rospy.Duration(3.0))
+            return self.tf_buffer.transform(target_pose, "ur5_base_link", rospy.Duration(3.0)), diameter_m
         except Exception as e:
             rospy.logwarn(f"[DEPTH] TF failed: {e}")
-            return None
+            return None, 0.0
 
     # Known-good arm pose for replanning: forward-facing scan position
-    _READY_JOINTS = [0.00, -1.57, 1.00, 0.70, 1.57, 0.0]
+    _READY_JOINTS = [0.00, -1.90,  0.70, 1.80, 1.57, 0.0]
 
     def _plan_and_go(self, pose: PoseStamped) -> bool:
         """Plan to a Cartesian pose from the current arm state (single attempt)."""
@@ -404,7 +402,7 @@ class MasterControl:
 
         rospy.loginfo(f"[SCENE] Added {n_boxes} environment collision boxes.")
 
-    def execute_pick(self, base_pose: PoseStamped, target_class: str = "") -> bool:
+    def execute_pick(self, base_pose: PoseStamped, target_class: str = "", obj_diameter: float = 0.0) -> bool:
         p = base_pose.pose.position
         rospy.loginfo(f"[PICK] Target in {base_pose.header.frame_id}: "
                       f"x={p.x:.3f} y={p.y:.3f} z={p.z:.3f}")
@@ -485,13 +483,15 @@ class MasterControl:
                         u_new, v_new, bbox_w_new = int(det.center_u), int(det.center_v), int(det.width)
                         break
                 if u_new is not None:
-                    fresh_pose = self.get_3d_coordinates(u_new, v_new, bbox_w_new)
+                    fresh_pose, fresh_diameter = self.get_3d_coordinates(u_new, v_new, bbox_w_new)
                     if fresh_pose is not None:
                         fp = fresh_pose.pose.position
                         rospy.loginfo(
                             f"[PICK] Pose refined: ({p.x:.3f},{p.y:.3f},{p.z:.3f}) → "
                             f"({fp.x:.3f},{fp.y:.3f},{fp.z:.3f})"
                         )
+                        if fresh_diameter > 0:
+                            obj_diameter = fresh_diameter
                         horiz_dist_new = math.hypot(fp.x, fp.y)
                         if horiz_dist_new >= 0.15:
                             dx_new = fp.x / horiz_dist_new
@@ -605,8 +605,20 @@ class MasterControl:
         self.arm_group.execute(plan, wait=True)
         rospy.sleep(0.3)
 
-        rospy.loginfo("[PICK] Closing gripper...")
-        self.gripper_group.set_joint_value_target([0.025, 0.025])
+        # Compute gripper target from detected object diameter.
+        # Hand-E: joint 0 = fully open, joint 0.025 = fully closed.
+        # Assumes max gap ≈ 0.050 m (50 mm) when both joints are at 0.
+        # joint = (max_gap - diameter) / 2  →  each finger closes to one radius.
+        GRIPPER_MAX_GAP = 0.050   # metres; tune if the sim gripper differs
+        GRIP_MARGIN     = 0.004   # extra closure for a firm hold
+        if obj_diameter > 0:
+            gripper_target = (GRIPPER_MAX_GAP - obj_diameter) / 2.0 + GRIP_MARGIN
+            gripper_target = max(0.003, min(0.025, gripper_target))
+        else:
+            gripper_target = 0.016  # fallback when no vision estimate is available
+        rospy.loginfo(f"[PICK] Closing gripper to {gripper_target*1000:.1f} mm "
+                      f"(obj diameter {obj_diameter*1000:.1f} mm)...")
+        self.gripper_group.set_joint_value_target([gripper_target, gripper_target])
         self.gripper_group.go(wait=True)
         rospy.sleep(0.5)
         return True
