@@ -17,9 +17,9 @@ import yaml
 import rospy
 from flask import Flask, jsonify, request, render_template
 
-# Import GeminiHardenedAgent from the sibling script
+# Import RobotAgent from the sibling script
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from agent import GeminiHardenedAgent
+from agent import RobotAgent
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 MAP_PATH   = os.path.expanduser("~/learning_ws/src/mobile_manipulator/config/semantic_map.yaml")
@@ -156,7 +156,7 @@ def _agent_worker():
 def main():
     global _agent
     rospy.init_node('robot_flask_ui', anonymous=False)
-    _agent = GeminiHardenedAgent()
+    _agent = RobotAgent()
 
     threading.Thread(target=_agent_worker, daemon=True).start()
     threading.Thread(

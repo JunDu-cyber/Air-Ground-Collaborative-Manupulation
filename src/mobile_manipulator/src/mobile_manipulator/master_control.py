@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
 
+import copy
 import sys
 import math
 import threading
+import concurrent.futures
 import rospy
 import actionlib
 import tf2_ros
-import tf2_geometry_msgs
+import tf2_geometry_msgs  # registers PoseStamped/etc. with tf2_ros.Buffer.transform()
 import moveit_commander
-import pandas as pd
-
+import numpy as np
+from tf.transformations import quaternion_from_euler, quaternion_matrix, quaternion_multiply
+from visualization_msgs.msg import Marker
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import Image, CameraInfo
 from cv_bridge import CvBridge
 
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
-from tf.transformations import quaternion_from_euler
 
 # Custom YOLO Service
 from mobile_manipulator.srv import DetectObjects, DetectObjectsRequest
@@ -28,14 +30,29 @@ class MasterControl:
         self.nav_client.wait_for_server(rospy.Duration(10.0))
 
         moveit_commander.roscpp_initialize(sys.argv)
-        self.arm_group = moveit_commander.MoveGroupCommander("ur5_arm")
+        self.arm_group   = moveit_commander.MoveGroupCommander("ur5_arm")
         self.gripper_group = moveit_commander.MoveGroupCommander("hand_e_gripper")
+        self.scene       = moveit_commander.PlanningSceneInterface()
 
-        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_buffer  = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
 
         self.bridge = CvBridge()
+        self._scene_box_names: set = set()   # tracks dynamically added collision boxes
+        rospy.sleep(1.0)  # let the planning scene interface connect
+
+        # Floor plane keeps RRTConnect from routing the arm below the robot base.
+        # In ur5_base_link the floor is ~35 cm below the origin.
+        floor = PoseStamped()
+        floor.header.frame_id = "ur5_base_link"
+        floor.pose.position.z = -0.35
+        floor.pose.orientation.w = 1.0
+        self.scene.add_box("floor", floor, size=(5.0, 5.0, 0.02))
+
         rospy.loginfo("MCP Booted. Navigation, MoveIt, and TF2 are ready.")
+        self.marker_pub = rospy.Publisher(
+            "/debug_pregrasp_marker", Marker, queue_size=1
+        )
 
     def move_base_to(self, target_x, target_y, target_yaw_degrees):
         rospy.loginfo(f"Navigating base to X:{target_x}, Y:{target_y}, Yaw:{target_yaw_degrees}°...")
@@ -90,12 +107,12 @@ class MasterControl:
     #
     # Tune shoulder_lift / elbow / wrist_1 in RViz if the camera still dips.
     SCAN_JOINT_CONFIGS = [
-        [ 0.00, -0.80,  1.20, -0.40, -1.57, 0.0],  # forward centre
-        [ 0.52, -0.80,  1.20, -0.40, -1.57, 0.0],  # left  ~30°
-        [-0.52, -0.80,  1.20, -0.40, -1.57, 0.0],  # right ~30°
-        [ 1.05, -0.80,  1.20, -0.40, -1.57, 0.0],  # left  ~60°
-        [-1.05, -0.80,  1.20, -0.40, -1.57, 0.0],  # right ~60°
-        [ 0.00, -1.10,  1.40, -0.30, -1.57, 0.0],  # forward, look slightly down (near-base objects)
+        [ 0.00, -1.90,  0.70, 1.80, 1.57, 0.0],  # forward centre
+        [ 0.52, -1.90,  0.70, 1.80, 1.57, 0.0],  # left  ~30°
+        [-0.52, -1.90,  0.70, 1.80, 1.57, 0.0],  # right ~30°
+        [ 1.05, -1.90,  0.70, 1.80, 1.57, 0.0],  # left  ~60°
+        [-1.05, -1.90,  0.70, 1.80, 1.57, 0.0],  # right ~60°
+        [ 0.00, -1.90,  0.70, 1.80, 1.57, 0.0],  # forward, look slightly down (near-base objects)
     ]
 
     def scan_with_arm(self, target_class: str) -> tuple:
@@ -105,7 +122,7 @@ class MasterControl:
         The arm stops immediately on the first positive detection.
         Returns (u, v) or (None, None).
         """
-        found   = {'u': None, 'v': None}
+        found   = {'u': None, 'v': None, 'w': None}
         stop_ev = threading.Event()
 
         def _detect_loop():
@@ -123,7 +140,9 @@ class MasterControl:
                         if det.class_name == target_class:
                             found['u'] = int(det.center_u)
                             found['v'] = int(det.center_v)
+                            found['w'] = int(det.width)
                             stop_ev.set()
+                            rospy.loginfo(f"[SCAN] Detected '{target_class}' at pixel ({found['u']}, {found['v']}), bbox_w={found['w']}px. Stopping arm sweep.")
                             return
                 except Exception:
                     pass
@@ -138,7 +157,8 @@ class MasterControl:
             rospy.loginfo(f"[SCAN] Arm pose {i+1}/{len(self.SCAN_JOINT_CONFIGS)}...")
             self.arm_group.set_joint_value_target(joints)
             self.arm_group.go(wait=True)   # YOLO thread runs freely during motion
-            self.arm_group.stop()
+            # no stop() here — go(wait=True) already settled; stop() was triggering
+            # a 0.5 s hold trajectory on every waypoint, causing the arm to "dance"
             self.arm_group.clear_pose_targets()
 
         stop_ev.set()
@@ -146,10 +166,10 @@ class MasterControl:
         t.join(timeout=2.0)
 
         if found['u'] is not None:
-            rospy.loginfo(f"[SCAN] Found '{target_class}' at pixel ({found['u']}, {found['v']}).")
+            rospy.loginfo(f"[SCAN] Found '{target_class}' at pixel ({found['u']}, {found['v']}), bbox_w={found['w']}px.")
         else:
             rospy.logwarn(f"[SCAN] '{target_class}' not found after full arm sweep.")
-        return found['u'], found['v']
+        return found['u'], found['v'], found['w']
 
     def call_yolo_service(self, target_class="cup"):
         rospy.loginfo(f"Waiting for YOLO service to find '{target_class}'...")
@@ -176,59 +196,466 @@ class MasterControl:
             rospy.logerr(f"Service call failed: {e}")
             return None, None
 
-    def get_3d_coordinates(self, u, v):
+    def get_3d_coordinates(self, u, v, bbox_width_px=None):
         cam_info = rospy.wait_for_message("/camera/color/camera_info", CameraInfo, timeout=5.0)
         fx, cx, fy, cy = cam_info.K[0], cam_info.K[2], cam_info.K[4], cam_info.K[5]
 
         depth_msg = rospy.wait_for_message("/camera/depth/image_raw", Image, timeout=5.0)
         depth_image = self.bridge.imgmsg_to_cv2(depth_msg, "32FC1")
-        z_depth = depth_image[v, u]
 
-        if z_depth == 0 or pd.isna(z_depth):
+        # 7×7 patch, 20th-percentile depth → nearest visible surface (front of object).
+        h, w = depth_image.shape[:2]
+        r = 3
+        patch = depth_image[max(0, v - r):min(h, v + r + 1),
+                            max(0, u - r):min(w, u + r + 1)]
+        valid = patch[(patch > 0.05) & (patch < 5.0) & ~np.isnan(patch)]
+        if len(valid) == 0:
+            rospy.logwarn(f"[DEPTH] No valid readings in patch around ({u},{v})")
             return None
+        z_near = float(np.percentile(valid, 20))
 
-        x_cam = (u - cx) * z_depth / fx
-        y_cam = (v - cy) * z_depth / fy
-        z_cam = z_depth
+        # Treat the object as a cylinder.  The bounding-box width in pixels, scaled
+        # by depth and focal length, gives the physical diameter seen by the camera.
+        # The cylinder centre is one radius further along the optical ray than the
+        # near surface, so we shift z before back-projecting.
+        if bbox_width_px and bbox_width_px > 0:
+            radius = float(bbox_width_px) * z_near / (2.0 * fx)
+            z_center = z_near + radius
+            rospy.loginfo(f"[DEPTH] near={z_near:.3f} m  bbox_w={bbox_width_px}px "
+                          f"→ r={radius:.3f} m  center={z_center:.3f} m")
+        else:
+            z_center = z_near
+            rospy.loginfo(f"[DEPTH] z={z_near:.3f} m  ({len(valid)} valid pixels, 20th-pct)")
+
+        # Back-project the centre point (same pixel, deeper z).
+        x_cam = (u - cx) * z_center / fx
+        y_cam = (v - cy) * z_center / fy
 
         target_pose = PoseStamped()
         target_pose.header.frame_id = "realsense_camera_optical_frame"
+        target_pose.header.stamp = rospy.Time(0)
         target_pose.pose.position.x = x_cam
         target_pose.pose.position.y = y_cam
-        target_pose.pose.position.z = z_cam
+        target_pose.pose.position.z = z_center
         target_pose.pose.orientation.w = 1.0
 
         try:
-            self.tf_buffer.can_transform("ur5_base_link", "realsense_camera_optical_frame", rospy.Time(0), rospy.Duration(3.0))
-            return self.tf_buffer.transform(target_pose, "ur5_base_link")
-        except Exception:
+            return self.tf_buffer.transform(target_pose, "ur5_base_link", rospy.Duration(3.0))
+        except Exception as e:
+            rospy.logwarn(f"[DEPTH] TF failed: {e}")
             return None
 
-    def execute_pick(self, base_pose):
-        rospy.loginfo("Opening Gripper...")
+    # Known-good arm pose for replanning: forward-facing scan position
+    _READY_JOINTS = [0.00, -1.57, 1.00, 0.70, 1.57, 0.0]
+
+    def _plan_and_go(self, pose: PoseStamped) -> bool:
+        """Plan to a Cartesian pose from the current arm state (single attempt)."""
+        self.arm_group.set_planning_time(10.0)
+        self.arm_group.set_num_planning_attempts(5)
+
+        self.arm_group.set_goal_position_tolerance(0.01)
+        self.arm_group.set_goal_orientation_tolerance(0.05)
+        self.arm_group.set_goal_joint_tolerance(0.01)
+        self.arm_group.set_pose_target(pose)
+        ok = self.arm_group.go(wait=True)
+        self.arm_group.clear_pose_targets()
+        if ok:
+            rospy.sleep(0.2)
+        return ok
+
+    def _go_ready(self):
+        """Return to the known-good ready configuration (fast, joint-space)."""
+        self.arm_group.set_joint_value_target(self._READY_JOINTS)
+        self.arm_group.go(wait=True)
+        self.arm_group.clear_pose_targets()
+        rospy.sleep(0.2)
+
+    def _update_scene_collisions(self, obj_pose: PoseStamped):
+        """
+        Retreat the camera slightly away from the object (same orientation, small
+        Cartesian motion), capture depth, and populate the MoveIt planning scene with
+        one collision box per 8-cm height band.  Robot self-observations are filtered
+        out before adding boxes.
+        """
+        # --- 1. Retreat camera along the approach axis ----------------------------
+        # Approach direction (XY only, normalised).
+        px = obj_pose.pose.position.x
+        py = obj_pose.pose.position.y
+        horiz = math.hypot(px, py)
+        dx, dy = (px / horiz, py / horiz) if horiz > 0.01 else (1.0, 0.0)
+
+        # Pull the current EE position back 0.25 m; keep the same orientation so the
+        # camera still faces the scene — and the motion is tiny so IK always succeeds.
+        ee = self.arm_group.get_current_pose()
+        retreat = copy.deepcopy(ee)
+        retreat.pose.position.x = ee.pose.position.x - dx * 0.25
+        retreat.pose.position.y = ee.pose.position.y - dy * 0.25
+
+        self.arm_group.set_planning_time(3.0)
+        self.arm_group.set_goal_position_tolerance(0.01)
+        self.arm_group.set_goal_orientation_tolerance(0.05)
+        self.arm_group.set_goal_joint_tolerance(0.01)
+        self.arm_group.set_pose_target(retreat)
+        if not self.arm_group.go(wait=True):
+            rospy.logwarn("[SCENE] Retreat failed — using current camera view.")
+        self.arm_group.clear_pose_targets()
+        rospy.sleep(0.35)
+
+        # --- 2. Capture depth + intrinsics ----------------------------------------
+        try:
+            cam_info = rospy.wait_for_message("/camera/color/camera_info", CameraInfo, timeout=3.0)
+            depth_msg = rospy.wait_for_message("/camera/depth/image_raw", Image, timeout=3.0)
+        except rospy.ROSException:
+            rospy.logwarn("[SCENE] Depth timeout — skipping scene update.")
+            return
+
+        depth = self.bridge.imgmsg_to_cv2(depth_msg, "32FC1")
+        h, w = depth.shape
+        fx, cx, fy, cy = cam_info.K[0], cam_info.K[2], cam_info.K[4], cam_info.K[5]
+
+        # --- 3. Camera→base as a 4×4 matrix (enables vectorised batch transform) --
+        try:
+            tf_s = self.tf_buffer.lookup_transform(
+                "ur5_base_link", "realsense_camera_optical_frame",
+                rospy.Time(0), rospy.Duration(3.0))
+        except Exception as e:
+            rospy.logwarn(f"[SCENE] TF lookup failed: {e}")
+            return
+
+        T = quaternion_matrix([tf_s.transform.rotation.x,
+                               tf_s.transform.rotation.y,
+                               tf_s.transform.rotation.z,
+                               tf_s.transform.rotation.w])
+        T[0, 3] = tf_s.transform.translation.x
+        T[1, 3] = tf_s.transform.translation.y
+        T[2, 3] = tf_s.transform.translation.z
+
+        # --- 4. Back-project subsampled depth pixels → ur5_base_link -------------
+        step = 8
+        vs, us = np.mgrid[0:h:step, 0:w:step]
+        zs = depth[::step, ::step].ravel().astype(np.float64)
+        us = us.ravel().astype(np.float64)
+        vs = vs.ravel().astype(np.float64)
+
+        # Minimum camera depth 0.25 m: filters out the gripper, which is right in
+        # front of the lens and would otherwise appear as a false obstacle.
+        valid = (zs > 0.25) & (zs < 3.0) & np.isfinite(zs)
+        zs, us, vs = zs[valid], us[valid], vs[valid]
+        if len(zs) < 10:
+            rospy.logwarn("[SCENE] Too few valid depth pixels.")
+            return
+
+        xs_cam = (us - cx) * zs / fx
+        ys_cam = (vs - cy) * zs / fy
+        pts_cam = np.vstack([xs_cam, ys_cam, zs, np.ones(len(zs))])
+        pts_base = (T @ pts_cam)[:3].T  # N×3 in ur5_base_link
+
+        # --- 5. Self-observation filter -------------------------------------------
+        # Discard points that belong to the robot's own body:
+        #   x < 0.10 m  → behind the arm mounting plane (Husky chassis)
+        #   r_xy < 0.20 m → within the arm's own kinematic cylinder
+        #   z outside [floor, object+0.6 m] → spurious readings above/below scene
+        ox = obj_pose.pose.position.x
+        oy = obj_pose.pose.position.y
+        oz = obj_pose.pose.position.z
+
+        r_xy = np.hypot(pts_base[:, 0], pts_base[:, 1])
+        dist_to_obj = np.sqrt((pts_base[:, 0] - ox) ** 2 +
+                              (pts_base[:, 1] - oy) ** 2 +
+                              (pts_base[:, 2] - oz) ** 2)
+        env_mask = (
+            (pts_base[:, 0] > 0.10) &          # exclude Husky chassis behind arm
+            (r_xy > 0.20) &                     # exclude arm links near axis
+            (pts_base[:, 2] > -0.25) &          # above floor
+            (pts_base[:, 2] < oz + 0.60) &      # reasonable ceiling
+            (dist_to_obj > 0.20)                # exclude the target object itself
+        )
+        pts_base = pts_base[env_mask]
+        if len(pts_base) < 5:
+            rospy.logwarn("[SCENE] No environment points after self-filter.")
+            return
+
+        # --- 6. Replace old boxes with height-banded new ones ----------------------
+        for name in list(self._scene_box_names):
+            self.scene.remove_world_object(name)
+        self._scene_box_names.clear()
+        rospy.sleep(0.15)
+
+        z_vals = pts_base[:, 2]
+        band = 0.08
+        n_boxes = 0
+        for z_lo in np.arange(float(z_vals.min()), float(z_vals.max()), band):
+            z_hi = z_lo + band
+            sel = pts_base[(z_vals >= z_lo) & (z_vals < z_hi)]
+            if len(sel) < 5:
+                continue
+            name = f"scene_{n_boxes}"
+            box_pose = PoseStamped()
+            box_pose.header.frame_id = "ur5_base_link"
+            box_pose.pose.position.x = float((sel[:, 0].min() + sel[:, 0].max()) / 2)
+            box_pose.pose.position.y = float((sel[:, 1].min() + sel[:, 1].max()) / 2)
+            box_pose.pose.position.z = float((z_lo + z_hi) / 2)
+            box_pose.pose.orientation.w = 1.0
+            sx = max(float(sel[:, 0].max() - sel[:, 0].min()) + 0.05, 0.05)
+            sy = max(float(sel[:, 1].max() - sel[:, 1].min()) + 0.05, 0.05)
+            self.scene.add_box(name, box_pose, size=(sx, sy, band))
+            self._scene_box_names.add(name)
+            n_boxes += 1
+
+        rospy.loginfo(f"[SCENE] Added {n_boxes} environment collision boxes.")
+
+    def execute_pick(self, base_pose: PoseStamped, target_class: str = "") -> bool:
+        p = base_pose.pose.position
+        rospy.loginfo(f"[PICK] Target in {base_pose.header.frame_id}: "
+                      f"x={p.x:.3f} y={p.y:.3f} z={p.z:.3f}")
+
+        # Horizontal approach: gripper comes from behind along the XY approach vector.
+        # Approach direction = unit vector from arm origin to object (XY only).
+        horiz_dist = math.hypot(p.x, p.y)
+        if horiz_dist < 0.15:
+            rospy.logerr(f"[PICK] Object too close to arm base ({horiz_dist:.3f} m) — aborting.")
+            return False
+        dx, dy = p.x / horiz_dist, p.y / horiz_dist
+        approach_yaw = math.atan2(p.y, p.x)
+
+        # Orientation: tool Z pointing horizontally toward the object.
+        # With sxyz extrinsic Euler, R = R_z(yaw)*R_y(pitch):
+        #   pitch=+π/2 → EE-Z maps to [cos(yaw), sin(yaw), 0]  (toward object) ✓
+        #   pitch=-π/2 → EE-Z maps to [-cos(yaw),-sin(yaw), 0] (away — wrong)
+        # Then rotate 90° around EE-Z (intrinsic) so EE-X becomes horizontal
+        # (fingers open left/right) instead of vertical (fingers would hit the table).
+        q_approach = quaternion_from_euler(0.0, math.pi / 2, approach_yaw)
+        q_roll90   = (0.0, 0.0, math.sin(math.pi / 4), math.cos(math.pi / 4))
+        q = quaternion_multiply(q_approach, q_roll90)
+
+        # base_pose is the cylinder CENTRE (get_3d_coordinates already shifted from
+        # near surface by the radius derived from bbox width).
+        # tool0 must sit FINGER_REACH behind the centre so the fingertips land there.
+        FINGER_REACH = 0.10   # Hand-E tip distance from ur5_tool0, metres
+        PRE_OFFSET   = 0.18   # additional standoff before the insertion stroke
+
+        grasp_pose = copy.deepcopy(base_pose)
+        grasp_pose.pose.position.x = p.x - dx * FINGER_REACH
+        grasp_pose.pose.position.y = p.y - dy * FINGER_REACH
+        grasp_pose.pose.orientation.x = q[0]
+        grasp_pose.pose.orientation.y = q[1]
+        grasp_pose.pose.orientation.z = q[2]
+        grasp_pose.pose.orientation.w = q[3]
+
+        pre_grasp = copy.deepcopy(base_pose)
+        pre_grasp.pose.position.x = p.x - dx * (FINGER_REACH + PRE_OFFSET)
+        pre_grasp.pose.position.y = p.y - dy * (FINGER_REACH + PRE_OFFSET)
+        # z unchanged — horizontal approach stays at object height
+        pre_grasp.pose.orientation.x = q[0]
+        pre_grasp.pose.orientation.y = q[1]
+        pre_grasp.pose.orientation.z = q[2]
+        pre_grasp.pose.orientation.w = q[3]
+
+        rospy.loginfo(f"[PICK] pre_grasp : x={pre_grasp.pose.position.x:.3f} y={pre_grasp.pose.position.y:.3f} z={pre_grasp.pose.position.z:.3f}")
+        rospy.loginfo(f"[PICK] grasp_pose: x={grasp_pose.pose.position.x:.3f} y={grasp_pose.pose.position.y:.3f} z={grasp_pose.pose.position.z:.3f}")
+
+        # Debug arrow in RViz: tail = pre-grasp, tip points toward grasp (= PRE_OFFSET travel)
+        m = Marker()
+        m.header = pre_grasp.header
+        m.ns, m.id = "debug", 0
+        m.type, m.action = Marker.ARROW, Marker.ADD
+        m.pose = pre_grasp.pose
+        m.scale.x = PRE_OFFSET
+        m.scale.y = m.scale.z = 0.02
+        m.color.a, m.color.r = 1.0, 1.0
+        self.marker_pub.publish(m)
+
+        self._update_scene_collisions(base_pose)
+
+        # ── Camera re-detection ───────────────────────────────────────────────
+        # The arm just retreated for the depth scan, so the camera still has an
+        # unobstructed view.  A fresh YOLO + depth reading here corrects any TF
+        # drift before both Stage 1 and Stage 2 planning.
+        if target_class:
+            rospy.loginfo("[PICK] Re-detecting after scene scan for pose refinement...")
+            try:
+                img = rospy.wait_for_message("/camera/color/image_raw", Image, timeout=3.0)
+                yolo_srv = rospy.ServiceProxy('/yolo/detect', DetectObjects)
+                req = DetectObjectsRequest()
+                req.image = img
+                resp = yolo_srv(req)
+                u_new = v_new = bbox_w_new = None
+                for det in resp.detections:
+                    if det.class_name == target_class:
+                        u_new, v_new, bbox_w_new = int(det.center_u), int(det.center_v), int(det.width)
+                        break
+                if u_new is not None:
+                    fresh_pose = self.get_3d_coordinates(u_new, v_new, bbox_w_new)
+                    if fresh_pose is not None:
+                        fp = fresh_pose.pose.position
+                        rospy.loginfo(
+                            f"[PICK] Pose refined: ({p.x:.3f},{p.y:.3f},{p.z:.3f}) → "
+                            f"({fp.x:.3f},{fp.y:.3f},{fp.z:.3f})"
+                        )
+                        horiz_dist_new = math.hypot(fp.x, fp.y)
+                        if horiz_dist_new >= 0.15:
+                            dx_new = fp.x / horiz_dist_new
+                            dy_new = fp.y / horiz_dist_new
+                            grasp_pose.pose.position.x = fp.x - dx_new * FINGER_REACH
+                            grasp_pose.pose.position.y = fp.y - dy_new * FINGER_REACH
+                            grasp_pose.pose.position.z = fp.z
+                            pre_grasp.pose.position.x = fp.x - dx_new * (FINGER_REACH + PRE_OFFSET)
+                            pre_grasp.pose.position.y = fp.y - dy_new * (FINGER_REACH + PRE_OFFSET)
+                            pre_grasp.pose.position.z = fp.z
+                            rospy.loginfo(f"[PICK] pre_grasp (refined): x={pre_grasp.pose.position.x:.3f} y={pre_grasp.pose.position.y:.3f} z={pre_grasp.pose.position.z:.3f}")
+                            rospy.loginfo(f"[PICK] grasp_pose (refined): x={grasp_pose.pose.position.x:.3f} y={grasp_pose.pose.position.y:.3f} z={grasp_pose.pose.position.z:.3f}")
+                        else:
+                            rospy.logwarn("[PICK] Refined pose too close to arm base — keeping original.")
+                    else:
+                        rospy.logwarn("[PICK] Depth re-projection failed — keeping original poses.")
+                else:
+                    rospy.logwarn(f"[PICK] Re-detection: '{target_class}' not visible — keeping original.")
+            except Exception as e:
+                rospy.logwarn(f"[PICK] Camera re-detection failed ({e}) — keeping original.")
+
+        # Clear scene boxes now, before the arm moves.  The coarse depth-derived
+        # slabs are imprecise enough to overlap the pre_grasp position, which puts
+        # the arm in collision at the Stage-1 goal and causes execute() to block.
+        # The static floor box is sufficient to keep RRTConnect above the table.
+        for name in list(self._scene_box_names):
+            self.scene.remove_world_object(name)
+        self._scene_box_names.clear()
+        rospy.sleep(0.15)
+
+        rospy.loginfo("[PICK] Opening gripper...")
         self.gripper_group.set_joint_value_target([0.0, 0.0])
         self.gripper_group.go(wait=True)
+        rospy.sleep(0.3)
 
-        rospy.loginfo("Moving Arm to Pre-Grasp Pose...")
-        base_pose.pose.position.z += 0.15
-        base_pose.pose.orientation.x = 0.0
-        base_pose.pose.orientation.y = 0.707
-        base_pose.pose.orientation.z = 0.0
-        base_pose.pose.orientation.w = 0.707
+        # Return to a neutral configuration before planning so RRTConnect starts
+        # from a well-conditioned state rather than the constrained scan pose.
+        rospy.loginfo("[PICK] Returning to ready pose before planning...")
+        self._go_ready()
 
-        self.arm_group.set_pose_target(base_pose)
-        success = self.arm_group.go(wait=True)
+        # ── Stage 1: free-space plan to the standoff position ────────────────
+        # RRTConnect can take any path here; the floor collision box prevents it
+        # from routing under the robot/table.
+        rospy.loginfo("[PICK] Free-space plan → pre-grasp standoff...")
+        if not self._plan_and_go(pre_grasp):
+            rospy.logerr("[PICK] Cannot reach pre-grasp standoff.")
+            return False
+
+        m = Marker()
+        m.header = grasp_pose.header
+        m.ns, m.id = "debug", 0
+        m.type, m.action = Marker.ARROW, Marker.ADD
+        m.pose = grasp_pose.pose
+        m.scale.x = FINGER_REACH
+        m.scale.y = m.scale.z = 0.02
+        m.color.a, m.color.b = 1.0, 1.0
+        self.marker_pub.publish(m)
+
+        # ── Stage 2: straight-line Cartesian insertion ───────────────────────
+        rospy.sleep(0.5)
+        self.arm_group.set_start_state_to_current_state()
+
+        planning_frame = self.arm_group.get_planning_frame()
+        try:
+            grasp_in_planning = self.tf_buffer.transform(
+                grasp_pose, planning_frame, rospy.Duration(1.0)
+            )
+        except Exception as e:
+            rospy.logerr(f"[PICK] Cannot transform grasp_pose to planning frame '{planning_frame}': {e}")
+            return False
+        rospy.loginfo(f"[PICK] Cartesian insertion — computing path... "
+                      f"target in {planning_frame}: "
+                      f"x={grasp_in_planning.pose.position.x:.3f} "
+                      f"y={grasp_in_planning.pose.position.y:.3f} "
+                      f"z={grasp_in_planning.pose.position.z:.3f}")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            fut = ex.submit(
+                self.arm_group.compute_cartesian_path,
+                [grasp_in_planning.pose], 0.005, False,  # eef_step, avoid_collisions
+            )
+            try:
+                plan, fraction = fut.result(timeout=15.0)
+            except concurrent.futures.TimeoutError:
+                rospy.logerr("[PICK] compute_cartesian_path timed out — aborting.")
+                self.arm_group.set_joint_value_target(self._READY_JOINTS)
+                self.arm_group.go(wait=True)
+                self.arm_group.clear_pose_targets()
+                return False
+        rospy.loginfo(f"[PICK] Cartesian path {fraction*100:.0f}% complete.")
+        if fraction < 0.9:
+            rospy.logerr("[PICK] Cartesian path incomplete — aborting.")
+            self.arm_group.set_joint_value_target(self._READY_JOINTS)
+            self.arm_group.go(wait=True)
+            self.arm_group.clear_pose_targets()
+            return False
+
+        rospy.loginfo("[PICK] Retiming trajectory...")
+        plan = self.arm_group.retime_trajectory(
+            self.arm_group.get_current_state(), plan,
+            velocity_scaling_factor=0.15,
+            acceleration_scaling_factor=0.15,
+        )
+        if not plan.joint_trajectory.points:
+            rospy.logerr("[PICK] Retime produced empty trajectory — aborting.")
+            self.arm_group.set_joint_value_target(self._READY_JOINTS)
+            self.arm_group.go(wait=True)
+            self.arm_group.clear_pose_targets()
+            return False
+        duration = plan.joint_trajectory.points[-1].time_from_start.to_sec()
+        rospy.loginfo(f"[PICK] Executing insertion ({duration:.1f} s expected)...")
+        self.arm_group.execute(plan, wait=True)
+        rospy.sleep(0.3)
+
+        rospy.loginfo("[PICK] Closing gripper...")
+        self.gripper_group.set_joint_value_target([0.025, 0.025])
+        self.gripper_group.go(wait=True)
+        rospy.sleep(0.5)
+        return True
+
+    def execute_place(self, map_x: float, map_y: float,
+                      surface_height: float = 0.75) -> bool:
+        """Release the held object above (map_x, map_y) in the map frame.
+
+        surface_height: estimated Z of the target surface in the map frame
+        (0.75 m ≈ typical table; 0.0 for floor-level trash cans, etc.).
+        The arm descends to surface_height + 0.15 m, opens the gripper, then retreats.
+        """
+        target = PoseStamped()
+        target.header.frame_id = "map"
+        target.header.stamp = rospy.Time(0)
+        target.pose.position.x = map_x
+        target.pose.position.y = map_y
+        target.pose.position.z = surface_height + 0.15
+        target.pose.orientation.w = 1.0
+
+        try:
+            place_pose = self.tf_buffer.transform(target, "ur5_base_link", rospy.Duration(3.0))
+        except Exception as e:
+            rospy.logerr(f"[PLACE] TF failed: {e}")
+            return False
+
+        pp = place_pose.pose.position
+        rospy.loginfo(f"[PLACE] Target in ur5_base_link: x={pp.x:.3f} y={pp.y:.3f} z={pp.z:.3f}")
+
+        # Downward orientation for vertical placement
+        q = quaternion_from_euler(3.14159, 0, 0)
+        place_pose.pose.orientation.x = q[0]
+        place_pose.pose.orientation.y = q[1]
+        place_pose.pose.orientation.z = q[2]
+        place_pose.pose.orientation.w = q[3]
+
+        rospy.loginfo("[PLACE] Planning to place pose...")
+        if not self._plan_and_go(place_pose):
+            rospy.logerr("[PLACE] Could not reach place pose.")
+            return False
+
+        rospy.loginfo("[PLACE] Releasing object...")
+        self.gripper_group.set_joint_value_target([0.0, 0.0])
+        self.gripper_group.go(wait=True)
+        self.gripper_group.stop()
+
+        # Retreat to ready so the robot can drive away safely
+        self.arm_group.set_joint_value_target(self._READY_JOINTS)
+        self.arm_group.go(wait=True)
         self.arm_group.stop()
         self.arm_group.clear_pose_targets()
-
-        if success:
-            rospy.loginfo("Moving down to grasp...")
-            base_pose.pose.position.z -= 0.15
-            self.arm_group.set_pose_target(base_pose)
-            self.arm_group.go(wait=True)
-
-            rospy.loginfo("Closing Gripper...")
-            self.gripper_group.set_joint_value_target([0.025, 0.025])
-            self.gripper_group.go(wait=True)
-            return True
-        return False
+        return True

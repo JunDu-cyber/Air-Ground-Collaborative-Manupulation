@@ -822,7 +822,7 @@
     <joint name="husky_to_ur5_joint" type="fixed">
         <parent link="top_plate_link" />
         <child link="ur5_base_link" />
-        <origin rpy="0.0 0.0 0.0" xyz="-0.1 0.0 0.0" />
+        <origin rpy="0.0 0.0 0.0" xyz="0.1 0.0 0.0" />
     </joint>
     <!-- Gripper -->
     <!--
@@ -989,7 +989,7 @@
     <joint name="camera_to_wrist" type="fixed">
         <parent link="ur5_tool0" />
         <child link="realsense_camera_link" />
-        <origin rpy="0.0 -1.57 1.57" xyz="0.0 0.05 0.0" />
+        <origin rpy="0.0 -1.57 -1.57" xyz="0.0 0.05 0.0" />
     </joint>
     <!-- Dummy Link & Joint -->
     <link name="realsense_camera_optical_frame" />

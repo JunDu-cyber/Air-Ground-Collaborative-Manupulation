@@ -28,7 +28,7 @@
   <joint name="husky_to_ur5_joint" type="fixed">
     <parent link="top_plate_link" />
     <child link="ur5_base_link" />
-    <origin xyz="-0.1 0.0 0.0" rpy="0.0 0.0 0.0" />
+    <origin xyz="0.1 0.0 0.0" rpy="0.0 0.0 0.0" />
   </joint>
 
   <!-- Gripper -->
@@ -70,11 +70,20 @@
     <origin xyz="0.0 0.05 0.0" rpy="0.0 -1.57 -1.57" />
   </joint>
 
-  <!-- Dummy Link & Joint -->
+  <!--
+    Optical-frame "dummy" link (no mass / visual / collision — intentional).
+    REP-103 convention: Z forward (into scene), X right, Y down.
+    rpy="-π/2 0 -π/2" rotates the camera body frame (Z forward, Y up) to the
+    optical frame (Z forward, Y down). This must match the convention assumed by
+    the pinhole back-projection in get_3d_coordinates and by libgazebo_ros_openni_kinect
+    (frameName = realsense_camera_optical_frame).  Do NOT change this transform
+    without updating the back-projection formula.
+  -->
   <link name="realsense_camera_optical_frame" />
   <joint name="camera_optical_joint" type="fixed">
-    <origin xyz="0 0 0" rpy="-1.5708 0 -1.5708" /> <parent link="realsense_camera_link" />
+    <parent link="realsense_camera_link" />
     <child link="realsense_camera_optical_frame" />
+    <origin xyz="0 0 0" rpy="-1.5708 0 -1.5708" />
   </joint>
 
   <gazebo reference="realsense_camera_link">
