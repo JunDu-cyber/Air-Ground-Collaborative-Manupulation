@@ -10,7 +10,7 @@ regions:
   - - 3.13
     - 7.17
   room: bedroom
-  x: 1.23
+  x: 0.33
   y: 6.17
   yaw: 0.0
 - name: nightstand_left
@@ -72,9 +72,9 @@ regions:
   - - -0.7999999999999998
     - -0.13
   room: living_room
-  x: -1.2000000000000002
-  y: -0.265
-  yaw: 3.14
+  x: -0.5
+  y: -1.0
+  yaw: 1.57
 - name: coffee_table
   polygon:
   - - -2.14
@@ -86,7 +86,7 @@ regions:
   - - -1.3399999999999999
     - -0.71
   room: living_room
-  x: -0.9300000000000002
+  x: -0.75
   y: -1.516
   yaw: 3.14
   objects:
@@ -159,7 +159,7 @@ regions:
     - -7.35
   room: kitchen
   x: 0.954
-  y: -5.15
+  y: -5.0
   yaw: -1.57
   objects:
   - sports ball

@@ -16,6 +16,7 @@ import threading
 import yaml
 import rospy
 from flask import Flask, jsonify, request, render_template
+from std_msgs.msg import Bool
 
 # Import RobotAgent from the sibling script
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -30,6 +31,12 @@ _cmd_q = queue.Queue()
 _res_q = queue.Queue()
 _history      = []          # [{role, text}, ...]
 _history_lock = threading.Lock()
+
+# ── E-stop state ────────────────────────────────────────────────────────────
+_estop_active  = False
+_estop_pub     = None          # rospy.Publisher, set in main()
+_estop_lock    = threading.Lock()
+
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────
@@ -109,6 +116,21 @@ def api_history():
         return jsonify(history=list(_history))
 
 
+@app.route('/api/estop', methods=['POST'])
+def api_estop():
+    global _estop_active
+    data = request.get_json(force=True) or {}
+    with _estop_lock:
+        # Explicit 'active' field, or toggle if omitted
+        _estop_active = data.get('active', not _estop_active)
+        state = _estop_active
+    if _estop_pub:
+        _estop_pub.publish(Bool(data=state))
+    rospy.logwarn(f"[UI] E-stop {'ACTIVATED' if state else 'RELEASED'} via web UI")
+    return jsonify(active=state)
+
+
+
 # ── YAML persistence ────────────────────────────────────────────────────────
 
 def _write_yaml(path: str, semantic_map: dict):
@@ -151,12 +173,15 @@ def _agent_worker():
         _res_q.put(result)
 
 
+
 # ── Entry point ─────────────────────────────────────────────────────────────
 
 def main():
-    global _agent
+    global _agent, _estop_pub
     rospy.init_node('robot_flask_ui', anonymous=False)
     _agent = RobotAgent()
+
+    _estop_pub = rospy.Publisher('/e_stop', Bool, queue_size=1, latch=True)
 
     threading.Thread(target=_agent_worker, daemon=True).start()
     threading.Thread(

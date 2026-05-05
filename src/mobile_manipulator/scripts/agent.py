@@ -16,12 +16,34 @@ from mobile_manipulator.master_control import MasterControl
 
 # ── Semantic map loader ────────────────────────────────────────────────────────
 
+def _polygon_centroid(poly: list) -> tuple[float, float] | tuple[None, None]:
+    """Signed-area centroid (shoelace). Falls back to vertex average for degenerate polygons."""
+    n = len(poly)
+    if n == 0:
+        return None, None
+    cx = cy = area = 0.0
+    for i in range(n):
+        x0, y0 = poly[i]
+        x1, y1 = poly[(i + 1) % n]
+        cross = x0 * y1 - x1 * y0
+        area += cross
+        cx += (x0 + x1) * cross
+        cy += (y0 + y1) * cross
+    area /= 2.0
+    if abs(area) < 1e-9:
+        xs, ys = zip(*poly)
+        return sum(xs) / n, sum(ys) / n
+    return cx / (6.0 * area), cy / (6.0 * area)
+
+
 def load_semantic_map(yaml_path: str) -> tuple[dict, dict, dict]:
     """
     Returns:
-      semantic_dict    — {name: {x, y, yaw_rad, room}}
+      semantic_dict    — {name: {x, y, yaw_rad, room, place_x, place_y}}
       room_groups      — {room: [location_name, ...]}
       object_inventory — {coco_class: location_name}  (from 'objects' fields in YAML)
+
+    place_x/place_y priority: explicit YAML field > polygon centroid > nav x/y.
     """
     try:
         with open(yaml_path) as f:
@@ -34,10 +56,19 @@ def load_semantic_map(yaml_path: str) -> tuple[dict, dict, dict]:
         for region in data.get('regions', []):
             name = region['name'].lower()
             room = region.get('room', 'unknown').lower()
-            semantic_dict[name] = {
+            entry = {
                 'x': region['x'], 'y': region['y'],
                 'yaw_rad': region['yaw'], 'room': room,
             }
+            # Derive place target: explicit override > polygon centroid > nav waypoint
+            if 'place_x' in region and 'place_y' in region:
+                entry['place_x'] = float(region['place_x'])
+                entry['place_y'] = float(region['place_y'])
+            else:
+                cx, cy = _polygon_centroid(region.get('polygon') or [])
+                entry['place_x'] = cx if cx is not None else region['x']
+                entry['place_y'] = cy if cy is not None else region['y']
+            semantic_dict[name] = entry
             room_groups[room].append(name)
             for obj in region.get('objects', []):
                 object_inventory[obj.lower()] = name
@@ -277,7 +308,9 @@ class RobotAgent:
                     return f"FAILURE: '{target}' not on map. Available: {available}"
                 c = self.semantic_map[target]
                 surface_height = float(args.get("surface_height", 0.75))
-                ok = self.mc.execute_place(c['x'], c['y'], surface_height)
+                place_x = c.get('place_x', c['x'])
+                place_y = c.get('place_y', c['y'])
+                ok = self.mc.execute_place(place_x, place_y, surface_height)
                 return (f"SUCCESS: Placed object at {target}."
                         if ok else f"FAILURE: Could not place object at {target}.")
             except ValidationError as e:

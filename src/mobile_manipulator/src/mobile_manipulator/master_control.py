@@ -274,22 +274,22 @@ class MasterControl:
         self.arm_group.clear_pose_targets()
         rospy.sleep(0.2)
 
-    def _update_scene_collisions(self, obj_pose: PoseStamped):
+    def _update_scene_collisions(self, obj_pose: PoseStamped,
+                                 target_class: str = "") -> tuple:
         """
-        Retreat the camera slightly away from the object (same orientation, small
-        Cartesian motion), capture depth, and populate the MoveIt planning scene with
-        one collision box per 8-cm height band.  Robot self-observations are filtered
-        out before adding boxes.
+        Retreat the camera, optionally re-detect the target for a fresh pose,
+        capture depth, and publish the self-filtered point cloud to MoveIt's
+        OctoMap sensor topic.
+
+        Returns (refined_pose, refined_diameter): the fresher pose from re-detection
+        if successful, otherwise the original obj_pose and 0.0.
         """
         # --- 1. Retreat camera along the approach axis ----------------------------
-        # Approach direction (XY only, normalised).
         px = obj_pose.pose.position.x
         py = obj_pose.pose.position.y
         horiz = math.hypot(px, py)
         dx, dy = (px / horiz, py / horiz) if horiz > 0.01 else (1.0, 0.0)
 
-        # Pull the current EE position back 0.25 m; keep the same orientation so the
-        # camera still faces the scene — and the motion is tiny so IK always succeeds.
         ee = self.arm_group.get_current_pose()
         retreat = copy.deepcopy(ee)
         retreat.pose.position.x = ee.pose.position.x - dx * 0.25
@@ -304,6 +304,32 @@ class MasterControl:
             rospy.logwarn("[SCENE] Retreat failed — using current camera view.")
         self.arm_group.clear_pose_targets()
         rospy.sleep(0.35)
+
+        # --- 1b. Re-detect while camera is still settled on the scene -------------
+        refined_pose = obj_pose
+        refined_diameter = 0.0
+        if target_class:
+            try:
+                img = rospy.wait_for_message("/camera/color/image_raw", Image, timeout=3.0)
+                yolo_srv = rospy.ServiceProxy('/yolo/detect', DetectObjects)
+                req = DetectObjectsRequest()
+                req.image = img
+                resp = yolo_srv(req)
+                for det in resp.detections:
+                    if det.class_name == target_class:
+                        fresh, diam = self.get_3d_coordinates(
+                            int(det.center_u), int(det.center_v), int(det.width))
+                        if fresh is not None:
+                            refined_pose = fresh
+                            refined_diameter = diam
+                            fp = fresh.pose.position
+                            rospy.loginfo(
+                                f"[SCENE] Re-detected '{target_class}' at "
+                                f"({fp.x:.3f},{fp.y:.3f},{fp.z:.3f}), "
+                                f"diameter={diam*1000:.1f} mm")
+                        break
+            except Exception as e:
+                rospy.logwarn(f"[SCENE] Re-detection failed ({e}) — using original pose.")
 
         # --- 2. Capture depth + intrinsics ----------------------------------------
         try:
@@ -355,13 +381,11 @@ class MasterControl:
         pts_base = (T @ pts_cam)[:3].T  # N×3 in ur5_base_link
 
         # --- 5. Self-observation filter -------------------------------------------
-        # Discard points that belong to the robot's own body:
-        #   x < 0.10 m  → behind the arm mounting plane (Husky chassis)
-        #   r_xy < 0.20 m → within the arm's own kinematic cylinder
-        #   z outside [floor, object+0.6 m] → spurious readings above/below scene
-        ox = obj_pose.pose.position.x
-        oy = obj_pose.pose.position.y
-        oz = obj_pose.pose.position.z
+        # Use the refined pose (from re-detection) if available so the target
+        # object exclusion sphere is centred on the freshest known position.
+        ox = refined_pose.pose.position.x
+        oy = refined_pose.pose.position.y
+        oz = refined_pose.pose.position.z
 
         r_xy = np.hypot(pts_base[:, 0], pts_base[:, 1])
         dist_to_obj = np.sqrt((pts_base[:, 0] - ox) ** 2 +
@@ -372,7 +396,7 @@ class MasterControl:
             (r_xy > 0.20) &                     # exclude arm links near axis
             (pts_base[:, 2] > -0.25) &          # above floor
             (pts_base[:, 2] < oz + 0.60) &      # reasonable ceiling
-            (dist_to_obj > 0.20)                # exclude the target object itself
+            (dist_to_obj > 0.10)                # exclude the target object itself
         )
         pts_base = pts_base[env_mask]
         if len(pts_base) < 5:
@@ -392,6 +416,7 @@ class MasterControl:
         self._filtered_cloud_pub.publish(cloud_msg)
         rospy.sleep(0.5)  # give OctomapUpdater time to process the latched cloud
         rospy.loginfo(f"[SCENE] Published {len(pts_base)} pts to OctoMap sensor topic.")
+        return refined_pose, refined_diameter
 
     def execute_pick(self, base_pose: PoseStamped, target_class: str = "", obj_diameter: float = 0.0) -> bool:
         p = base_pose.pose.position
@@ -454,63 +479,41 @@ class MasterControl:
         m.color.a, m.color.r = 1.0, 1.0
         self.marker_pub.publish(m)
 
-        self._update_scene_collisions(base_pose)
+        fresh_pose, fresh_diameter = self._update_scene_collisions(base_pose, target_class)
 
-        # ── Camera re-detection ───────────────────────────────────────────────
-        # The arm just retreated for the depth scan, so the camera still has an
-        # unobstructed view.  A fresh YOLO + depth reading here corrects any TF
-        # drift before both Stage 1 and Stage 2 planning.
-        if target_class:
-            rospy.loginfo("[PICK] Re-detecting after scene scan for pose refinement...")
-            try:
-                img = rospy.wait_for_message("/camera/color/image_raw", Image, timeout=3.0)
-                yolo_srv = rospy.ServiceProxy('/yolo/detect', DetectObjects)
-                req = DetectObjectsRequest()
-                req.image = img
-                resp = yolo_srv(req)
-                u_new = v_new = bbox_w_new = None
-                for det in resp.detections:
-                    if det.class_name == target_class:
-                        u_new, v_new, bbox_w_new = int(det.center_u), int(det.center_v), int(det.width)
-                        break
-                if u_new is not None:
-                    fresh_pose, fresh_diameter = self.get_3d_coordinates(u_new, v_new, bbox_w_new)
-                    if fresh_pose is not None:
-                        fp = fresh_pose.pose.position
-                        rospy.loginfo(
-                            f"[PICK] Pose refined: ({p.x:.3f},{p.y:.3f},{p.z:.3f}) → "
-                            f"({fp.x:.3f},{fp.y:.3f},{fp.z:.3f})"
-                        )
-                        if fresh_diameter > 0:
-                            obj_diameter = fresh_diameter
-                        horiz_dist_new = math.hypot(fp.x, fp.y)
-                        if horiz_dist_new >= 0.15:
-                            dx_new = fp.x / horiz_dist_new
-                            dy_new = fp.y / horiz_dist_new
-                            grasp_pose.pose.position.x = fp.x - dx_new * FINGER_REACH
-                            grasp_pose.pose.position.y = fp.y - dy_new * FINGER_REACH
-                            grasp_pose.pose.position.z = fp.z
-                            pre_grasp.pose.position.x = fp.x - dx_new * (FINGER_REACH + PRE_OFFSET)
-                            pre_grasp.pose.position.y = fp.y - dy_new * (FINGER_REACH + PRE_OFFSET)
-                            pre_grasp.pose.position.z = fp.z
-                            rospy.loginfo(f"[PICK] pre_grasp (refined): x={pre_grasp.pose.position.x:.3f} y={pre_grasp.pose.position.y:.3f} z={pre_grasp.pose.position.z:.3f}")
-                            rospy.loginfo(f"[PICK] grasp_pose (refined): x={grasp_pose.pose.position.x:.3f} y={grasp_pose.pose.position.y:.3f} z={grasp_pose.pose.position.z:.3f}")
-                        else:
-                            rospy.logwarn("[PICK] Refined pose too close to arm base — keeping original.")
-                    else:
-                        rospy.logwarn("[PICK] Depth re-projection failed — keeping original poses.")
-                else:
-                    rospy.logwarn(f"[PICK] Re-detection: '{target_class}' not visible — keeping original.")
-            except Exception as e:
-                rospy.logwarn(f"[PICK] Camera re-detection failed ({e}) — keeping original.")
+        # Refine grasp/pre-grasp poses with the re-detected position returned
+        # from the scene update (re-detection happened right after the retreat
+        # while the camera view was still settled).
+        if fresh_pose is not base_pose:
+            fp = fresh_pose.pose.position
+            rospy.loginfo(
+                f"[PICK] Pose refined: ({p.x:.3f},{p.y:.3f},{p.z:.3f}) → "
+                f"({fp.x:.3f},{fp.y:.3f},{fp.z:.3f})"
+            )
+            if fresh_diameter > 0:
+                obj_diameter = fresh_diameter
+            horiz_dist_new = math.hypot(fp.x, fp.y)
+            if horiz_dist_new >= 0.15:
+                dx_new = fp.x / horiz_dist_new
+                dy_new = fp.y / horiz_dist_new
+                grasp_pose.pose.position.x = fp.x - dx_new * FINGER_REACH
+                grasp_pose.pose.position.y = fp.y - dy_new * FINGER_REACH
+                grasp_pose.pose.position.z = fp.z
+                pre_grasp.pose.position.x = fp.x - dx_new * (FINGER_REACH + PRE_OFFSET)
+                pre_grasp.pose.position.y = fp.y - dy_new * (FINGER_REACH + PRE_OFFSET)
+                pre_grasp.pose.position.z = fp.z
+                rospy.loginfo(f"[PICK] pre_grasp (refined): x={pre_grasp.pose.position.x:.3f} y={pre_grasp.pose.position.y:.3f} z={pre_grasp.pose.position.z:.3f}")
+                rospy.loginfo(f"[PICK] grasp_pose (refined): x={grasp_pose.pose.position.x:.3f} y={grasp_pose.pose.position.y:.3f} z={grasp_pose.pose.position.z:.3f}")
+            else:
+                rospy.logwarn("[PICK] Refined pose too close to arm base — keeping original.")
 
-        # Clear the OctoMap before the arm moves so voxels near the pre_grasp
-        # position don't block planning.  The static floor box still guards below.
-        try:
-            self._clear_octomap()
-        except rospy.ServiceException as e:
-            rospy.logwarn(f"[PICK] clear_octomap failed: {e}")
-        rospy.sleep(0.15)
+        # # Clear the OctoMap before the arm moves so voxels near the pre_grasp
+        # # position don't block planning.  The static floor box still guards below.
+        # try:
+        #     self._clear_octomap()
+        # except rospy.ServiceException as e:
+        #     rospy.logwarn(f"[PICK] clear_octomap failed: {e}")
+        # rospy.sleep(0.15)
 
         rospy.loginfo("[PICK] Opening gripper...")
         self.gripper_group.set_joint_value_target([0.0, 0.0])
@@ -603,7 +606,7 @@ class MasterControl:
         GRIP_MARGIN     = 0.004   # extra closure for a firm hold
         if obj_diameter > 0:
             gripper_target = (GRIPPER_MAX_GAP - obj_diameter) / 2.0 + GRIP_MARGIN
-            gripper_target = max(0.005, min(0.025, gripper_target))
+            gripper_target = max(0.003, min(0.025, gripper_target))
         else:
             gripper_target = 0.016  # fallback when no vision estimate is available
         rospy.loginfo(f"[PICK] Closing gripper to {gripper_target*1000:.1f} mm "
@@ -616,6 +619,7 @@ class MasterControl:
         except rospy.ServiceException as e:
             rospy.logwarn(f"[PICK] clear_octomap failed: {e}")
         rospy.sleep(0.15)
+        self._go_ready()
         return True
 
     def execute_place(self, map_x: float, map_y: float,

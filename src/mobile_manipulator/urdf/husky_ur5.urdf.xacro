@@ -31,6 +31,26 @@
     <origin xyz="0.1 0.0 0.0" rpy="0.0 0.0 0.0" />
   </joint>
 
+  <!-- Virtual ballast: simulates the Husky's rear battery bank.
+       The stock inertial_link iyy (1.74 kg⋅m²) is less than half the
+       theoretical value for the chassis dimensions, leaving the base on the
+       edge of tipping when the arm is extended.  30 kg placed 0.15 m behind
+       and 0.08 m below base_link shifts the CoM rearward and raises iyy
+       enough to keep the robot stable through the full grasp motion. -->
+  <link name="base_ballast">
+    <inertial>
+      <mass value="30.0" />
+      <origin xyz="-0.15 0.0 -0.08" rpy="0 0 0" />
+      <inertia ixx="1.5" ixy="0" ixz="0"
+               iyy="3.0" iyz="0" izz="3.0" />
+    </inertial>
+  </link>
+  <joint name="base_ballast_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="base_ballast" />
+    <origin xyz="0 0 0" rpy="0 0 0" />
+  </joint>
+
   <!-- Gripper -->
 
   <xacro:include filename="$(find robotiq_description)/urdf/robotiq_hande_gripper.urdf.xacro" />
@@ -39,8 +59,27 @@
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </xacro:robotiq_hande_gripper>
 
+  <!-- Grasp fix: creates a virtual joint between gripper and object when both
+       fingers make opposing contact, preventing the object from flying away. -->
+  <gazebo>
+    <plugin filename="libgazebo_grasp_fix.so" name="gazebo_grasp_fix">
+      <arm>
+        <arm_name>hande_gripper</arm_name>
+        <palm_link>ur5_wrist_3_link</palm_link>
+        <gripper_link>hande_left_finger</gripper_link>
+        <gripper_link>hande_right_finger</gripper_link>
+      </arm>
+      <forces_angle_tolerance>100</forces_angle_tolerance>
+      <update_rate>90</update_rate>
+      <grip_count_threshold>1</grip_count_threshold>
+      <max_grip_count>8</max_grip_count>
+      <release_tolerance>0.005</release_tolerance>
+      <disable_collisions_on_attach>false</disable_collisions_on_attach>
+      <contact_topic>__default_topic__</contact_topic>
+    </plugin>
+  </gazebo>
 
-<link name="realsense_camera_link">
+  <link name="realsense_camera_link">
     <visual>
       <geometry>
         <box size="0.02 0.05 0.02"/>
