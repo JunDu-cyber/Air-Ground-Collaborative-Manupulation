@@ -14,7 +14,10 @@ import numpy as np
 from tf.transformations import quaternion_from_euler, quaternion_matrix, quaternion_multiply
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import PoseStamped
-from sensor_msgs.msg import Image, CameraInfo
+from sensor_msgs.msg import Image, CameraInfo, PointCloud2
+import sensor_msgs.point_cloud2 as pc2
+from std_msgs.msg import Header
+import std_srvs.srv
 from cv_bridge import CvBridge
 
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
@@ -38,7 +41,10 @@ class MasterControl:
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
 
         self.bridge = CvBridge()
-        self._scene_box_names: set = set()   # tracks dynamically added collision boxes
+        self._filtered_cloud_pub = rospy.Publisher(
+            "/scene_filtered_cloud", PointCloud2, queue_size=1, latch=True)
+        self._clear_octomap = rospy.ServiceProxy(
+            "/move_group/clear_octomap", std_srvs.srv.Empty)
         rospy.sleep(1.0)  # let the planning scene interface connect
 
         # Floor plane keeps RRTConnect from routing the arm below the robot base.
@@ -373,34 +379,19 @@ class MasterControl:
             rospy.logwarn("[SCENE] No environment points after self-filter.")
             return
 
-        # --- 6. Replace old boxes with height-banded new ones ----------------------
-        for name in list(self._scene_box_names):
-            self.scene.remove_world_object(name)
-        self._scene_box_names.clear()
-        rospy.sleep(0.15)
+        # --- 6. Clear old OctoMap and publish filtered cloud ----------------------
+        try:
+            self._clear_octomap()
+        except rospy.ServiceException as e:
+            rospy.logwarn(f"[SCENE] clear_octomap failed: {e}")
 
-        z_vals = pts_base[:, 2]
-        band = 0.08
-        n_boxes = 0
-        for z_lo in np.arange(float(z_vals.min()), float(z_vals.max()), band):
-            z_hi = z_lo + band
-            sel = pts_base[(z_vals >= z_lo) & (z_vals < z_hi)]
-            if len(sel) < 5:
-                continue
-            name = f"scene_{n_boxes}"
-            box_pose = PoseStamped()
-            box_pose.header.frame_id = "ur5_base_link"
-            box_pose.pose.position.x = float((sel[:, 0].min() + sel[:, 0].max()) / 2)
-            box_pose.pose.position.y = float((sel[:, 1].min() + sel[:, 1].max()) / 2)
-            box_pose.pose.position.z = float((z_lo + z_hi) / 2)
-            box_pose.pose.orientation.w = 1.0
-            sx = max(float(sel[:, 0].max() - sel[:, 0].min()) + 0.05, 0.05)
-            sy = max(float(sel[:, 1].max() - sel[:, 1].min()) + 0.05, 0.05)
-            self.scene.add_box(name, box_pose, size=(sx, sy, band))
-            self._scene_box_names.add(name)
-            n_boxes += 1
-
-        rospy.loginfo(f"[SCENE] Added {n_boxes} environment collision boxes.")
+        cloud_msg = pc2.create_cloud_xyz32(
+            Header(frame_id="ur5_base_link", stamp=rospy.Time.now()),
+            pts_base.tolist()
+        )
+        self._filtered_cloud_pub.publish(cloud_msg)
+        rospy.sleep(0.5)  # give OctomapUpdater time to process the latched cloud
+        rospy.loginfo(f"[SCENE] Published {len(pts_base)} pts to OctoMap sensor topic.")
 
     def execute_pick(self, base_pose: PoseStamped, target_class: str = "", obj_diameter: float = 0.0) -> bool:
         p = base_pose.pose.position
@@ -513,13 +504,12 @@ class MasterControl:
             except Exception as e:
                 rospy.logwarn(f"[PICK] Camera re-detection failed ({e}) — keeping original.")
 
-        # Clear scene boxes now, before the arm moves.  The coarse depth-derived
-        # slabs are imprecise enough to overlap the pre_grasp position, which puts
-        # the arm in collision at the Stage-1 goal and causes execute() to block.
-        # The static floor box is sufficient to keep RRTConnect above the table.
-        for name in list(self._scene_box_names):
-            self.scene.remove_world_object(name)
-        self._scene_box_names.clear()
+        # Clear the OctoMap before the arm moves so voxels near the pre_grasp
+        # position don't block planning.  The static floor box still guards below.
+        try:
+            self._clear_octomap()
+        except rospy.ServiceException as e:
+            rospy.logwarn(f"[PICK] clear_octomap failed: {e}")
         rospy.sleep(0.15)
 
         rospy.loginfo("[PICK] Opening gripper...")
@@ -607,13 +597,13 @@ class MasterControl:
 
         # Compute gripper target from detected object diameter.
         # Hand-E: joint 0 = fully open, joint 0.025 = fully closed.
-        # Assumes max gap ≈ 0.050 m (50 mm) when both joints are at 0.
+        # max gap ≈ 0.050 m (50 mm) when both joints are at 0.
         # joint = (max_gap - diameter) / 2  →  each finger closes to one radius.
         GRIPPER_MAX_GAP = 0.050   # metres; tune if the sim gripper differs
         GRIP_MARGIN     = 0.004   # extra closure for a firm hold
         if obj_diameter > 0:
             gripper_target = (GRIPPER_MAX_GAP - obj_diameter) / 2.0 + GRIP_MARGIN
-            gripper_target = max(0.003, min(0.025, gripper_target))
+            gripper_target = max(0.005, min(0.025, gripper_target))
         else:
             gripper_target = 0.016  # fallback when no vision estimate is available
         rospy.loginfo(f"[PICK] Closing gripper to {gripper_target*1000:.1f} mm "
@@ -621,6 +611,11 @@ class MasterControl:
         self.gripper_group.set_joint_value_target([gripper_target, gripper_target])
         self.gripper_group.go(wait=True)
         rospy.sleep(0.5)
+        try:
+            self._clear_octomap()
+        except rospy.ServiceException as e:
+            rospy.logwarn(f"[PICK] clear_octomap failed: {e}")
+        rospy.sleep(0.15)
         return True
 
     def execute_place(self, map_x: float, map_y: float,
