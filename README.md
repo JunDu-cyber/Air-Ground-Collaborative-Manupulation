@@ -1,7 +1,7 @@
 # Mobile Manipulator — ROS Noetic Workspace
 
 A mobile manipulation system combining a Clearpath Husky UGV with a Universal Robots UR5 arm and Robotiq Hand-E gripper. The robot navigates autonomously, detects objects with GPU-accelerated YOLO, and accepts natural language commands via an LLM-powered agent.
-
+![grasp](grasp.gif)
 ---
 
 ## System Overview
@@ -19,7 +19,7 @@ Natural Language Command
   └── Perception  → TensorRT YOLOv8 + PointCloud2
 ```
 
-### Technology Stack
+### :star:Features
 
 | Layer | Technology |
 |---|---|
@@ -27,7 +27,7 @@ Natural Language Command
 | **Manipulator** | Universal Robots UR5 — 6-DOF, 850 mm reach |
 | **Gripper** | Robotiq Hand-E — parallel-jaw, force-sensitive |
 | **State Estimation** | robot_localization — EKF fusing wheel odometry and IMU |
-| **Localization** | AMCL (particle filter) or SLAM Toolbox (pose-graph SLAM) |
+| **Localization** | SLAM Toolbox (pose-graph SLAM) |
 | **Navigation** | ROS Navigation Stack — navfn global planner + DWA local planner |
 | **Motion Planning** | MoveIt + OctoMap + OMPL (RRTConnect) + KDL IK solver |
 | **Object Detection** | YOLOv8m — ONNX model compiled to TensorRT for GPU inference |
@@ -38,19 +38,7 @@ Natural Language Command
 
 ---
 
-## Packages
-
-| Package | Description |
-|---|---|
-| `mobile_manipulator` | Core package — navigation, manipulation, vision, LLM agent, web UI |
-| `husky_ur5_moveit_config` | MoveIt motion planning config for the Husky+UR5 |
-| `robotiq` | Robotiq Hand-E gripper driver and description |
-| `gazebo-pkgs` | Gazebo grasp/state/world simulation plugins |
-| `aws-robomaker-small-house-world` | Realistic house environment for Gazebo |
-
----
-
-## Prerequisites
+## :mortar_board:Prerequisites
 
 - C++17 Compiler
 - ROS Noetic (Ubuntu 20.04)
@@ -67,7 +55,7 @@ pip install openai flask pydantic
 
 ---
 
-## 🚀Quick Start
+## :rocket:Quick Start
 
 1. Install ROS dependencies
 ```bash
@@ -94,7 +82,21 @@ chmod +x bringup.sh
 # Open http://localhost:5000
 ```
 Once running, open http://localhost:5000 in your browser to access the Web UI.
+
 ---
+
+## :package:Packages
+
+| Package | Description |
+|---|---|
+| `mobile_manipulator` | Core package — navigation, manipulation, vision, LLM agent, web UI |
+| `husky_ur5_moveit_config` | MoveIt motion planning config for the Husky+UR5 |
+| `robotiq` | Robotiq Hand-E gripper driver and description |
+| `gazebo-pkgs` | Gazebo grasp/state/world simulation plugins |
+| `aws-robomaker-small-house-world` | Realistic house environment for Gazebo |
+
+---
+
 
 ## Architecture
 
@@ -199,7 +201,7 @@ The agent uses the OpenAI Python SDK and works with any compatible API:
 
 ---
 
-## Custom ROS Messages
+## :envelope:Custom ROS Messages
 
 **`msg/Detection.msg`** — Single object detection:
 ```
@@ -229,6 +231,5 @@ float32 inference_time_ms
 - [ROS Navigation Stack](https://wiki.ros.org/navigation) — `move_base`, AMCL, navfn, and DWA planner
 - [SLAM Toolbox](https://github.com/SteveMacenski/slam_toolbox) — Pose-graph SLAM and localization
 - [Ultralytics YOLOv8](https://github.com/ultralytics/ultralytics) — Object detection model
-- [NVIDIA TensorRT](https://developer.nvidia.com/tensorrt) — GPU-accelerated inference engine
 - [AWS RoboMaker Small House World](https://github.com/aws-robotics/aws-robomaker-small-house-world) — Gazebo simulation environment
 - [gazebo-pkgs](https://github.com/JenniferBuehler/gazebo-pkgs) — Gazebo grasp and state simulation plugins

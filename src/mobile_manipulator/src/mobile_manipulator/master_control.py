@@ -43,8 +43,21 @@ class MasterControl:
         self.bridge = CvBridge()
         self._filtered_cloud_pub = rospy.Publisher(
             "/scene_filtered_cloud", PointCloud2, queue_size=1, latch=True)
-        self._clear_octomap = rospy.ServiceProxy(
-            "/move_group/clear_octomap", std_srvs.srv.Empty)
+
+        # MoveIt advertises clear_octomap on whichever node handle the
+        # ClearOctomapService capability was initialised with. Default is
+        # /clear_octomap (root); some configs put it under /move_group/.
+        self._clear_octomap_srv_name = None
+        for name in ("/clear_octomap", "/move_group/clear_octomap"):
+            try:
+                rospy.wait_for_service(name, timeout=2.0)
+                self._clear_octomap_srv_name = name
+                rospy.loginfo(f"[INIT] clear_octomap service: {name}")
+                break
+            except rospy.ROSException:
+                continue
+        if self._clear_octomap_srv_name is None:
+            rospy.logwarn("[INIT] clear_octomap service not found; OctoMap will not be cleared.")
         rospy.sleep(1.0)  # let the planning scene interface connect
 
         # Floor plane keeps RRTConnect from routing the arm below the robot base.
@@ -59,6 +72,22 @@ class MasterControl:
         self.marker_pub = rospy.Publisher(
             "/debug_pregrasp_marker", Marker, queue_size=1
         )
+
+    def _try_clear_octomap(self, label: str = "OCTOMAP") -> bool:
+        """Best-effort OctoMap clear. Re-resolves the service each call so a
+        stale persistent proxy can't silently drop the request."""
+        if self._clear_octomap_srv_name is None:
+            rospy.logwarn(f"[{label}] clear_octomap unavailable — skipping clear.")
+            return False
+        try:
+            rospy.wait_for_service(self._clear_octomap_srv_name, timeout=1.0)
+            srv = rospy.ServiceProxy(self._clear_octomap_srv_name, std_srvs.srv.Empty)
+            srv()
+            rospy.loginfo(f"[{label}] OctoMap cleared.")
+            return True
+        except (rospy.ROSException, rospy.ServiceException) as e:
+            rospy.logwarn(f"[{label}] clear_octomap failed: {e}")
+            return False
 
     def move_base_to(self, target_x, target_y, target_yaw_degrees):
         rospy.loginfo(f"Navigating base to X:{target_x}, Y:{target_y}, Yaw:{target_yaw_degrees}°...")
@@ -404,10 +433,7 @@ class MasterControl:
             return
 
         # --- 6. Clear old OctoMap and publish filtered cloud ----------------------
-        try:
-            self._clear_octomap()
-        except rospy.ServiceException as e:
-            rospy.logwarn(f"[SCENE] clear_octomap failed: {e}")
+        self._try_clear_octomap("SCENE")
 
         cloud_msg = pc2.create_cloud_xyz32(
             Header(frame_id="ur5_base_link", stamp=rospy.Time.now()),
@@ -614,50 +640,37 @@ class MasterControl:
         self.gripper_group.set_joint_value_target([gripper_target, gripper_target])
         self.gripper_group.go(wait=True)
         rospy.sleep(0.5)
-        try:
-            self._clear_octomap()
-        except rospy.ServiceException as e:
-            rospy.logwarn(f"[PICK] clear_octomap failed: {e}")
+        self._try_clear_octomap("PICK")
         rospy.sleep(0.15)
         self._go_ready()
         return True
 
-    def execute_place(self, map_x: float, map_y: float,
-                      surface_height: float = 0.75) -> bool:
-        """Release the held object above (map_x, map_y) in the map frame.
+    # Fixed drop joint configuration: arm extended in front of the robot.
+    _PLACE_JOINTS = [0.0, -1.0, 1.0, 0.0, 1.57, 0.0]
 
-        surface_height: estimated Z of the target surface in the map frame
-        (0.75 m ≈ typical table; 0.0 for floor-level trash cans, etc.).
-        The arm descends to surface_height + 0.15 m, opens the gripper, then retreats.
+    def execute_place(self, map_x: float = 0.0, map_y: float = 0.0,
+                      surface_height: float = 0.0) -> bool:
+        """Release the held object at a fixed pose in front of the robot.
+
+        The map_x, map_y, and surface_height arguments are ignored — the drop
+        configuration is a hard-coded joint-space target so the robot always
+        places objects directly in front of itself.
         """
-        target = PoseStamped()
-        target.header.frame_id = "map"
-        target.header.stamp = rospy.Time(0)
-        target.pose.position.x = map_x
-        target.pose.position.y = map_y
-        target.pose.position.z = surface_height + 0.15
-        target.pose.orientation.w = 1.0
+        rospy.loginfo(f"[PLACE] Moving arm to fixed place joints: {self._PLACE_JOINTS}")
+        self._try_clear_octomap("PLACE")
+        rospy.sleep(0.3)  # let the planning scene update propagate
 
-        try:
-            place_pose = self.tf_buffer.transform(target, "ur5_base_link", rospy.Duration(3.0))
-        except Exception as e:
-            rospy.logerr(f"[PLACE] TF failed: {e}")
+        self.arm_group.set_planning_time(15.0)
+        self.arm_group.set_num_planning_attempts(10)
+        self.arm_group.set_goal_joint_tolerance(0.01)
+        self.arm_group.set_joint_value_target(self._PLACE_JOINTS)
+        if not self.arm_group.go(wait=True):
+            rospy.logerr("[PLACE] Could not reach place joint configuration.")
+            self.arm_group.stop()
+            self.arm_group.clear_pose_targets()
             return False
-
-        pp = place_pose.pose.position
-        rospy.loginfo(f"[PLACE] Target in ur5_base_link: x={pp.x:.3f} y={pp.y:.3f} z={pp.z:.3f}")
-
-        # Downward orientation for vertical placement
-        q = quaternion_from_euler(3.14159, 0, 0)
-        place_pose.pose.orientation.x = q[0]
-        place_pose.pose.orientation.y = q[1]
-        place_pose.pose.orientation.z = q[2]
-        place_pose.pose.orientation.w = q[3]
-
-        rospy.loginfo("[PLACE] Planning to place pose...")
-        if not self._plan_and_go(place_pose):
-            rospy.logerr("[PLACE] Could not reach place pose.")
-            return False
+        self.arm_group.stop()
+        self.arm_group.clear_pose_targets()
 
         rospy.loginfo("[PLACE] Releasing object...")
         self.gripper_group.set_joint_value_target([0.0, 0.0])

@@ -86,9 +86,9 @@ regions:
   - - -1.3399999999999999
     - -0.71
   room: living_room
-  x: -0.75
-  y: -1.516
-  yaw: 3.14
+  x: -1.85
+  y: -3.0
+  yaw: 1.57
   objects:
   - remote
 - name: tv_living_room
