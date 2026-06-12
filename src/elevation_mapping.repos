@@ -1,0 +1,27 @@
+# ETH/ANYbotics source dependencies for the UAV->UGV elevation-mapping stack.
+# These are upstream packages (not vendored, to keep this repo lean) and are
+# gitignored. Reproduce them with vcstool from the workspace root:
+#
+#   sudo apt install python3-vcstool        # one-time
+#   vcs import src < src/elevation_mapping.repos
+#   catkin build elevation_mapping
+#
+# grid_map is provided by apt (ros-noetic-grid-map*); only these four are built
+# from source. Commits are pinned to the versions verified on ROS Noetic.
+repositories:
+  message_logger:
+    type: git
+    url: https://github.com/ANYbotics/message_logger.git
+    version: bd99bd663bc6029b454919ce6d628b25ce2468e7
+  kindr:
+    type: git
+    url: https://github.com/ANYbotics/kindr.git
+    version: 32800890d546e306f73c3ee3091fb6903452f925
+  kindr_ros:
+    type: git
+    url: https://github.com/ANYbotics/kindr_ros.git
+    version: 8d60e3f8df5ddd8bcc58db3072edbb651f286b32
+  elevation_mapping:
+    type: git
+    url: https://github.com/ANYbotics/elevation_mapping.git
+    version: f4b082c64a3e660980da53b33c7936a8f2a2ea22

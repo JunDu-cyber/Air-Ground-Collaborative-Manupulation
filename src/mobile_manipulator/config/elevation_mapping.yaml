@@ -1,0 +1,71 @@
+# elevation_mapping (ANYbotics/ETH) configuration for the air-ground system.
+#
+# A robot-centric elevation grid_map is built from the UAV's aerial point cloud
+# (/uav/points, down-sampled to /uav/points_downsampled). The map is anchored in
+# the GPS-anchored "map" frame and tracks the Husky's base_link, so it scrolls
+# with the robot while accumulating the terrain the UAV has seen.
+#
+# Pose source: TF only. robot_pose_with_covariance_topic is intentionally left
+# empty so the node takes the robot pose from the map->odom->base_link TF chain
+# published by the dual-EKF (robot_localization). This avoids needing to convert
+# the EKF's nav_msgs/Odometry into a geometry_msgs/PoseWithCovarianceStamped.
+
+# --- Frames ---
+map_frame_id:                     "map"          # GPS-anchored global frame (== Gazebo world origin)
+robot_base_frame_id:              "base_link"
+track_point_frame_id:             "base_link"    # map stays centred on the robot
+track_point_x:                    0.0
+track_point_y:                    0.0
+track_point_z:                    0.0
+robot_pose_with_covariance_topic: ""             # empty => pose from TF only
+robot_pose_cache_size:            200
+
+# --- Post-processing output ---
+# The postprocessor (see elevation_postprocessor.yaml) runs the inpaint/normals/
+# slope pipeline on a copy of the fused map and publishes the result (with the
+# extra layers) to its OWN topic. Give it a distinct name so it does not collide
+# with the built-in raw map (whose default it otherwise reuses). The postprocessor
+# is lazy: it only runs while something subscribes to this topic.
+output_topic: "elevation_map_postprocessed"
+postprocessor_pipeline_name: "postprocessor_pipeline"
+
+# --- Input: UAV aerial point cloud ---
+input_sources:
+  uav:
+    type: pointcloud
+    topic: /uav/points_downsampled
+    queue_size: 1
+    publish_on_update: true
+    sensor_processor:
+      type: perfect          # noise-free simulated depth camera (ground truth)
+
+# --- Update / timing ---
+min_update_rate:                  1.0
+time_tolerance:                   1.0
+time_offset_for_point_cloud:      0.0
+fused_map_publishing_rate:        1.0
+scanning_duration:                1.0
+
+# Visibility cleanup ray-traces from the sensor to erase cells that "should" be
+# visible; it assumes an onboard sensor and misbehaves with a fixed aerial
+# vantage, so it is disabled here.
+enable_visibility_cleanup:        false
+visibility_cleanup_rate:          1.0
+
+# --- Map geometry (robot-centric) ---
+length_in_x:                      50.0
+length_in_y:                      50.0
+position_x:                       0.0
+position_y:                       0.0
+resolution:                       0.25
+surface_normal_positive_axis:     z
+
+# --- Fusion noise model ---
+min_variance:                     0.0001
+max_variance:                     0.05
+mahalanobis_distance_threshold:   2.5
+multi_height_noise:               0.001
+
+# --- Init submap (start with an empty map) ---
+initialize_elevation_map:         false
+initialization_method:            0

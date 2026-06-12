@@ -1,0 +1,27 @@
+# grid_map_visualization: turns the fused elevation grid_map into RViz-friendly
+# topics. Publishes the terrain as a colored point cloud plus the map outline.
+grid_map_visualizations:
+
+  # Terrain surface as a point cloud at the in-painted elevation height.
+  # (Subscribes to the postprocessed map, which carries elevation_inpainted.)
+  - name: elevation_cloud
+    type: point_cloud
+    params:
+      layer: elevation_inpainted
+
+  # Surface-normal vectors, handy for eyeballing slope direction in RViz.
+  - name: normals
+    type: vectors
+    params:
+      layer_prefix: normal_vectors_
+      position_layer: elevation_inpainted
+      scale: 0.3
+      line_width: 0.005
+      color: 15600153
+
+  # The robot-centric map footprint outline.
+  - name: map_region
+    type: map_region
+    params:
+      color: 16777215
+      line_width: 0.01

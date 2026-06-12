@@ -1,0 +1,68 @@
+<launch>
+  <!-- ====================================================================
+       UAV-fed terrain elevation mapping (ANYbotics/ETH elevation_mapping).
+
+       Assumes the outdoor sim + robot + dual-EKF are already running
+       (spawn_outdoor_city.launch). Spawns the simulated UAV mapping camera,
+       wires its aerial point cloud through a voxel down-sampler into
+       elevation_mapping, and visualizes the result.
+
+       Use outdoor_mapping.launch to bring up everything together.
+       ==================================================================== -->
+
+  <!-- UAV altitude / position. map == Gazebo world origin (GPS datum is taken
+       at the robot spawn), so these are both the world and the map-frame pose. -->
+  <arg name="uav_x" default="0.0"/>
+  <arg name="uav_y" default="0.0"/>
+  <arg name="uav_z" default="130.0"/>
+  <arg name="rviz"  default="true"/>
+
+  <!-- 1. Spawn the static downward depth-camera "UAV". Pitched +90 deg so the
+          camera's +X optical axis points straight down at the terrain. -->
+  <node name="spawn_uav_mapper" pkg="gazebo_ros" type="spawn_model"
+        args="-sdf -file $(find mobile_manipulator)/models/uav_mapper/model.sdf
+              -model uav_mapper
+              -x $(arg uav_x) -y $(arg uav_y) -z $(arg uav_z)
+              -R 0 -P 1.5708 -Y 0"
+        output="screen"/>
+
+  <!-- 2. Static TFs mirroring the UAV's physical pose so the /uav/points cloud
+          resolves into the map frame.
+          map -> uav_camera_link : translation + pitch 90 deg (matches spawn).
+          uav_camera_link -> optical : standard camera optical rotation. -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_uav_camera"
+        args="$(arg uav_x) $(arg uav_y) $(arg uav_z) 0 1.5708 0 map uav_camera_link"/>
+  <node pkg="tf2_ros" type="static_transform_publisher" name="uav_camera_to_optical"
+        args="0 0 0 -1.5708 0 -1.5708 uav_camera_link uav_camera_optical_frame"/>
+
+  <!-- 3. Down-sample the dense 800x800 aerial cloud to ~0.2 m before fusion. -->
+  <node pkg="nodelet" type="nodelet" name="uav_pcl_manager" args="manager" output="screen"/>
+  <node pkg="nodelet" type="nodelet" name="uav_voxel_grid"
+        args="load pcl/VoxelGrid uav_pcl_manager" output="screen">
+    <remap from="~input"  to="/uav/points"/>
+    <remap from="~output" to="/uav/points_downsampled"/>
+    <rosparam>
+      leaf_size: 0.2
+      filter_field_name: z
+      filter_limit_min: 0.0
+      filter_limit_max: 250.0
+      filter_limit_negative: False
+    </rosparam>
+  </node>
+
+  <!-- 4. Elevation mapping node. -->
+  <node pkg="elevation_mapping" type="elevation_mapping" name="elevation_mapping" output="screen">
+    <rosparam command="load" file="$(find mobile_manipulator)/config/elevation_mapping.yaml"/>
+    <rosparam command="load" file="$(find mobile_manipulator)/config/elevation_postprocessor.yaml"/>
+  </node>
+
+  <!-- 5. Visualization: grid_map -> colored point cloud + map outline. -->
+  <node pkg="grid_map_visualization" type="grid_map_visualization"
+        name="elevation_map_visualization" output="screen">
+    <param name="grid_map_topic" value="/elevation_mapping/elevation_map_postprocessed"/>
+    <rosparam command="load" file="$(find mobile_manipulator)/config/elevation_visualization.yaml"/>
+  </node>
+
+  <node if="$(arg rviz)" name="elevation_rviz" pkg="rviz" type="rviz"
+        args="-d $(find mobile_manipulator)/rviz/elevation_mapping.rviz"/>
+</launch>

@@ -1,0 +1,27 @@
+<launch>
+  <!-- ====================================================================
+       Full air-ground terrain-mapping stack:
+         outdoor_city world + Husky/UR5 + dual-EKF GPS localization
+         + simulated UAV aerial camera + elevation_mapping.
+
+       This is the one-shot entry point for Week 2 (UAV -> elevation map).
+       ==================================================================== -->
+  <arg name="rviz"  default="true"/>
+  <arg name="gui"   default="true"/>
+  <arg name="uav_x" default="0.0"/>
+  <arg name="uav_y" default="0.0"/>
+  <arg name="uav_z" default="130.0"/>
+
+  <!-- World + robot + localization. -->
+  <include file="$(find mobile_manipulator)/launch/spawn_outdoor_city.launch">
+    <arg name="gui" value="$(arg gui)"/>
+  </include>
+
+  <!-- UAV camera + elevation mapping. -->
+  <include file="$(find mobile_manipulator)/launch/elevation_mapping.launch">
+    <arg name="rviz"  value="$(arg rviz)"/>
+    <arg name="uav_x" value="$(arg uav_x)"/>
+    <arg name="uav_y" value="$(arg uav_y)"/>
+    <arg name="uav_z" value="$(arg uav_z)"/>
+  </include>
+</launch>

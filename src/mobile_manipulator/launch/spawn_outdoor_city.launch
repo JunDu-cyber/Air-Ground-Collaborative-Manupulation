@@ -1,5 +1,6 @@
 <launch>
   <!-- Outdoor City World - houses, gas station, lamp posts, terrain -->
+  <arg name="gui" default="true"/>
   <env name="HUSKY_LMS1XX_ENABLED" value="1"/>
 
   <!-- Model paths: collection + local Gazebo models + custom -->
@@ -15,7 +16,7 @@
          value="$(find mobile_manipulator)/worlds/outdoor_city.world"/>
     <arg name="paused" value="false"/>
     <arg name="use_sim_time" value="true"/>
-    <arg name="gui" value="true"/>
+    <arg name="gui" value="$(arg gui)"/>
   </include>
 
   <!-- Robot description -->

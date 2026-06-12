@@ -30,6 +30,7 @@ Natural Language Command
 | **Gripper** | Robotiq **2F-140** — parallel-jaw, 140 mm stroke (for larger outdoor objects) |
 | **State Estimation** | robot_localization — local EKF fusing wheel odometry + IMU |
 | **Outdoor Localization** | Dual-EKF + `navsat_transform` — GPS-fused `map→odom` for outdoor navigation |
+| **Terrain Mapping** | ANYbotics `elevation_mapping` + ETH `grid_map` — UAV aerial point cloud → robot-centric elevation + slope grid map |
 | **Indoor Localization** | SLAM Toolbox (pose-graph SLAM) |
 | **Navigation** | ROS Navigation Stack — navfn global planner + DWA local planner |
 | **Motion Planning** | MoveIt + OctoMap + OMPL (RRTConnect) + KDL IK solver |
@@ -51,10 +52,13 @@ Natural Language Command
 - Python 3.8+
 - `catkin_tools` or `catkin_make`
 
-ROS packages (outdoor localization + simulation):
+ROS packages (outdoor localization, terrain mapping, simulation):
 ```bash
-sudo apt install ros-noetic-robot-localization ros-noetic-hector-gazebo-plugins
+sudo apt install ros-noetic-robot-localization ros-noetic-hector-gazebo-plugins \
+                 ros-noetic-grid-map python3-vcstool
 ```
+The terrain-mapping stack also builds four ETH/ANYbotics source packages
+(`elevation_mapping`, `kindr`, `kindr_ros`, `message_logger`) — see Quick Start.
 
 Python dependencies:
 ```bash
@@ -75,17 +79,27 @@ rosdep install --from-paths src --ignore-src -r -y
 ```bash
 pip install openai flask pydantic numpy pillow
 ```
-3. Build the workspace
+3. Import the ETH/ANYbotics terrain-mapping source deps (gitignored; not vendored)
+```bash
+cd ~/learning_ws
+vcs import src < src/elevation_mapping.repos
+```
+4. Build the workspace
 ```bash
 cd ~/learning_ws
 catkin build
 source devel/setup.bash
 ```
-4. Launch a scenario
+5. Launch a scenario
 
 **Outdoor air-ground world** (heightmap terrain + mountain forest, GPS-EKF localization):
 ```bash
 roslaunch mobile_manipulator spawn_outdoor_city.launch
+```
+
+**Outdoor world + UAV terrain mapping** (adds the aerial camera + elevation map):
+```bash
+roslaunch mobile_manipulator outdoor_mapping.launch
 ```
 
 **Indoor LLM-driven manipulation** (full agent + web UI):
@@ -117,8 +131,31 @@ Key in-file constants: `SINK` (raise/lower trees — negative lifts), `MAX_SLOPE
 - **`navsat_transform_node`** (`config/navsat_transform.yaml`): Husky's simulated GPS (`navsat/fix`, hector plugin) → map-frame `odometry/gps`
 - **Global EKF** (`config/ekf_global.yaml`): wheel odom + IMU + GPS → `map→odom`
 
+### Terrain mapping — UAV → elevation map (`launch/elevation_mapping.launch`)
+The partner UAV's role is stood in by a **simulated downward depth camera** hovering
+over the operational area (`models/uav_mapper/`, spawned at ~130 m), publishing a
+dense aerial `PointCloud2` on `/uav/points`. That cloud is down-sampled and fused by
+ANYbotics **`elevation_mapping`** into a robot-centric **`grid_map`** in the GPS-anchored
+`map` frame, tracking the Husky's `base_link`.
+
+- Config: `config/elevation_mapping.yaml` (map geometry, frames, `perfect` sensor model;
+  pose taken from the dual-EKF TF chain, so no extra pose topic is needed).
+- Post-processing (`config/elevation_postprocessor.yaml`): inpaint holes → surface
+  normals → a **`slope`** layer, published on `/elevation_mapping/elevation_map_postprocessed`
+  and visualized in RViz (height = elevation, colour = slope).
+- When the real UAV is ready, point `input_sources` at its cloud topic and drop the
+  simulated camera — nothing else changes.
+
+Bring it up together with the world via `outdoor_mapping.launch`. Verified against the
+Gazebo ground truth: ~0.2 m error on flat ground, ~0.5 m median on slopes (from 130 m).
+
+> **Note:** the world's `grass_plane` sits at z = 0, so the heightmap's sub-zero central
+> valley reads flat in the map; real relief shows on the foothills (heightmap > 0). To map
+> dramatic terrain near spawn, remove/lower the grass plane or operate over the hills.
+
 ### Roadmap
-UAV-guided terrain-aware navigation: ingest the partner UAV's 3D point cloud → elevation map → traversability costmap layer for `move_base`.
+Terrain-aware navigation: turn the elevation/slope grid map into a `grid_map_costmap_2d`
+traversability layer for `move_base`, then drive GPS-localized terrain-aware paths.
 
 ---
 
@@ -271,6 +308,8 @@ float32 inference_time_ms
 - [ROS Navigation Stack](https://wiki.ros.org/navigation) — `move_base`, AMCL, navfn, and DWA planner
 - [robot_localization](https://github.com/cra-ros-pkg/robot_localization) — EKF state estimation and `navsat_transform`
 - [hector_gazebo_plugins](https://wiki.ros.org/hector_gazebo_plugins) — simulated GPS/IMU for outdoor localization
+- [elevation_mapping](https://github.com/ANYbotics/elevation_mapping) (ANYbotics/ETH) — robot-centric terrain elevation mapping
+- [grid_map](https://github.com/ANYbotics/grid_map) (ETH) — universal grid map library for the elevation/slope layers
 - [SLAM Toolbox](https://github.com/SteveMacenski/slam_toolbox) — Pose-graph SLAM and localization
 - [Ultralytics YOLOv8](https://github.com/ultralytics/ultralytics) — Object detection model
 - [gazebo_models_worlds_collection](https://github.com/leonhartyao/gazebo_models_worlds_collection) — outdoor terrain, tree, and building models

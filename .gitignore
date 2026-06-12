@@ -26,6 +26,13 @@ __pycache__/
 #   git clone https://github.com/aws-robotics/aws-robomaker-small-house-world.git
 src/aws-robomaker-small-house-world/
 
+# ETH/ANYbotics elevation-mapping source deps (upstream; not vendored to stay
+# lean). Reproduce with: vcs import src < src/elevation_mapping.repos
+src/message_logger/
+src/kindr/
+src/kindr_ros/
+src/elevation_mapping/
+
 # Bulky upstream gazebo_models_worlds_collection: keep ONLY the models our
 # worlds actually use; ignore the other ~380 models and the upstream worlds.
 src/gazebo_models_worlds_collection/worlds/

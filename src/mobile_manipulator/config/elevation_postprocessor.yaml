@@ -1,0 +1,30 @@
+# Post-processing pipeline run by elevation_mapping on the fused map before it is
+# published. It fills sensor holes, estimates surface normals, and derives a
+# per-cell terrain SLOPE layer (radians) that the Week-3 traversability costmap
+# will threshold. Layers produced: elevation_inpainted, normal_vectors_*, slope.
+postprocessor_pipeline:
+  # Fill small holes (cells the UAV cloud missed) by inpainting the elevation.
+  - name: inpaint
+    type: gridMapCv/InpaintFilter
+    params:
+      input_layer: elevation
+      output_layer: elevation_inpainted
+      radius: 0.3
+
+  # Surface normals from the in-painted elevation. radius ~2 cells (resolution
+  # 0.25 m) smooths sensor noise while keeping real terrain relief.
+  - name: surface_normals
+    type: gridMapFilters/NormalVectorsFilter
+    params:
+      input_layer: elevation_inpainted
+      output_layers_prefix: normal_vectors_
+      radius: 0.5
+      normal_vector_positive_axis: z
+
+  # Terrain slope (rad) = angle between the surface normal and vertical.
+  # 0 = flat, pi/2 = vertical wall. Thresholded later for traversability.
+  - name: slope
+    type: gridMapFilters/MathExpressionFilter
+    params:
+      output_layer: slope
+      expression: acos(normal_vectors_z)

@@ -1,0 +1,73 @@
+<?xml version="1.0" ?>
+<!--
+  Simulated UAV terrain-mapping sensor.
+
+  Stands in for the partner team's autonomous UAV until its real point cloud is
+  wired in.  It is a STATIC model: a small body hovering high above the
+  operational area carrying a single downward-facing depth camera.  The camera
+  renders the Gazebo terrain (heightmap + trees) and publishes a dense aerial
+  PointCloud2 on /uav/points, which elevation_mapping fuses into a grid_map.
+
+  The model is spawned with a +90 deg pitch (see elevation_mapping.launch) so the
+  camera's optical axis (+X of the link in Gazebo) points straight down.  Two
+  static TFs (map->uav_camera_link, uav_camera_link->uav_camera_optical_frame)
+  mirror that pose so the cloud lands in the map frame.  Because the GPS datum is
+  taken at the robot's spawn, map == Gazebo world origin, so the UAV's world pose
+  equals its map pose.
+
+  To "fly" the UAV elsewhere, change the spawn -x/-y/-z in elevation_mapping.launch
+  and the matching map->uav_camera_link static TF; nothing here needs editing.
+-->
+<sdf version="1.6">
+  <model name="uav_mapper">
+    <static>true</static>
+
+    <link name="uav_camera_link">
+      <!-- Small visible body so the "UAV" is identifiable in the Gazebo GUI. -->
+      <visual name="body">
+        <geometry>
+          <box><size>1.0 1.0 0.25</size></box>
+        </geometry>
+        <material>
+          <ambient>0.1 0.1 0.1 1</ambient>
+          <diffuse>0.2 0.2 0.2 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- Downward depth camera. Gazebo cameras look along +X of the sensor
+           frame; the model is spawned pitched +90 deg so +X points to -Z (down).
+           horizontal_fov 0.9 rad at ~130 m altitude => ~125 m wide footprint. -->
+      <sensor name="uav_depth" type="depth">
+        <always_on>true</always_on>
+        <update_rate>5.0</update_rate>
+        <visualize>false</visualize>
+        <camera>
+          <horizontal_fov>0.9</horizontal_fov>
+          <image>
+            <width>800</width>
+            <height>800</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.1</near>
+            <far>250.0</far>
+          </clip>
+        </camera>
+        <plugin name="uav_camera_plugin" filename="libgazebo_ros_openni_kinect.so">
+          <baseline>0.2</baseline>
+          <alwaysOn>true</alwaysOn>
+          <updateRate>0.0</updateRate>
+          <cameraName>uav_camera</cameraName>
+          <imageTopicName>/uav/color/image_raw</imageTopicName>
+          <cameraInfoTopicName>/uav/color/camera_info</cameraInfoTopicName>
+          <depthImageTopicName>/uav/depth/image_raw</depthImageTopicName>
+          <depthImageCameraInfoTopicName>/uav/depth/camera_info</depthImageCameraInfoTopicName>
+          <pointCloudTopicName>/uav/points</pointCloudTopicName>
+          <frameName>uav_camera_optical_frame</frameName>
+          <pointCloudCutoff>0.5</pointCloudCutoff>
+          <pointCloudCutoffMax>250.0</pointCloudCutoffMax>
+        </plugin>
+      </sensor>
+    </link>
+  </model>
+</sdf>
