@@ -222,5 +222,5 @@ hand_e_gripper:
     - AITstar
     - ABITstar
     - BITstar
-  projection_evaluator: joints(hande_left_finger_joint,hande_right_finger_joint)
+  projection_evaluator: joints(finger_joint)
   longest_valid_segment_fraction: 0.005

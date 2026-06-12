@@ -1,7 +1,7 @@
 # Mobile Manipulator — ROS Noetic Workspace
 
 A mobile manipulation system combining a Clearpath Husky UGV with a Universal Robots UR5 arm and Robotiq Hand-E gripper. The robot navigates autonomously, detects objects with GPU-accelerated YOLO, and accepts natural language commands via an LLM-powered agent.
-![grasp](grasp.gif)
+![grasp](assets/grasp.gif)
 ---
 
 ## System Overview

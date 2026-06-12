@@ -9,3 +9,37 @@ install_isolated/
 
 .idea/
 .vscode/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Gazebo model caches
+*/.gazebo_cache/
+
+# Hardware-specific TensorRT engines (regenerated per-GPU, not portable)
+*.engine
+
+# AWS RoboMaker indoor house world: used only by the legacy indoor demo and is
+# large (~131 MB). Kept locally but not shared; clone separately if needed:
+#   git clone https://github.com/aws-robotics/aws-robomaker-small-house-world.git
+src/aws-robomaker-small-house-world/
+
+# Bulky upstream gazebo_models_worlds_collection: keep ONLY the models our
+# worlds actually use; ignore the other ~380 models and the upstream worlds.
+src/gazebo_models_worlds_collection/worlds/
+src/gazebo_models_worlds_collection/models/*
+!src/gazebo_models_worlds_collection/models/cafe_table/
+!src/gazebo_models_worlds_collection/models/grass_plane/
+!src/gazebo_models_worlds_collection/models/Tree_1/
+!src/gazebo_models_worlds_collection/models/Tree_2/
+!src/gazebo_models_worlds_collection/models/vrc_heightmap_1/
+!src/gazebo_models_worlds_collection/models/house_1/
+!src/gazebo_models_worlds_collection/models/house_2/
+!src/gazebo_models_worlds_collection/models/house_3/
+!src/gazebo_models_worlds_collection/models/lamp_post/
+!src/gazebo_models_worlds_collection/models/gas_station/
+!src/gazebo_models_worlds_collection/models/dumpster/
+!src/gazebo_models_worlds_collection/models/mailbox/
+!src/gazebo_models_worlds_collection/models/speed_limit_sign/

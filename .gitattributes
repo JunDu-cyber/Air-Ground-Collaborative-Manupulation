@@ -1,0 +1,24 @@
+# Normalize text to LF in the repo; let Git auto-detect text vs binary.
+* text=auto eol=lf
+
+# Treat 3D assets / models / images as binary so they are never line-ending
+# normalized (prevents spurious diffs and corruption on checkout).
+*.stl   binary
+*.STL   binary
+*.dae   binary
+*.DAE   binary
+*.obj   binary
+*.mtl   binary
+*.ply   binary
+*.pcd   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.tga   binary
+*.dds   binary
+*.bmp   binary
+*.onnx  binary
+*.engine binary
+*.pt    binary
+*.pgm   binary

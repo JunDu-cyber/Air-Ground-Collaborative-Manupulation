@@ -1,0 +1,45 @@
+# navsat_transform_node configuration
+# Converts the Husky's simulated GPS (navsat/fix, published by the stock
+# libhector_gazebo_ros_gps plugin on base_link) into an odometry message in the
+# map frame (odometry/gps), which the global EKF then fuses.
+#
+# Topic wiring (set via remaps in the launch file):
+#   imu/data           <- imu/data            (stock hector IMU plugin)
+#   odometry/filtered  <- odometry/filtered_map (global EKF output)
+#   gps/fix            <- navsat/fix          (stock hector GPS plugin)
+#   odometry/gps       -> fed back into the global EKF
+#   gps/filtered       -> GPS reprojected to map frame (for RViz)
+
+frequency: 30.0
+
+# Give TF lookups (base_link pose in the map frame) a 0.1 s grace window so the
+# node stops logging "Transform from base_link to map unavailable" every cycle
+# when the map->odom->base_link chain lags the GPS timestamp by a few ms.
+transform_timeout: 0.1
+
+# Seconds to wait before computing the GPS->map transform, giving the EKF and
+# IMU time to produce a stable heading.
+delay: 3.0
+
+# Gazebo's simulated world has no magnetic declination, and the hector IMU
+# already reports yaw in the ENU/world frame, so both offsets are zero.
+magnetic_declination_radians: 0.0
+yaw_offset: 0.0
+
+# Outdoor demo runs on roughly flat terrain; ignore GPS altitude to avoid the
+# noisy z estimate fighting the wheel/IMU odometry.
+zero_altitude: true
+
+# Publish the utm->map static transform so GPS tracks can be shown in RViz.
+# (renamed from the deprecated broadcast_utm_transform)
+broadcast_cartesian_transform: true
+
+# Republish the fix reprojected into the map frame (topic gps/filtered).
+publish_filtered_gps: true
+
+# Use the EKF-fused orientation rather than the raw GPS heading (GPS gives no
+# heading at rest).
+use_odometry_yaw: false
+
+# Take the first valid fix as the datum instead of requiring a manual one.
+wait_for_datum: false

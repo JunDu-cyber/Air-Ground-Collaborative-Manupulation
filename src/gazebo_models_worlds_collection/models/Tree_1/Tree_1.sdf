@@ -1,0 +1,35 @@
+<?xml version='1.0'?>
+<sdf version='1.4'>
+  <model name="Tree_1">
+    <static>true</static>
+    <pose>0 0 0 0 0 0</pose>
+
+    <!-- The raw Tree_1.dae mesh is only ~1 m tall, is modelled in inches, and is
+         offset from its own origin (base at z=1.32 m, footprint centred near
+         x=1.1 y=3.4 m). The <scale> enlarges it to ~5 m tall (4.4 x 5.1 m crown)
+         and the <pose> on each geometry re-anchors the trunk base to the model
+         origin with the crown centred, so a world pose of z = terrain_height
+         seats the tree exactly on the ground. -->
+    <link name="Tree_1">
+      <visual name="Tree_1">
+        <pose>-3.375 -10.125 -6.6 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <uri>model://Tree_1/Tree_1.dae</uri>
+            <scale>3 3 5</scale>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Tree_1">
+        <pose>-3.375 -10.125 -6.6 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <uri>model://Tree_1/Tree_1.dae</uri>
+            <scale>3 3 5</scale>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+
+  </model>
+</sdf>

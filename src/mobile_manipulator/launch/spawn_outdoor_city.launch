@@ -1,0 +1,76 @@
+<launch>
+  <!-- Outdoor City World - houses, gas station, lamp posts, terrain -->
+  <env name="HUSKY_LMS1XX_ENABLED" value="1"/>
+
+  <!-- Model paths: collection + local Gazebo models + custom -->
+  <env name="GAZEBO_MODEL_PATH"
+       value="$(find gazebo_models_worlds_collection)/models:$(find mobile_manipulator)/gazebo_models:$(env HOME)/.gazebo/models:$(optenv GAZEBO_MODEL_PATH)"/>
+
+  <env name="GAZEBO_RESOURCE_PATH"
+       value="$(find mobile_manipulator)/worlds:$(optenv GAZEBO_RESOURCE_PATH)"/>
+
+  <!-- Launch Gazebo: NOT paused initially, clock available immediately -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name"
+         value="$(find mobile_manipulator)/worlds/outdoor_city.world"/>
+    <arg name="paused" value="false"/>
+    <arg name="use_sim_time" value="true"/>
+    <arg name="gui" value="true"/>
+  </include>
+
+  <!-- Robot description -->
+  <param name="robot_description"
+         command="$(find xacro)/xacro '$(find mobile_manipulator)/urdf/husky_ur5.urdf.xacro'" />
+
+  <node name="robot_state_publisher" pkg="robot_state_publisher"
+        type="robot_state_publisher" />
+
+  <!-- Spawn robot in outdoor terrain -->
+  <node name="spawn_urdf" pkg="gazebo_ros" type="spawn_model"
+        args="-param robot_description -urdf -model husky_ur5
+              -x 0.0 -y 0.0 -z 0.5 -Y 0.0
+              -J ur5_shoulder_lift_joint -1.9
+              -J ur5_elbow_joint 0.7
+              -J ur5_wrist_1_joint 1.8
+              -J ur5_wrist_2_joint 1.57"
+        output="screen" />
+
+  <!-- Controllers -->
+  <rosparam command="load" file="$(find husky_control)/config/control.yaml" />
+  <rosparam command="load" file="$(find mobile_manipulator)/config/ur5_controllers.yaml" />
+
+  <node name="base_controller_spawner" pkg="controller_manager" type="spawner"
+        args="husky_joint_publisher husky_velocity_controller" output="screen" />
+  <rosparam param="wheel_radius_multiplier" ns="husky_velocity_controller" subst_value="true">
+    $(optenv HUSKY_WHEEL_MULTIPLIER 1.0)
+  </rosparam>
+
+  <node name="arm_controller_spawner" pkg="controller_manager" type="spawner"
+        args="ur5_arm_controller gripper_controller" output="screen" />
+
+  <!-- Local EKF: wheel odom + IMU -> odom->base_link (smooth, continuous) -->
+  <node pkg="robot_localization" type="ekf_localization_node" name="ekf_localization">
+    <rosparam command="load" file="$(find husky_control)/config/localization.yaml" />
+  </node>
+
+  <!-- Global EKF: wheel odom + IMU + GPS -> map->odom (GPS-anchored) -->
+  <node pkg="robot_localization" type="ekf_localization_node" name="ekf_global">
+    <rosparam command="load" file="$(find mobile_manipulator)/config/ekf_global.yaml" />
+    <remap from="odometry/filtered" to="odometry/filtered_map"/>
+  </node>
+
+  <!-- navsat_transform: simulated GPS (navsat/fix) -> map-frame odometry/gps -->
+  <node pkg="robot_localization" type="navsat_transform_node" name="navsat_transform" output="screen">
+    <rosparam command="load" file="$(find mobile_manipulator)/config/navsat_transform.yaml" />
+    <remap from="imu/data"          to="imu/data"/>
+    <remap from="gps/fix"           to="navsat/fix"/>
+    <remap from="odometry/filtered" to="odometry/filtered_map"/>
+  </node>
+
+  <!-- Twist mux -->
+  <node pkg="twist_mux" type="twist_mux" name="twist_mux">
+    <rosparam command="load" file="$(find husky_control)/config/twist_mux.yaml" />
+    <remap from="cmd_vel_out" to="husky_velocity_controller/cmd_vel"/>
+  </node>
+
+</launch>

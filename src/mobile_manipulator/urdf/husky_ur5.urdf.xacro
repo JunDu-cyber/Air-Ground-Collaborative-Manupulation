@@ -53,21 +53,29 @@
 
   <!-- Gripper -->
 
-  <xacro:include filename="$(find robotiq_description)/urdf/robotiq_hande_gripper.urdf.xacro" />
-  <!-- Attach the robotiq hand-e gripper -->
-  <xacro:robotiq_hande_gripper prefix="" parent="ur5_tool0" >
+  <!-- Robotiq 2F-140 parallel-jaw gripper: 140 mm max stroke (~3x the Hand-E's
+       50 mm), enabling grasps of larger outdoor objects. Single actuated joint
+       finger_joint (revolute, 0 rad = open, 0.7 rad = closed); all other finger
+       joints mimic it via the gazebo_mimic_joint plugins defined in the macro. -->
+  <xacro:include filename="$(find robotiq_description)/urdf/robotiq_140_gripper.urdf.xacro" />
+  <xacro:robotiq_140_gripper prefix="" parent="ur5_tool0" >
     <origin xyz="0 0 0" rpy="0 0 0"/>
-  </xacro:robotiq_hande_gripper>
+  </xacro:robotiq_140_gripper>
 
   <!-- Grasp fix: creates a virtual joint between gripper and object when both
        fingers make opposing contact, preventing the object from flying away. -->
   <gazebo>
     <plugin filename="libgazebo_grasp_fix.so" name="gazebo_grasp_fix">
+      <!-- palm_link must be a link that survives Gazebo's fixed-joint lumping.
+           robotiq_arg2f_base_link is attached by a fixed joint and gets merged
+           into the UR5 wrist, so we use ur5_wrist_3_link as the palm (as the
+           Hand-E setup did). The inner_finger links are joined by revolute joints
+           and survive; they also absorb the fixed-jointed finger-pad collisions. -->
       <arm>
-        <arm_name>hande_gripper</arm_name>
+        <arm_name>robotiq_140</arm_name>
         <palm_link>ur5_wrist_3_link</palm_link>
-        <gripper_link>hande_left_finger</gripper_link>
-        <gripper_link>hande_right_finger</gripper_link>
+        <gripper_link>left_inner_finger</gripper_link>
+        <gripper_link>right_inner_finger</gripper_link>
       </arm>
       <forces_angle_tolerance>100</forces_angle_tolerance>
       <update_rate>90</update_rate>

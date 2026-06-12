@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Possibilities: robotiq_hande_gripper and robotiq_85_gripper -->
+  <arg name="gripper_name" default="robotiq_85_gripper" doc="name of the gripper you want to visualise"/>
+
+  <param name="robot_description" command="$(find xacro)/xacro --inorder $(find robotiq_description)/urdf/$(arg gripper_name).xacro" />
+  <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />
+  <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
+  
+  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find robotiq_description)/config/$(arg gripper_name).rviz  " required="true" />
+</launch>

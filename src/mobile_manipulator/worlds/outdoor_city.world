@@ -1,0 +1,1025 @@
+<?xml version="1.0" ?>
+<sdf version="1.4">
+  <world name="outdoor">
+    <!-- Place user camera -->
+    <gui>
+      <camera name="user_camera">
+        <pose>-11.660200 -5.942800 6.053900 0.000000 0.443643 0.352194</pose>
+      </camera>
+    </gui>
+    <scene>
+      <ambient>0.2 0.2 0.2 1.0</ambient>
+      <grid>false</grid>
+      <sky>
+        <clouds>
+          <speed>4</speed>
+        </clouds>
+      </sky>
+    </scene>
+
+    <!-- Only one ROS interface plugin is required per world, as any other plugin can connect a Gazebo
+         topic to a ROS topic (or vise versa). -->
+    <!-- <plugin name="ros_interface_plugin" filename="librotors_gazebo_ros_interface_plugin.so"/>-->
+
+    <physics type='ode'>
+      <ode>
+        <solver>
+          <type>quick</type>
+          <iters>1000</iters>
+          <sor>1.3</sor>
+        </solver>
+        <constraints>
+          <cfm>0</cfm>
+          <erp>0.2</erp>
+          <contact_max_correcting_vel>100</contact_max_correcting_vel>
+          <contact_surface_layer>0.001</contact_surface_layer>
+        </constraints>
+      </ode>
+      <max_step_size>0.01</max_step_size>
+      <real_time_factor>1</real_time_factor>
+      <real_time_update_rate>100</real_time_update_rate>
+      <gravity>0 0 -9.8</gravity>
+    </physics>
+    <!-- Light Source -->
+    <light type="directional" name="sun">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 100 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.9 0.9 0.9 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>0.2 0.2 -0.9</direction>
+    </light>
+    <light type="point" name="light_bulb">
+      <cast_shadows>false</cast_shadows>
+      <pose>-14 0 5 0 0 0</pose>
+      <diffuse>0.3 0.3 0.3 1</diffuse>
+      <specular>0.0 0.0 0.0 1</specular>
+      <attenuation>
+        <range>80</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+    </light>
+    <include>
+      <uri>model://vrc_heightmap_1</uri>
+    </include>
+    <include>
+      <uri>model://grass_plane</uri>
+    </include>
+    <include>
+      <uri>model://speed_limit_sign</uri>
+      <name>speed_sign_1</name>
+      <static>true</static>
+      <pose>15 -5 0 0 0 1.5707</pose>
+    </include>
+    <include>
+      <uri>model://speed_limit_sign</uri>
+      <name>speed_sign_2</name>
+      <static>true</static>
+      <pose>70 5 0 0 0 1.5707</pose>
+    </include>
+    <include>
+      <uri>model://speed_limit_sign</uri>
+      <name>speed_sign_3</name>
+      <static>true</static>
+      <pose>121 13 0 0 0 2.356</pose>
+    </include>
+    <include>
+      <uri>model://speed_limit_sign</uri>
+      <name>speed_sign_4</name>
+      <static>true</static>
+      <pose>155 68 0 0 0 3.1415</pose>
+    </include>
+    <include>
+      <uri>model://speed_limit_sign</uri>
+      <name>speed_sign_5</name>
+      <static>true</static>
+      <pose>175 95 0 0 0 1.5707</pose>
+    </include>
+    <include>
+      <uri>model://house_1</uri>
+      <name>house_1_a</name>
+      <pose>12 9.5 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://house_1</uri>
+      <name>house_1_b</name>
+      <pose>129.5 46 0 0 0 1.5707</pose>
+    </include>
+    <include>
+      <uri>model://mailbox</uri>
+      <name>mailbox_0</name>
+      <static>true</static>
+      <pose>18 4 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://mailbox</uri>
+      <name>mailbox_1</name>
+      <static>true</static>
+      <pose>24.5 -4.45 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://gas_station</uri>
+      <name>gas_station</name>
+      <pose>77 15 0 0 0 -1.5707963267948966</pose>
+    </include>
+    <include>
+      <uri>model://house_2</uri>
+      <name>house_2_a</name>
+      <pose>30 -8 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://house_2</uri>
+      <name>house_2_b</name>
+      <pose>158 91 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://house_3</uri>
+      <name>house_3_a</name>
+      <pose>44 7 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://house_3</uri>
+      <name>house_3_b</name>
+      <pose>111 26 0 0 0 .78539</pose>
+    </include>
+    <include>
+      <uri>model://house_3</uri>
+      <name>house_3_c</name>
+      <pose>170 106 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://mailbox</uri>
+      <name>mailbox_2</name>
+      <static>true</static>
+      <pose>59 4.45 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://house_3</uri>
+      <name>house_3_d</name>
+      <pose>95 7.0 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://dumpster</uri>
+      <static>true</static>
+      <pose>143 51.5 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://house_2</uri>
+      <name>house_2_c</name>
+      <pose>135 84.8 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://lamp_post</uri>
+      <name>lamp_post_1</name>
+      <static>true</static>
+      <pose>24 4 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://lamp_post</uri>
+      <name>lamp_post_2</name>
+      <static>true</static>
+      <pose>54 4 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://lamp_post</uri>
+      <name>lamp_post_3</name>
+      <static>true</static>
+      <pose>84 4 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://lamp_post</uri>
+      <name>lamp_post_4</name>
+      <static>true</static>
+      <pose>14 -4 0 0 0 3.1415</pose>
+    </include>
+    <include>
+      <uri>model://lamp_post</uri>
+      <name>lamp_post_5</name>
+      <static>true</static>
+      <pose>44 -4 0 0 0 3.1415</pose>
+    </include>
+    <include>
+      <uri>model://lamp_post</uri>
+      <name>lamp_post_6</name>
+      <static>true</static>
+      <pose>74 -4 0 0 0 3.1415</pose>
+    </include>
+    <include>
+      <uri>model://lamp_post</uri>
+      <name>lamp_post_7</name>
+      <static>true</static>
+      <pose>148 104 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://lamp_post</uri>
+      <name>lamp_post_8</name>
+      <static>true</static>
+      <pose>178 104 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://lamp_post</uri>
+      <name>lamp_post_9</name>
+      <static>true</static>
+      <pose>158 96 0 0 0 3.1415</pose>
+    </include>
+    <include>
+      <uri>model://lamp_post</uri>
+      <name>lamp_post_10</name>
+      <static>true</static>
+      <pose>188 96 0 0 0 3.1415</pose>
+    </include>
+    <include>
+      <uri>model://lamp_post</uri>
+      <name>lamp_post_11</name>
+      <static>true</static>
+      <pose>102 8 0 0 0 .785</pose>
+    </include>
+    <include>
+      <uri>model://lamp_post</uri>
+      <name>lamp_post_12</name>
+      <static>true</static>
+      <pose>123 29 0 0 0 .785</pose>
+    </include>
+    <include>
+      <uri>model://lamp_post</uri>
+      <name>lamp_post_13</name>
+      <static>true</static>
+      <pose>144 50 0 0 0 .785</pose>
+    </include>
+    <include>
+      <uri>model://lamp_post</uri>
+      <name>lamp_post_14</name>
+      <static>true</static>
+      <pose>99 -4 0 0 0 3.1415</pose>
+    </include>
+    <include>
+      <uri>model://lamp_post</uri>
+      <name>lamp_post_15</name>
+      <static>true</static>
+      <pose>120 14.5 0 0 0 -2.35</pose>
+    </include>
+    <include>
+      <uri>model://lamp_post</uri>
+      <name>lamp_post_16</name>
+      <static>true</static>
+      <pose>141 35.5 0 0 0 -2.35</pose>
+    </include>
+    <road name="main_street">
+      <width>7.34</width>
+      <point>0 0 0.01</point>
+      <point>100 0 0.01</point>
+      <point>150 50 0.01</point>
+      <point>150 100 0.01</point>
+      <point>200 100 0.01</point>
+    </road>
+    <road name="gas_station_street">
+      <width>17</width>
+      <point>65 25 0.01</point>
+      <point>65 3.66 0.01</point>
+    </road>
+    <model name="road_boxes">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision_1">
+          <pose>51 0 0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>102 7.34 0.02</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.8</mu>
+                <mu2>0.8</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+        <collision name="collision_2">
+          <pose>125 25 0 0 0 0.78539</pose>
+          <geometry>
+            <box>
+              <size>72 7.34 0.02</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.8</mu>
+                <mu2>0.8</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+        <collision name="collision_3">
+          <pose>150 75 0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>7.34 53 0.02</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.8</mu>
+                <mu2>0.8</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+        <collision name="collision_4">
+          <pose>173.5 100 0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>54.5 7.34 0.02</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.8</mu>
+                <mu2>0.8</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+        <collision name="collision_5">
+          <pose>198 106 0 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>6 5 0.02</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.8</mu>
+                <mu2>0.8</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+      </link>
+    </model>
+  <!-- FOREST_BEGIN (generated by generate_forest.py - do not edit by hand) -->
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_000</name>
+      <pose>-190.23 -66.80 42.43 0 0 2.784</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_001</name>
+      <pose>211.29 -219.70 53.18 0 0 3.566</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_002</name>
+      <pose>-121.98 45.16 27.45 0 0 0.534</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_003</name>
+      <pose>139.12 -57.98 21.01 0 0 3.247</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_004</name>
+      <pose>97.60 186.00 18.87 0 0 6.103</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_005</name>
+      <pose>-83.39 229.84 13.83 0 0 6.122</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_006</name>
+      <pose>101.63 -65.38 13.83 0 0 5.097</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_007</name>
+      <pose>-92.33 -220.84 49.15 0 0 4.541</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_008</name>
+      <pose>89.35 -68.43 11.24 0 0 3.827</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_009</name>
+      <pose>-125.71 54.39 28.83 0 0 3.550</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_010</name>
+      <pose>-165.58 -106.59 46.06 0 0 5.987</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_011</name>
+      <pose>-96.03 13.50 32.34 0 0 4.125</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_012</name>
+      <pose>-79.42 130.18 22.50 0 0 1.881</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_013</name>
+      <pose>170.34 -8.60 28.76 0 0 3.333</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_014</name>
+      <pose>-125.62 101.91 42.46 0 0 5.329</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_015</name>
+      <pose>-0.30 -95.02 12.75 0 0 4.264</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_016</name>
+      <pose>-236.60 -149.39 47.14 0 0 4.344</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_017</name>
+      <pose>130.29 -150.32 41.23 0 0 4.150</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_018</name>
+      <pose>71.00 -222.65 68.11 0 0 3.486</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_019</name>
+      <pose>-196.98 -154.79 42.08 0 0 2.262</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_020</name>
+      <pose>184.00 225.55 43.80 0 0 3.549</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_021</name>
+      <pose>87.87 97.50 10.23 0 0 1.640</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_022</name>
+      <pose>-78.35 61.63 34.56 0 0 1.134</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_023</name>
+      <pose>-24.89 47.87 9.67 0 0 3.444</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_024</name>
+      <pose>152.04 -207.84 62.40 0 0 1.390</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_025</name>
+      <pose>169.48 -232.15 53.59 0 0 4.082</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_026</name>
+      <pose>114.78 169.18 19.93 0 0 3.335</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_027</name>
+      <pose>-194.63 75.34 50.63 0 0 4.455</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_028</name>
+      <pose>-54.72 -153.73 34.22 0 0 3.481</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_029</name>
+      <pose>57.43 -150.90 35.14 0 0 3.401</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_030</name>
+      <pose>-50.46 131.80 20.88 0 0 4.622</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_031</name>
+      <pose>29.24 59.93 9.38 0 0 5.350</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_032</name>
+      <pose>-207.77 -112.83 41.33 0 0 5.029</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_033</name>
+      <pose>-138.05 -138.94 55.67 0 0 5.425</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_034</name>
+      <pose>97.16 -163.62 40.62 0 0 3.937</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_035</name>
+      <pose>-169.12 -70.71 43.73 0 0 2.890</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_036</name>
+      <pose>-123.91 -56.48 27.97 0 0 3.420</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_037</name>
+      <pose>-239.69 157.35 59.80 0 0 3.538</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_038</name>
+      <pose>-107.02 -57.83 28.51 0 0 0.860</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_039</name>
+      <pose>70.64 -148.15 34.83 0 0 2.541</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_040</name>
+      <pose>-225.82 -166.31 46.57 0 0 2.340</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_041</name>
+      <pose>124.84 -69.41 19.76 0 0 4.410</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_042</name>
+      <pose>98.91 -150.84 39.14 0 0 2.888</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_043</name>
+      <pose>-205.21 -190.06 45.27 0 0 4.445</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_044</name>
+      <pose>-141.40 -181.88 42.19 0 0 5.708</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_045</name>
+      <pose>-221.88 72.94 47.08 0 0 3.903</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_046</name>
+      <pose>-196.95 33.28 47.04 0 0 3.537</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_047</name>
+      <pose>-233.13 -83.68 45.49 0 0 1.056</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_048</name>
+      <pose>-235.71 -209.07 48.31 0 0 5.052</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_049</name>
+      <pose>88.10 -239.19 59.32 0 0 5.188</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_050</name>
+      <pose>117.98 -69.01 18.09 0 0 1.504</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_051</name>
+      <pose>-232.16 110.94 51.23 0 0 4.535</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_052</name>
+      <pose>-94.14 131.98 26.88 0 0 5.131</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_053</name>
+      <pose>-136.59 -13.67 28.67 0 0 0.626</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_054</name>
+      <pose>-237.53 -51.47 46.53 0 0 5.046</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_055</name>
+      <pose>-190.23 -194.83 44.47 0 0 0.215</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_056</name>
+      <pose>-137.87 1.72 27.29 0 0 1.600</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_057</name>
+      <pose>201.36 -195.41 48.32 0 0 4.360</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_058</name>
+      <pose>213.09 -239.66 52.74 0 0 5.266</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_059</name>
+      <pose>-109.82 59.46 28.96 0 0 0.714</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_060</name>
+      <pose>-79.42 -194.54 58.14 0 0 3.066</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_061</name>
+      <pose>4.56 47.13 10.22 0 0 5.031</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_062</name>
+      <pose>-176.70 -222.45 46.25 0 0 0.944</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_063</name>
+      <pose>-193.99 86.25 51.74 0 0 5.490</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_064</name>
+      <pose>-149.56 116.61 50.45 0 0 5.254</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_065</name>
+      <pose>-24.56 -148.84 32.55 0 0 3.383</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_066</name>
+      <pose>-28.21 184.67 11.29 0 0 5.961</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_067</name>
+      <pose>195.16 -221.40 49.79 0 0 0.156</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_068</name>
+      <pose>-98.86 82.41 34.77 0 0 3.061</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_069</name>
+      <pose>-209.98 -223.22 47.82 0 0 5.486</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_070</name>
+      <pose>-162.52 54.85 36.22 0 0 0.469</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_071</name>
+      <pose>-238.78 141.91 57.70 0 0 5.296</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_072</name>
+      <pose>126.13 183.29 23.78 0 0 4.354</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_073</name>
+      <pose>-125.47 -219.28 43.70 0 0 2.472</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_074</name>
+      <pose>-39.86 -222.93 50.21 0 0 2.268</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_075</name>
+      <pose>-236.66 130.06 54.87 0 0 1.956</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_076</name>
+      <pose>225.88 -233.66 54.79 0 0 3.702</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_077</name>
+      <pose>-222.87 -107.03 43.99 0 0 1.328</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_078</name>
+      <pose>88.54 222.64 10.77 0 0 4.569</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_079</name>
+      <pose>-196.08 2.69 45.04 0 0 3.626</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_080</name>
+      <pose>-111.83 -98.01 32.16 0 0 5.890</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_081</name>
+      <pose>127.59 -238.72 55.55 0 0 0.038</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_082</name>
+      <pose>112.90 -109.48 24.98 0 0 2.097</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_083</name>
+      <pose>-167.86 -98.97 44.99 0 0 1.563</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_084</name>
+      <pose>154.97 -221.24 59.27 0 0 3.964</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_085</name>
+      <pose>-192.20 -168.64 42.68 0 0 1.713</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_086</name>
+      <pose>-222.21 -234.69 48.52 0 0 0.399</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_087</name>
+      <pose>-151.33 131.14 54.08 0 0 2.242</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_088</name>
+      <pose>225.12 194.69 62.24 0 0 6.234</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_089</name>
+      <pose>-164.49 -194.60 42.53 0 0 5.749</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_090</name>
+      <pose>145.83 -85.87 26.73 0 0 5.481</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_091</name>
+      <pose>195.50 195.46 52.13 0 0 3.978</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_092</name>
+      <pose>226.04 41.82 42.30 0 0 2.280</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_093</name>
+      <pose>167.99 -166.62 58.42 0 0 4.983</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_094</name>
+      <pose>-183.42 -66.64 43.20 0 0 5.484</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_095</name>
+      <pose>-219.00 116.38 52.12 0 0 4.281</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_096</name>
+      <pose>212.18 -51.41 48.79 0 0 6.050</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_097</name>
+      <pose>-177.73 -50.82 44.59 0 0 4.647</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_098</name>
+      <pose>70.93 -82.20 9.84 0 0 2.202</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_099</name>
+      <pose>-135.44 75.74 35.36 0 0 2.101</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_100</name>
+      <pose>-178.72 -28.86 43.29 0 0 4.221</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_101</name>
+      <pose>138.91 -218.17 58.35 0 0 3.165</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_102</name>
+      <pose>82.12 213.21 9.48 0 0 5.084</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_103</name>
+      <pose>-92.32 -178.36 59.58 0 0 0.948</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_104</name>
+      <pose>182.28 -148.10 57.74 0 0 0.045</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_105</name>
+      <pose>-43.48 196.81 9.68 0 0 2.545</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_106</name>
+      <pose>-233.00 182.51 60.00 0 0 3.573</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_107</name>
+      <pose>-225.97 29.35 45.78 0 0 5.840</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_108</name>
+      <pose>-207.09 -238.81 48.43 0 0 0.904</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_109</name>
+      <pose>-190.16 -108.74 38.69 0 0 1.584</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_110</name>
+      <pose>-210.66 -37.82 42.84 0 0 0.462</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_111</name>
+      <pose>-23.47 -238.85 49.36 0 0 3.665</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_112</name>
+      <pose>88.58 -177.71 40.42 0 0 3.675</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_113</name>
+      <pose>225.55 -23.31 53.88 0 0 3.647</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_114</name>
+      <pose>103.56 -107.72 22.98 0 0 2.243</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_115</name>
+      <pose>-205.09 -66.43 40.10 0 0 4.531</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_116</name>
+      <pose>84.42 -152.63 38.06 0 0 5.269</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_117</name>
+      <pose>98.49 -234.16 57.68 0 0 5.649</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_118</name>
+      <pose>-235.80 89.00 49.09 0 0 5.641</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_119</name>
+      <pose>-225.51 -220.39 47.96 0 0 4.766</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_120</name>
+      <pose>-223.05 44.53 47.03 0 0 1.488</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_121</name>
+      <pose>-94.54 -84.42 32.01 0 0 1.372</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_122</name>
+      <pose>-155.65 46.68 34.08 0 0 2.814</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_123</name>
+      <pose>-238.85 -71.06 46.85 0 0 5.429</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_124</name>
+      <pose>-239.01 -140.21 47.43 0 0 1.236</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_125</name>
+      <pose>-220.82 -204.06 47.36 0 0 6.052</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_126</name>
+      <pose>103.45 195.87 17.52 0 0 0.498</pose>
+    </include>
+    <include>
+      <uri>model://Tree_2</uri>
+      <name>forest_tree_127</name>
+      <pose>-177.28 -112.90 41.40 0 0 4.518</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_128</name>
+      <pose>-239.54 -193.94 48.33 0 0 1.182</pose>
+    </include>
+    <include>
+      <uri>model://Tree_1</uri>
+      <name>forest_tree_129</name>
+      <pose>-196.95 -85.89 39.87 0 0 4.021</pose>
+    </include>
+    <!-- FOREST_END -->
+  </world>
+</sdf>

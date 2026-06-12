@@ -25,8 +25,12 @@ joint_state_controller:
   type: joint_state_controller/JointStateController
   publish_rate: 50
 
-# 2. The Gripper Controller
+# 2. The Gripper Controller (Robotiq 2F-140: single actuated finger_joint)
 gripper_controller:
   type: position_controllers/JointTrajectoryController
   joints:
-    - hande_left_finger_joint
+    - finger_joint
+  constraints:
+    goal_time: 2.0                  # allow the linkage time to settle
+    stopped_velocity_tolerance: 0.05
+    finger_joint: {trajectory: 0.2, goal: 0.05}   # loose: grasping rarely hits exact angle

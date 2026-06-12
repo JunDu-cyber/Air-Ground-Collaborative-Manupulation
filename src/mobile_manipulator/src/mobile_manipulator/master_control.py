@@ -471,7 +471,9 @@ class MasterControl:
         # base_pose is the cylinder CENTRE (get_3d_coordinates already shifted from
         # near surface by the radius derived from bbox width).
         # tool0 must sit FINGER_REACH behind the centre so the fingertips land there.
-        FINGER_REACH = 0.10   # Hand-E tip distance from ur5_tool0, metres
+        # 2F-140 is longer than the Hand-E: fingertip pad sits ~0.18 m ahead of
+        # ur5_tool0 when open. Tune empirically against the sim if grasps land short/long.
+        FINGER_REACH = 0.18   # 2F-140 fingertip distance from ur5_tool0, metres
         PRE_OFFSET   = 0.18   # additional standoff before the insertion stroke
 
         grasp_pose = copy.deepcopy(base_pose)
@@ -542,7 +544,7 @@ class MasterControl:
         # rospy.sleep(0.15)
 
         rospy.loginfo("[PICK] Opening gripper...")
-        self.gripper_group.set_joint_value_target([0.0, 0.0])
+        self.gripper_group.set_joint_value_target([0.0])  # 2F-140: 0 rad = fully open
         self.gripper_group.go(wait=True)
         rospy.sleep(0.3)
 
@@ -625,19 +627,22 @@ class MasterControl:
         rospy.sleep(0.3)
 
         # Compute gripper target from detected object diameter.
-        # Hand-E: joint 0 = fully open, joint 0.025 = fully closed.
-        # max gap ≈ 0.050 m (50 mm) when both joints are at 0.
-        # joint = (max_gap - diameter) / 2  →  each finger closes to one radius.
-        GRIPPER_MAX_GAP = 0.050   # metres; tune if the sim gripper differs
-        GRIP_MARGIN     = 0.004   # extra closure for a firm hold
+        # 2F-140: single revolute finger_joint. 0 rad = fully open (≈140 mm gap),
+        # GRIPPER_MAX_RAD ≈ fully closed (0 mm gap). The finger gap is roughly
+        # linear in the joint angle: gap ≈ STROKE * (1 - angle/MAX_RAD), so to
+        # squeeze an object of diameter d we aim for a gap a little below d.
+        GRIPPER_STROKE  = 0.140   # max finger gap (m) at finger_joint = 0
+        GRIPPER_MAX_RAD = 0.70    # finger_joint angle (rad) at full close
+        GRIP_SQUEEZE    = 0.010   # close this much tighter than the object for a firm hold
         if obj_diameter > 0:
-            gripper_target = (GRIPPER_MAX_GAP - obj_diameter) / 2.0 + GRIP_MARGIN
-            gripper_target = max(0.003, min(0.025, gripper_target))
+            target_gap = max(0.0, min(GRIPPER_STROKE, obj_diameter - GRIP_SQUEEZE))
+            gripper_angle = GRIPPER_MAX_RAD * (1.0 - target_gap / GRIPPER_STROKE)
         else:
-            gripper_target = 0.016  # fallback when no vision estimate is available
-        rospy.loginfo(f"[PICK] Closing gripper to {gripper_target*1000:.1f} mm "
+            gripper_angle = 0.45  # fallback partial close when no vision estimate
+        gripper_angle = max(0.0, min(GRIPPER_MAX_RAD, gripper_angle))
+        rospy.loginfo(f"[PICK] Closing gripper to {gripper_angle:.3f} rad "
                       f"(obj diameter {obj_diameter*1000:.1f} mm)...")
-        self.gripper_group.set_joint_value_target([gripper_target, gripper_target])
+        self.gripper_group.set_joint_value_target([gripper_angle])
         self.gripper_group.go(wait=True)
         rospy.sleep(0.5)
         self._try_clear_octomap("PICK")
@@ -673,7 +678,7 @@ class MasterControl:
         self.arm_group.clear_pose_targets()
 
         rospy.loginfo("[PLACE] Releasing object...")
-        self.gripper_group.set_joint_value_target([0.0, 0.0])
+        self.gripper_group.set_joint_value_target([0.0])  # 2F-140: 0 rad = fully open
         self.gripper_group.go(wait=True)
         self.gripper_group.stop()
 

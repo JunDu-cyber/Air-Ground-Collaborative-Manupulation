@@ -1,0 +1,33 @@
+<?xml version='1.0'?>
+<sdf version='1.4'>
+  <model name="Tree_2">
+    <static>true</static>
+    <pose>0 0 0 0 0 0</pose>
+
+    <!-- See Tree_1.sdf: the raw mesh is ~1 m tall, inch-scaled and offset from
+         its origin. The <scale> enlarges it to ~5 m and the geometry <pose>
+         re-anchors the trunk base to the model origin so world z = terrain_height
+         seats it on the ground. -->
+    <link name="Tree_2">
+      <visual name="Tree_2">
+        <pose>-3.375 -10.125 -6.6 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <uri>model://Tree_2/Tree_2.dae</uri>
+            <scale>3 3 5</scale>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="Tree_2">
+        <pose>-3.375 -10.125 -6.6 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <uri>model://Tree_2/Tree_2.dae</uri>
+            <scale>3 3 5</scale>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+
+  </model>
+</sdf>
