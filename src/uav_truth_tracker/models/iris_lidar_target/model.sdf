@@ -1,0 +1,80 @@
+<?xml version="1.0" ?>
+<sdf version="1.5">
+  <model name="iris_lidar_target">
+    <include>
+      <uri>model://iris</uri>
+    </include>
+
+    <!-- Optional Stage 6 LiDAR observability aid.
+         These collision-only reflectors are intentionally not wired into the
+         default dual-UAV launch. Use them only when detector debug shows no UAV1
+         candidate clusters even with estimator gating disabled. -->
+    <link name="lidar_reflectors">
+      <pose>0 0 0.03 0 0 0</pose>
+      <inertial>
+        <mass>0.001</mass>
+        <inertia>
+          <ixx>1e-6</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>1e-6</iyy>
+          <iyz>0</iyz>
+          <izz>1e-6</izz>
+        </inertia>
+      </inertial>
+
+      <collision name="reflector_center">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.14</radius>
+          </sphere>
+        </geometry>
+      </collision>
+      <collision name="reflector_front">
+        <pose>0.22 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.10</radius>
+          </sphere>
+        </geometry>
+      </collision>
+      <collision name="reflector_back">
+        <pose>-0.22 0 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.10</radius>
+          </sphere>
+        </geometry>
+      </collision>
+      <collision name="reflector_left">
+        <pose>0 0.22 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.10</radius>
+          </sphere>
+        </geometry>
+      </collision>
+      <collision name="reflector_right">
+        <pose>0 -0.22 0 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.10</radius>
+          </sphere>
+        </geometry>
+      </collision>
+    </link>
+
+    <joint name="lidar_reflectors_joint" type="revolute">
+      <child>lidar_reflectors</child>
+      <parent>iris::base_link</parent>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <upper>0</upper>
+          <lower>0</lower>
+        </limit>
+      </axis>
+    </joint>
+  </model>
+</sdf>

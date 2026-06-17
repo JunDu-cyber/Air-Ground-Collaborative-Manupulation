@@ -1,0 +1,97 @@
+<launch>
+  <arg name="raw_lidar_topic" default="/uav0/velodyne_points_raw"/>
+  <arg name="cloud_topic" default="/uav0/velodyne_points"/>
+  <arg name="lidar_frame" default="uav0/velodyne_link"/>
+  <arg name="output_frame" default="$(arg lidar_frame)"/>
+  <arg name="publish_in_world_frame" default="false"/>
+  <arg name="world_frame" default="map"/>
+  <arg name="stamp_with_odom" default="false"/>
+  <arg name="parent_frame" default="base_link"/>
+  <arg name="imu_topic" default="/mavros/imu/data"/>
+  <arg name="odom_topic" default="/mavros/local_position/odom"/>
+  <arg name="x" default="0"/>
+  <arg name="y" default="0"/>
+  <arg name="z" default="0.06"/>
+  <arg name="min_range" default="0.35"/>
+  <arg name="max_range" default="12.0"/>
+  <arg name="sensor_max_range" default="18.0"/>
+  <arg name="max_range_margin" default="0.30"/>
+  <arg name="voxel_size" default="0.08"/>
+  <arg name="neighbor_voxel_size" default="0.0"/>
+  <arg name="min_neighbors" default="1"/>
+  <arg name="max_angular_velocity" default="0.0"/>
+  <arg name="max_imu_age" default="0.25"/>
+  <arg name="max_linear_velocity" default="0.0"/>
+  <arg name="max_odom_angular_velocity" default="0.0"/>
+  <arg name="max_odom_age" default="0.25"/>
+  <arg name="ground_filter_enabled" default="true"/>
+  <arg name="ground_z" default="0.0"/>
+  <arg name="ground_keep_above" default="0.35"/>
+  <arg name="ground_column_filter_enabled" default="true"/>
+  <arg name="ground_column_size" default="0.08"/>
+  <arg name="ground_column_min_height" default="0.20"/>
+  <arg name="ground_column_support_radius" default="0"/>
+  <arg name="self_filter_enabled" default="true"/>
+  <arg name="self_filter_body_radius" default="0.28"/>
+  <arg name="self_filter_body_z_min" default="-0.16"/>
+  <arg name="self_filter_body_z_max" default="0.16"/>
+  <arg name="self_filter_rotor_radius" default="0.17"/>
+  <arg name="self_filter_rotor_z_min" default="-0.14"/>
+  <arg name="self_filter_rotor_z_max" default="0.06"/>
+  <arg name="lidar_mount_x" default="$(arg x)"/>
+  <arg name="lidar_mount_y" default="$(arg y)"/>
+  <arg name="lidar_mount_z" default="$(arg z)"/>
+  <arg name="local_min_z" default="-999.0"/>
+  <arg name="local_max_z" default="999.0"/>
+  <arg name="min_publish_interval" default="0.0"/>
+
+  <node pkg="tf2_ros" type="static_transform_publisher"
+        name="lidar_static_tf"
+        args="$(arg x) $(arg y) $(arg z) 0 0 0 $(arg parent_frame) $(arg lidar_frame)"/>
+
+  <node pkg="forest_avoidance_utils" type="pointcloud_to_pointcloud2_relay.py"
+        name="lidar_pointcloud2_relay" output="screen">
+    <param name="input_topic" value="$(arg raw_lidar_topic)"/>
+    <param name="output_topic" value="$(arg cloud_topic)"/>
+    <param name="frame_id" value="$(arg lidar_frame)"/>
+    <param name="output_frame_id" value="$(arg output_frame)"/>
+    <param name="publish_in_world_frame" value="$(arg publish_in_world_frame)"/>
+    <param name="world_frame_id" value="$(arg world_frame)"/>
+    <param name="stamp_with_odom" value="$(arg stamp_with_odom)"/>
+    <param name="include_intensity" value="true"/>
+    <param name="imu_topic" value="$(arg imu_topic)"/>
+    <param name="odom_topic" value="$(arg odom_topic)"/>
+    <param name="max_angular_velocity" value="$(arg max_angular_velocity)"/>
+    <param name="max_imu_age" value="$(arg max_imu_age)"/>
+    <param name="max_linear_velocity" value="$(arg max_linear_velocity)"/>
+    <param name="max_odom_angular_velocity" value="$(arg max_odom_angular_velocity)"/>
+    <param name="max_odom_age" value="$(arg max_odom_age)"/>
+    <param name="ground_filter_enabled" value="$(arg ground_filter_enabled)"/>
+    <param name="ground_z" value="$(arg ground_z)"/>
+    <param name="ground_keep_above" value="$(arg ground_keep_above)"/>
+    <param name="ground_column_filter_enabled" value="$(arg ground_column_filter_enabled)"/>
+    <param name="ground_column_size" value="$(arg ground_column_size)"/>
+    <param name="ground_column_min_height" value="$(arg ground_column_min_height)"/>
+    <param name="ground_column_support_radius" value="$(arg ground_column_support_radius)"/>
+    <param name="self_filter_enabled" value="$(arg self_filter_enabled)"/>
+    <param name="self_filter_body_radius" value="$(arg self_filter_body_radius)"/>
+    <param name="self_filter_body_z_min" value="$(arg self_filter_body_z_min)"/>
+    <param name="self_filter_body_z_max" value="$(arg self_filter_body_z_max)"/>
+    <param name="self_filter_rotor_radius" value="$(arg self_filter_rotor_radius)"/>
+    <param name="self_filter_rotor_z_min" value="$(arg self_filter_rotor_z_min)"/>
+    <param name="self_filter_rotor_z_max" value="$(arg self_filter_rotor_z_max)"/>
+    <param name="lidar_mount_x" value="$(arg lidar_mount_x)"/>
+    <param name="lidar_mount_y" value="$(arg lidar_mount_y)"/>
+    <param name="lidar_mount_z" value="$(arg lidar_mount_z)"/>
+    <param name="min_range" value="$(arg min_range)"/>
+    <param name="max_range" value="$(arg max_range)"/>
+    <param name="sensor_max_range" value="$(arg sensor_max_range)"/>
+    <param name="max_range_margin" value="$(arg max_range_margin)"/>
+    <param name="voxel_size" value="$(arg voxel_size)"/>
+    <param name="neighbor_voxel_size" value="$(arg neighbor_voxel_size)"/>
+    <param name="min_neighbors" value="$(arg min_neighbors)"/>
+    <param name="local_min_z" value="$(arg local_min_z)"/>
+    <param name="local_max_z" value="$(arg local_max_z)"/>
+    <param name="min_publish_interval" value="$(arg min_publish_interval)"/>
+  </node>
+</launch>

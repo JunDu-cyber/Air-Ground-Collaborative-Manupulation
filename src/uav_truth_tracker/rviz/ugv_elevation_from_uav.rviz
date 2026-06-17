@@ -1,0 +1,136 @@
+Panels:
+  - Class: rviz/Displays
+    Help Height: 0
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /UGV elevation grid surface1
+      Splitter Ratio: 0.5
+    Tree Height: 640
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz/Grid
+      Color: 160; 160; 164
+      Enabled: true
+      Line Style:
+        Line Width: 0.03
+        Value: Lines
+      Name: Grid
+      Plane: XY
+      Plane Cell Count: 60
+      Reference Frame: <Fixed Frame>
+      Value: true
+    - Alpha: 0.22
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 6
+        Min Value: -1
+        Value: true
+      Class: rviz/PointCloud2
+      Color: 120; 120; 120
+      Color Transformer: AxisColor
+      Decay Time: 0
+      Enabled: false
+      Name: UAV saved cloud raw
+      Position Transformer: XYZ
+      Queue Size: 10
+      Selectable: false
+      Size (Pixels): 2
+      Size (m): 0.03
+      Style: Points
+      Topic: /uav0/mapping/points_saved
+      Unreliable: false
+      Use Fixed Frame: true
+      Value: false
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 8
+        Min Value: 0
+        Value: true
+      Class: rviz/PointCloud2
+      Color: 0; 220; 255
+      Color Transformer: AxisColor
+      Decay Time: 0
+      Enabled: false
+      Name: UAV elevation input
+      Position Transformer: XYZ
+      Queue Size: 10
+      Selectable: true
+      Size (Pixels): 2
+      Size (m): 0.03
+      Style: Points
+      Topic: /uav0/mapping/points_elevation
+      Unreliable: false
+      Use Fixed Frame: true
+      Value: false
+    - Alpha: 0.8
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 8
+        Min Value: 0
+        Value: true
+      Class: rviz/PointCloud2
+      Color: 255; 220; 0
+      Color Transformer: AxisColor
+      Decay Time: 0
+      Enabled: false
+      Name: UGV elevation cloud
+      Position Transformer: XYZ
+      Queue Size: 10
+      Selectable: false
+      Size (Pixels): 2
+      Size (m): 0.03
+      Style: Points
+      Topic: /elevation_map_visualization/elevation_cloud
+      Unreliable: false
+      Use Fixed Frame: true
+      Value: false
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /uav0/mapping/elevation_grid_marker
+      Name: UGV elevation grid surface
+      Namespaces:
+        uav_elevation_grid: true
+      Queue Size: 10
+      Value: true
+    - Class: rviz/TF
+      Enabled: false
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: false
+      Value: false
+      Enabled: false
+  Global Options:
+    Background Color: 48; 48; 48
+    Default Light: true
+    Fixed Frame: map
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz/MoveCamera
+    - Class: rviz/Select
+    - Class: rviz/FocusCamera
+    - Class: rviz/Measure
+      Value: false
+  Views:
+    Current:
+      Class: rviz/Orbit
+      Distance: 48
+      Focal Point:
+        X: 0
+        Y: 14
+        Z: 0
+      Name: Current View
+      Pitch: 0.95
+      Target Frame: map
+      Yaw: 1.57
+    Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 900
+  Width: 1280

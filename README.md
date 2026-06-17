@@ -71,7 +71,7 @@ pip install openai flask pydantic numpy pillow   # numpy + pillow used by the fo
 
 1. Install ROS dependencies
 ```bash
-cd ~/learning_ws
+cd ~/Air-Ground-Collaborative-Manupulation
 rosdep update
 rosdep install --from-paths src --ignore-src -r -y
 ```
@@ -79,18 +79,32 @@ rosdep install --from-paths src --ignore-src -r -y
 ```bash
 pip install openai flask pydantic numpy pillow
 ```
-3. Import the ETH/ANYbotics terrain-mapping source deps (gitignored; not vendored)
+3. Import the ETH/ANYbotics terrain-mapping source deps (gitignored)
 ```bash
-cd ~/learning_ws
+cd ~/Air-Ground-Collaborative-Manupulation
 vcs import src < src/elevation_mapping.repos
 ```
-4. Build the workspace
+4. **(可选) 安装 UAV 仿真环境**
 ```bash
-cd ~/learning_ws
+bash setup_uav.sh
+```
+5. Build the workspace
+```bash
+cd ~/Air-Ground-Collaborative-Manupulation
 catkin build
 source devel/setup.bash
 ```
 5. Launch a scenario
+
+**UAV 自主建图** (PX4 + MAVROS + EGO-Planner，一键起飞):
+```bash
+bash one_key_takeoff.sh
+```
+
+**UAV PCD → 高程图** (离线处理已保存的点云):
+```bash
+roslaunch mobile_manipulator pcd_to_elevation.launch
+```
 
 **Outdoor air-ground world** (heightmap terrain + mountain forest, GPS-EKF localization):
 ```bash
@@ -108,6 +122,92 @@ export OPENAI_API_KEY="your-key-here"
 chmod +x bringup.sh
 ./bringup.sh
 # Open http://localhost:5000
+```
+
+---
+
+## :helicopter: UAV 自主建图（PX4 + EGO-Planner）
+
+仓库已集成 UAV 建图管线，无需额外克隆 ego_ws。队友 clone 后一键安装即可启动 UAV 飞行建图。
+
+### 安装
+
+```bash
+cd ~/Air-Ground-Collaborative-Manupulation
+bash setup_uav.sh
+```
+
+`setup_uav.sh` 会自动完成：
+- 安装 ROS 依赖（MAVROS、OctoMap、grid_map 等）
+- 克隆 EGO-Planner 到 `src/ego-planner/`
+- 安装 PX4-Autopilot SITL 到 `~/PX4-Autopilot/`
+- 安装 MAVROS 地理数据集
+- 配置 Gazebo 模型路径
+
+### 一键 UAV 起飞建图
+
+```bash
+source devel/setup.bash
+bash one_key_takeoff.sh
+```
+
+自动启动 Gazebo 世界 + PX4 仿真 + MAVROS + EGO-Planner 自主飞行。UAV 自动起飞，EGO-Planner 自主规划避障航线。飞行过程中 LiDAR 点云自动累积保存：
+
+- `~/pointcloud_maps/uav_points_map_latest.pcd` — 始终最新
+- `~/pointcloud_maps/uav_points_map_YYYYMMDD_HHMMSS.pcd` — 带时间戳
+
+Ctrl-C 退出时自动保存最终版本。
+
+### PCD 点云 → 高程图
+
+```bash
+source devel/setup.bash
+roslaunch mobile_manipulator pcd_to_elevation.launch \
+    pcd_file:=~/pointcloud_maps/uav_points_map_latest.pcd
+```
+
+流程：PCD 回放 → 体素降采样 → `elevation_mapping` → GridMap 高程图层。
+
+输出 topic：
+- `/elevation_mapping/elevation_map_postprocessed` — 后处理高程图（高程 + 坡度）
+- `/elevation_mapping/elevation_map_raw` — 原始融合图
+
+### UAV 建图包结构
+
+| 目录 | 用途 |
+|------|------|
+| `src/uav_truth_tracker/` | UAV 点云导出、坐标转换、PCD 保存、PX4 桥接 |
+| `src/forest_avoidance_utils/` | 深度预处理、OctoMap 管理、轨迹记录 |
+| `src/ego-planner/` | EGO-Planner 自主飞行规划（setup_uav.sh 自动克隆） |
+| `models/` | UAV LiDAR 模型 |
+| `worlds/` | Gazebo 世界文件 |
+| `one_key_takeoff.sh` | 一键 UAV 起飞建图 |
+| `setup_uav.sh` | 一键安装 UAV 仿真环境 |
+| `px4_bridge.py` | PX4 OFFBOARD 自动起飞控制 |
+
+### 环境变量
+
+所有路径和参数可通过环境变量覆盖：
+
+```bash
+# 默认村庄地图，可切换为森林
+GAZEBO_WORLD=~/worlds/forest_corridor.world bash one_key_takeoff.sh
+
+# PX4 目录 / 关闭 RViz / 开启 Gazebo GUI
+PX4_DIR=~/PX4-Autopilot START_RVIZ=false PX4_GAZEBO_GUI=true bash one_key_takeoff.sh
+```
+
+### 完整空-地管线
+
+```
+UAV 起飞建图               PCD 转高程图               UGV 导航
+─────────────             ────────────              ────────
+one_key_takeoff.sh   →   pcd_to_elevation.launch → husky_forest_amcl.launch
+PX4 + EGO-Planner         elevation_mapping         AMCL + move_base
+     ↓                         ↓                        ↓
+ ~/pointcloud_maps/     /elevation_mapping/         /cmd_vel
+ uav_points_map_        elevation_map_             Husky 自动驾驶
+ latest.pcd             postprocessed
 ```
 
 ---

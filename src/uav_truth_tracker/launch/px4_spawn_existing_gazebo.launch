@@ -1,0 +1,26 @@
+<launch>
+  <!-- Start PX4 SITL and spawn the UAV into an already-running Gazebo world. -->
+  <arg name="vehicle" default="iris_depth_camera"/>
+  <arg name="sdf" default="$(env HOME)/Air-Ground-Collaborative-Manupulation/models/iris_depth_camera_lidar_mapping_light/model.sdf"/>
+  <arg name="x" default="0"/>
+  <arg name="y" default="0"/>
+  <arg name="z" default="0"/>
+  <arg name="R" default="0"/>
+  <arg name="P" default="0"/>
+  <arg name="Y" default="0"/>
+  <arg name="interactive" default="true"/>
+
+  <env name="PX4_SIM_MODEL" value="gazebo-classic_$(arg vehicle)"/>
+
+  <arg unless="$(arg interactive)" name="px4_command_arg1" value="-d"/>
+  <arg     if="$(arg interactive)" name="px4_command_arg1" value=""/>
+
+  <node name="sitl" pkg="px4" type="px4" output="screen"
+        args="$(find px4)/build/px4_sitl_default/etc -s etc/init.d-posix/rcS $(arg px4_command_arg1)"
+        required="true"/>
+
+  <node name="$(anon vehicle_spawn)" pkg="gazebo_ros" type="spawn_model" output="screen"
+        args="-sdf -file $(arg sdf) -model $(arg vehicle)
+              -x $(arg x) -y $(arg y) -z $(arg z)
+              -R $(arg R) -P $(arg P) -Y $(arg Y)"/>
+</launch>

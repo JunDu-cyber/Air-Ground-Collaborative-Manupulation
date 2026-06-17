@@ -1,0 +1,44 @@
+map_frame_id:                     "map"
+robot_base_frame_id:              "base_link"
+track_point_frame_id:             "base_link"
+track_point_x:                    0.0
+track_point_y:                    0.0
+track_point_z:                    0.0
+robot_pose_with_covariance_topic: ""
+robot_pose_cache_size:            200
+
+output_topic: "elevation_map_postprocessed"
+postprocessor_pipeline_name: "postprocessor_pipeline"
+
+input_sources:
+  uav:
+    type: pointcloud
+    topic: /uav0/mapping/points_elevation
+    queue_size: 1
+    publish_on_update: true
+    sensor_processor:
+      type: perfect
+
+min_update_rate:                  0.5
+time_tolerance:                   2.0
+time_offset_for_point_cloud:      0.0
+fused_map_publishing_rate:        1.0
+scanning_duration:                1.0
+
+enable_visibility_cleanup:        false
+visibility_cleanup_rate:          1.0
+
+length_in_x:                      70.0
+length_in_y:                      70.0
+position_x:                       0.0
+position_y:                       0.0
+resolution:                       0.25
+surface_normal_positive_axis:     z
+
+min_variance:                     0.0001
+max_variance:                     0.03
+mahalanobis_distance_threshold:   5.0
+multi_height_noise:               0.0001
+
+initialize_elevation_map:         false
+initialization_method:            0

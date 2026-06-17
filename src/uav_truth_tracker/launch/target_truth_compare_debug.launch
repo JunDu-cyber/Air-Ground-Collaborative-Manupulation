@@ -1,0 +1,26 @@
+<launch>
+  <arg name="frame_id" default="map"/>
+  <arg name="use_spawn_offsets" default="true"/>
+  <arg name="uav1_spawn_x" default="2.0"/>
+  <arg name="uav1_spawn_y" default="0.0"/>
+  <arg name="uav1_spawn_z" default="0.0"/>
+  <arg name="max_age" default="0.8"/>
+  <arg name="publish_rate" default="2.0"/>
+  <arg name="visual_pose_topic" default="/target_visual/pose"/>
+  <arg name="visual_valid_topic" default="/target_visual/valid"/>
+  <arg name="visual_confidence_topic" default="/target_visual/confidence"/>
+
+  <node pkg="uav_truth_tracker" type="target_truth_compare_node.py"
+        name="target_truth_compare_node" output="screen">
+    <param name="frame_id" value="$(arg frame_id)"/>
+    <param name="use_spawn_offsets" value="$(arg use_spawn_offsets)"/>
+    <param name="uav1_spawn_x" value="$(arg uav1_spawn_x)"/>
+    <param name="uav1_spawn_y" value="$(arg uav1_spawn_y)"/>
+    <param name="uav1_spawn_z" value="$(arg uav1_spawn_z)"/>
+    <param name="max_age" value="$(arg max_age)"/>
+    <param name="publish_rate" value="$(arg publish_rate)"/>
+    <param name="visual_pose_topic" value="$(arg visual_pose_topic)"/>
+    <param name="visual_valid_topic" value="$(arg visual_valid_topic)"/>
+    <param name="visual_confidence_topic" value="$(arg visual_confidence_topic)"/>
+  </node>
+</launch>

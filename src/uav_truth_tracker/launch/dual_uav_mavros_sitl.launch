@@ -1,0 +1,110 @@
+<launch>
+  <arg name="uav0_vehicle" default="iris"/>
+  <arg name="uav0_sdf_jinja" default="$(find uav_truth_tracker)/models/iris_depth_camera_visible/iris_depth_camera_visible.sdf.jinja"/>
+  <arg name="uav1_vehicle" default="iris"/>
+  <arg name="world" default="/home/lnwuu/PX4-Autopilot/Tools/simulation/gazebo-classic/sitl_gazebo-classic/worlds/empty.world"/>
+  <arg name="gui" default="true"/>
+  <arg name="debug" default="false"/>
+  <arg name="verbose" default="false"/>
+  <arg name="paused" default="false"/>
+  <arg name="publish_camera_tf" default="true"/>
+  <arg name="publish_lidar_tf" default="true"/>
+  <arg name="publish_uav_markers" default="true"/>
+  <arg name="uav_marker_mesh" default="file://$(env HOME)/PX4-Autopilot/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris/meshes/iris.stl"/>
+
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="gui" value="$(arg gui)"/>
+    <arg name="world_name" value="$(arg world)"/>
+    <arg name="debug" value="$(arg debug)"/>
+    <arg name="verbose" value="$(arg verbose)"/>
+    <arg name="paused" value="$(arg paused)"/>
+  </include>
+
+  <group ns="uav0">
+    <arg name="ID" value="0"/>
+    <arg name="fcu_url" default="udp://:14540@localhost:14580"/>
+    <include file="$(find px4)/launch/single_vehicle_spawn.launch">
+      <arg name="x" value="0"/>
+      <arg name="y" value="0"/>
+      <arg name="z" value="0"/>
+      <arg name="R" value="0"/>
+      <arg name="P" value="0"/>
+      <arg name="Y" value="0"/>
+      <arg name="vehicle" value="$(arg uav0_vehicle)"/>
+      <arg name="mavlink_udp_port" value="14560"/>
+      <arg name="mavlink_tcp_port" value="4560"/>
+      <arg name="ID" value="$(arg ID)"/>
+      <arg name="gst_udp_port" value="5600"/>
+      <arg name="video_uri" value="5600"/>
+      <arg name="mavlink_cam_udp_port" value="14530"/>
+      <arg name="cmd" value="$(find mavlink_sitl_gazebo)/scripts/jinja_gen.py --stdout --mavlink_id=1 --mavlink_udp_port=14560 --mavlink_tcp_port=4560 --gst_udp_port=5600 --video_uri=5600 --mavlink_cam_udp_port=14530 $(arg uav0_sdf_jinja) $(find uav_truth_tracker)"/>
+    </include>
+    <include file="$(find mavros)/launch/px4.launch">
+      <arg name="fcu_url" value="$(arg fcu_url)"/>
+      <arg name="gcs_url" value=""/>
+      <arg name="tgt_system" value="$(eval 1 + arg('ID'))"/>
+      <arg name="tgt_component" value="1"/>
+    </include>
+    <node if="$(arg publish_camera_tf)" name="camera_tf_broadcaster" pkg="uav_truth_tracker" type="camera_tf_broadcaster.py" output="screen">
+      <param name="odom_topic" value="mavros/local_position/odom"/>
+      <param name="child_frame" value="camera_link"/>
+      <param name="offset_x" value="0.1"/>
+      <param name="offset_y" value="0.0"/>
+      <param name="offset_z" value="0.0"/>
+      <!-- Gazebo OpenNI point clouds use ROS optical axes: +Z forward, +X right, +Y down. -->
+      <param name="offset_roll" value="-1.57079632679"/>
+      <param name="offset_pitch" value="0.0"/>
+      <param name="offset_yaw" value="-1.57079632679"/>
+    </node>
+    <node if="$(arg publish_lidar_tf)" name="lidar_tf_broadcaster" pkg="uav_truth_tracker" type="camera_tf_broadcaster.py" output="screen">
+      <param name="odom_topic" value="mavros/local_position/odom"/>
+      <param name="child_frame" value="uav0/velodyne_link"/>
+      <param name="offset_x" value="0.0"/>
+      <param name="offset_y" value="0.0"/>
+      <param name="offset_z" value="0.06"/>
+      <param name="offset_roll" value="0.0"/>
+      <param name="offset_pitch" value="0.0"/>
+      <param name="offset_yaw" value="0.0"/>
+    </node>
+  </group>
+
+  <group ns="uav1">
+    <arg name="ID" value="1"/>
+    <arg name="fcu_url" default="udp://:14541@localhost:14581"/>
+    <include file="$(find px4)/launch/single_vehicle_spawn.launch">
+      <arg name="x" value="2"/>
+      <arg name="y" value="0"/>
+      <arg name="z" value="0"/>
+      <arg name="R" value="0"/>
+      <arg name="P" value="0"/>
+      <arg name="Y" value="0"/>
+      <arg name="vehicle" value="$(arg uav1_vehicle)"/>
+      <arg name="mavlink_udp_port" value="14561"/>
+      <arg name="mavlink_tcp_port" value="4561"/>
+      <arg name="ID" value="$(arg ID)"/>
+      <arg name="gst_udp_port" value="$(eval 5600 + arg('ID'))"/>
+      <arg name="video_uri" value="$(eval 5600 + arg('ID'))"/>
+      <arg name="mavlink_cam_udp_port" value="$(eval 14530 + arg('ID'))"/>
+    </include>
+    <include file="$(find mavros)/launch/px4.launch">
+      <arg name="fcu_url" value="$(arg fcu_url)"/>
+      <arg name="gcs_url" value=""/>
+      <arg name="tgt_system" value="$(eval 1 + arg('ID'))"/>
+      <arg name="tgt_component" value="1"/>
+    </include>
+  </group>
+
+  <node if="$(arg publish_uav_markers)" name="uav_model_markers" pkg="uav_truth_tracker" type="uav_model_markers.py" output="screen">
+    <param name="mesh_resource" value="$(arg uav_marker_mesh)"/>
+    <param name="frame_id" value="map"/>
+    <param name="uav0_odom" value="/uav0/mavros/local_position/odom"/>
+    <param name="uav1_odom" value="/uav1/mavros/local_position/odom"/>
+    <param name="uav0_offset_x" value="0.0"/>
+    <param name="uav0_offset_y" value="0.0"/>
+    <param name="uav0_offset_z" value="0.0"/>
+    <param name="uav1_offset_x" value="2.0"/>
+    <param name="uav1_offset_y" value="0.0"/>
+    <param name="uav1_offset_z" value="0.0"/>
+    <param name="scale" value="1.0"/>
+  </node>
+</launch>

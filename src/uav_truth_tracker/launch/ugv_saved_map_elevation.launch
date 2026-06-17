@@ -1,0 +1,75 @@
+<launch>
+  <!-- ====================================================================
+       Offline UAV PCD -> UGV elevation map.
+
+       This launch intentionally reuses the Air-Ground-Collaborative-
+       Manupulation UGV elevation-mapping configuration instead of drawing a
+       custom PointCloud/Marker visualization in this workspace:
+
+         saved PCD
+           -> /uav0/mapping/points_saved
+           -> /uav/points_downsampled
+           -> elevation_mapping
+           -> /elevation_mapping/elevation_map_postprocessed
+
+       Config/RViz files are loaded from the Git-cloned UGV workspace by
+       absolute path. That avoids failing with "Resource not found:
+       mobile_manipulator" when this shell only sourced ego_ws.
+       ==================================================================== -->
+
+  <arg name="ugv_ws" default="$(env HOME)/Air-Ground-Collaborative-Manupulation"/>
+  <arg name="pcd_file" default="$(env HOME)/pointcloud_maps/uav_points_map_latest.pcd"/>
+  <arg name="saved_cloud_topic" default="/uav0/mapping/points_saved"/>
+  <arg name="frame_id" default="map"/>
+  <arg name="pcd_publish_rate" default="1.0"/>
+  <arg name="rviz" default="true"/>
+  <arg name="voxel_leaf_size" default="0.10"/>
+
+  <!-- Static pose used by elevation_mapping when a real UGV localization stack
+       is not running. The saved UAV map is already in map coordinates. -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="ugv_base_link_tf"
+        args="0 0 0 0 0 0 1 map base_link"/>
+
+  <!-- Replay the saved UAV map as a live PointCloud2 topic. -->
+  <include file="$(find uav_truth_tracker)/launch/saved_points_for_ugv.launch">
+    <arg name="pcd_file" value="$(arg pcd_file)"/>
+    <arg name="output_topic" value="$(arg saved_cloud_topic)"/>
+    <arg name="frame_id" value="$(arg frame_id)"/>
+    <arg name="publish_rate" value="$(arg pcd_publish_rate)"/>
+    <arg name="latch" value="true"/>
+  </include>
+
+  <!-- Down-sample the saved UAV map to the topic expected by the UGV
+       elevation_mapping.yaml: /uav/points_downsampled. -->
+  <node pkg="nodelet" type="nodelet" name="uav_pcl_manager"
+        args="manager" output="screen"/>
+  <node pkg="nodelet" type="nodelet" name="uav_voxel_grid"
+        args="load pcl/VoxelGrid uav_pcl_manager" output="screen">
+    <remap from="~input" to="$(arg saved_cloud_topic)"/>
+    <remap from="~output" to="/uav/points_downsampled"/>
+    <rosparam subst_value="true">
+      leaf_size: $(arg voxel_leaf_size)
+    </rosparam>
+  </node>
+
+  <!-- Start ANYbotics elevation_mapping from the UGV workspace. The wrapper
+       sources $(arg ugv_ws)/devel/setup.bash before exec'ing the real node. -->
+  <node pkg="uav_truth_tracker" type="run_ugv_elevation_mapping.sh"
+        name="elevation_mapping" output="screen">
+    <env name="UGV_WS" value="$(arg ugv_ws)"/>
+    <rosparam command="load" file="$(arg ugv_ws)/src/mobile_manipulator/config/elevation_mapping.yaml"/>
+    <rosparam command="load" file="$(arg ugv_ws)/src/mobile_manipulator/config/elevation_postprocessor.yaml"/>
+  </node>
+
+  <node pkg="grid_map_visualization" type="grid_map_visualization"
+        name="elevation_map_visualization" output="screen">
+    <param name="grid_map_topic" value="/elevation_mapping/elevation_map_postprocessed"/>
+    <rosparam command="load" file="$(arg ugv_ws)/src/mobile_manipulator/config/elevation_visualization.yaml"/>
+  </node>
+
+  <node if="$(arg rviz)" name="elevation_rviz" pkg="uav_truth_tracker"
+        type="run_ugv_elevation_rviz.sh"
+        args="-d $(arg ugv_ws)/src/mobile_manipulator/rviz/elevation_mapping.rviz">
+    <env name="UGV_WS" value="$(arg ugv_ws)"/>
+  </node>
+</launch>

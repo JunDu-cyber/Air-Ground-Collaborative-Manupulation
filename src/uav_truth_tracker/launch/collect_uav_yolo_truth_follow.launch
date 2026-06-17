@@ -1,0 +1,51 @@
+<launch>
+  <arg name="dataset_dir" default="$(env HOME)/uav_yolo_dataset"/>
+  <arg name="max_images" default="0"/>
+  <arg name="max_new_images" default="1000"/>
+  <arg name="sample_rate" default="5.0"/>
+  <arg name="negative_sample_ratio" default="0.25"/>
+  <arg name="dataset_tag" default="truth_follow"/>
+
+  <arg name="target_mode" default="figure8_3d"/>
+  <arg name="uav1_speed" default="0.8"/>
+  <arg name="z_amplitude" default="0.5"/>
+  <arg name="follow_distance" default="2.5"/>
+  <arg name="slowdown_distance" default="3.5"/>
+  <arg name="auto_arm" default="true"/>
+  <arg name="auto_offboard" default="true"/>
+
+  <!--
+    OFFLINE DATASET TOOL ONLY.
+    The estimator reads /uav1 odom so uav0 can keep the target in view while
+    collecting images. This launch must never be used as an online perception
+    or evaluation result.
+  -->
+  <include file="$(find uav_truth_tracker)/launch/intercept_estimator_velocity_chase.launch">
+    <arg name="observation_source" value="truth_odom"/>
+    <arg name="target_mode" value="$(arg target_mode)"/>
+    <arg name="uav1_speed" value="$(arg uav1_speed)"/>
+    <arg name="z_amplitude" value="$(arg z_amplitude)"/>
+    <arg name="estimator_model" value="kalman_cv"/>
+    <arg name="guidance_target" value="current"/>
+    <arg name="stop_distance" value="$(arg follow_distance)"/>
+    <arg name="capture_slowdown_distance" value="$(arg slowdown_distance)"/>
+    <arg name="stop_behavior" value="target_velocity"/>
+    <arg name="stop_on_capture_success" value="false"/>
+    <arg name="latch_capture_success" value="false"/>
+    <arg name="face_guidance_before_move" value="false"/>
+    <arg name="yaw_gate_xy_scale" value="1.0"/>
+    <arg name="start_evaluator" value="false"/>
+    <arg name="auto_arm" value="$(arg auto_arm)"/>
+    <arg name="auto_offboard" value="$(arg auto_offboard)"/>
+  </include>
+
+  <!-- Truth odom is used only here to create offline YOLO labels. -->
+  <include file="$(find uav_truth_tracker)/launch/collect_uav_yolo_dataset.launch">
+    <arg name="dataset_dir" value="$(arg dataset_dir)"/>
+    <arg name="max_images" value="$(arg max_images)"/>
+    <arg name="max_new_images" value="$(arg max_new_images)"/>
+    <arg name="sample_rate" value="$(arg sample_rate)"/>
+    <arg name="negative_sample_ratio" value="$(arg negative_sample_ratio)"/>
+    <arg name="dataset_tag" value="$(arg dataset_tag)"/>
+  </include>
+</launch>

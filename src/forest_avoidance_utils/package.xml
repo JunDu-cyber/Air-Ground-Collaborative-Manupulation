@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>forest_avoidance_utils</name>
+  <version>1.0.0</version>
+  <description>Forest obstacle avoidance utilities for ego_planner</description>
+  <maintainer email="you@todo.todo">you</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>roscpp</depend>
+  <depend>rospy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>mavros_msgs</depend>
+  <depend>quadrotor_msgs</depend>
+  <depend>octomap_server</depend>
+</package>

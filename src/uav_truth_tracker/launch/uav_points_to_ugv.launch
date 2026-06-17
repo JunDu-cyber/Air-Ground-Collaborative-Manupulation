@@ -1,0 +1,184 @@
+<launch>
+  <!-- Project LiDAR source:
+       /uav0/velodyne_points_raw is Gazebo sensor_msgs/PointCloud.
+       The relay below reuses the same filtering path as the forest OctoMap setup,
+       then the world-frame node publishes a fixed-frame PointCloud2 for UGV use. -->
+  <arg name="start_pointcloud2_relay" default="true"/>
+  <arg name="raw_input_topic" default="/uav0/velodyne_points_raw"/>
+  <arg name="input_topic" default="/uav0/velodyne_points"/>
+  <arg name="lidar_frame" default="uav0/velodyne_link"/>
+  <arg name="imu_topic" default="/mavros/imu/data"/>
+  <arg name="odom_topic" default="/mavros/local_position/odom"/>
+
+  <arg name="output_topic" default="/uav0/mapping/points_world"/>
+  <arg name="target_frame" default="map"/>
+  <arg name="publish_rate" default="3.0"/>
+  <arg name="tf_lookup_timeout" default="0.10"/>
+  <arg name="allow_latest_tf_fallback" default="true"/>
+
+  <arg name="enable_range_filter" default="true"/>
+  <arg name="min_range" default="0.35"/>
+  <arg name="max_range" default="12.0"/>
+  <arg name="drop_max_range_returns" default="true"/>
+  <arg name="sensor_max_range" default="16.0"/>
+  <arg name="max_range_margin" default="0.5"/>
+  <arg name="drop_far_boundary_band" default="true"/>
+  <arg name="range_edge_margin" default="1.5"/>
+  <arg name="enable_voxel_filter" default="true"/>
+  <arg name="leaf_size" default="0.1"/>
+  <arg name="relay_voxel_size" default="0.08"/>
+  <arg name="neighbor_voxel_size" default="0.18"/>
+  <arg name="min_neighbors" default="2"/>
+  <arg name="max_angular_velocity" default="0.60"/>
+  <arg name="max_imu_age" default="0.25"/>
+  <arg name="max_linear_velocity" default="2.50"/>
+  <arg name="max_odom_angular_velocity" default="0.60"/>
+  <arg name="max_odom_age" default="0.25"/>
+  <arg name="stamp_with_odom" default="true"/>
+  <arg name="ground_filter_enabled" default="false"/>
+  <arg name="ground_z" default="0.0"/>
+  <arg name="ground_keep_above" default="0.10"/>
+  <arg name="ground_column_filter_enabled" default="true"/>
+  <arg name="ground_column_size" default="0.08"/>
+  <arg name="ground_column_min_height" default="0.20"/>
+  <arg name="ground_column_support_radius" default="0"/>
+  <arg name="self_filter_enabled" default="true"/>
+  <arg name="self_filter_body_radius" default="0.28"/>
+  <arg name="self_filter_body_z_min" default="-0.16"/>
+  <arg name="self_filter_body_z_max" default="0.16"/>
+  <arg name="self_filter_rotor_radius" default="0.17"/>
+  <arg name="self_filter_rotor_z_min" default="-0.14"/>
+  <arg name="self_filter_rotor_z_max" default="0.06"/>
+  <arg name="lidar_mount_x" default="0.0"/>
+  <arg name="lidar_mount_y" default="0.0"/>
+  <arg name="lidar_mount_z" default="0.06"/>
+  <arg name="local_min_z" default="-999.0"/>
+  <arg name="local_max_z" default="999.0"/>
+  <arg name="min_publish_interval" default="0.0"/>
+
+  <arg name="start_map_recorder" default="true"/>
+  <arg name="accumulated_topic" default="/uav0/mapping/points_accumulated"/>
+  <arg name="map_output_dir" default="$(env HOME)/pointcloud_maps"/>
+  <arg name="map_name" default="uav_points_map"/>
+  <arg name="map_voxel_leaf_size" default="0.15"/>
+  <arg name="map_min_observations" default="3"/>
+  <arg name="map_min_z" default="-999.0"/>
+  <arg name="map_max_z" default="999.0"/>
+  <arg name="map_drop_flat_ground" default="false"/>
+  <arg name="map_ground_filter_mode" default="none"/>
+  <arg name="map_ground_z" default="0.0"/>
+  <arg name="map_ground_clearance" default="0.25"/>
+  <arg name="map_obstacle_height_above_ground" default="0.30"/>
+  <arg name="map_ground_xy_cell_size" default="0.35"/>
+  <arg name="map_keep_terrain_points" default="false"/>
+  <arg name="map_terrain_cell_size" default="0.80"/>
+  <arg name="map_publish_rate" default="1.0"/>
+  <arg name="map_save_interval" default="30.0"/>
+  <arg name="map_ray_clearing_enabled" default="false"/>
+  <arg name="map_ray_clear_sensor_frame" default="$(arg lidar_frame)"/>
+  <arg name="map_ray_clear_max_range" default="$(arg max_range)"/>
+  <arg name="map_ray_clear_min_range" default="0.35"/>
+  <arg name="map_ray_clear_step_size" default="0.20"/>
+  <arg name="map_ray_clear_keep_last_voxels" default="3"/>
+  <arg name="map_ray_clear_decimation" default="8"/>
+  <arg name="map_tf_lookup_timeout" default="$(arg tf_lookup_timeout)"/>
+
+  <node if="$(arg start_pointcloud2_relay)" pkg="forest_avoidance_utils"
+        type="pointcloud_to_pointcloud2_relay.py"
+        name="uav_points_filtered_relay" output="screen">
+    <param name="input_topic" value="$(arg raw_input_topic)"/>
+    <param name="output_topic" value="$(arg input_topic)"/>
+    <param name="frame_id" value="$(arg lidar_frame)"/>
+    <param name="output_frame_id" value="$(arg lidar_frame)"/>
+    <param name="publish_in_world_frame" value="false"/>
+    <param name="world_frame_id" value="$(arg target_frame)"/>
+    <param name="stamp_with_odom" value="$(arg stamp_with_odom)"/>
+    <param name="include_intensity" value="true"/>
+    <param name="imu_topic" value="$(arg imu_topic)"/>
+    <param name="odom_topic" value="$(arg odom_topic)"/>
+    <param name="max_angular_velocity" value="$(arg max_angular_velocity)"/>
+    <param name="max_imu_age" value="$(arg max_imu_age)"/>
+    <param name="max_linear_velocity" value="$(arg max_linear_velocity)"/>
+    <param name="max_odom_angular_velocity" value="$(arg max_odom_angular_velocity)"/>
+    <param name="max_odom_age" value="$(arg max_odom_age)"/>
+    <param name="ground_filter_enabled" value="$(arg ground_filter_enabled)"/>
+    <param name="ground_z" value="$(arg ground_z)"/>
+    <param name="ground_keep_above" value="$(arg ground_keep_above)"/>
+    <param name="ground_column_filter_enabled" value="$(arg ground_column_filter_enabled)"/>
+    <param name="ground_column_size" value="$(arg ground_column_size)"/>
+    <param name="ground_column_min_height" value="$(arg ground_column_min_height)"/>
+    <param name="ground_column_support_radius" value="$(arg ground_column_support_radius)"/>
+    <param name="self_filter_enabled" value="$(arg self_filter_enabled)"/>
+    <param name="self_filter_body_radius" value="$(arg self_filter_body_radius)"/>
+    <param name="self_filter_body_z_min" value="$(arg self_filter_body_z_min)"/>
+    <param name="self_filter_body_z_max" value="$(arg self_filter_body_z_max)"/>
+    <param name="self_filter_rotor_radius" value="$(arg self_filter_rotor_radius)"/>
+    <param name="self_filter_rotor_z_min" value="$(arg self_filter_rotor_z_min)"/>
+    <param name="self_filter_rotor_z_max" value="$(arg self_filter_rotor_z_max)"/>
+    <param name="lidar_mount_x" value="$(arg lidar_mount_x)"/>
+    <param name="lidar_mount_y" value="$(arg lidar_mount_y)"/>
+    <param name="lidar_mount_z" value="$(arg lidar_mount_z)"/>
+    <param name="min_range" value="$(arg min_range)"/>
+    <param name="max_range" value="$(arg max_range)"/>
+    <param name="sensor_max_range" value="$(arg sensor_max_range)"/>
+    <param name="max_range_margin" value="$(arg max_range_margin)"/>
+    <param name="voxel_size" value="$(arg relay_voxel_size)"/>
+    <param name="neighbor_voxel_size" value="$(arg neighbor_voxel_size)"/>
+    <param name="min_neighbors" value="$(arg min_neighbors)"/>
+    <param name="local_min_z" value="$(arg local_min_z)"/>
+    <param name="local_max_z" value="$(arg local_max_z)"/>
+    <param name="min_publish_interval" value="$(arg min_publish_interval)"/>
+  </node>
+
+  <node pkg="uav_truth_tracker" type="uav_pointcloud_to_world.py"
+        name="uav_pointcloud_to_world" output="screen">
+    <param name="input_topic" value="$(arg input_topic)"/>
+    <param name="output_topic" value="$(arg output_topic)"/>
+    <param name="target_frame" value="$(arg target_frame)"/>
+    <param name="publish_rate" value="$(arg publish_rate)"/>
+    <param name="tf_lookup_timeout" value="$(arg tf_lookup_timeout)"/>
+    <param name="allow_latest_tf_fallback" value="$(arg allow_latest_tf_fallback)"/>
+    <param name="enable_range_filter" value="$(arg enable_range_filter)"/>
+    <param name="min_range" value="$(arg min_range)"/>
+    <param name="max_range" value="$(arg max_range)"/>
+    <param name="drop_max_range_returns" value="$(arg drop_max_range_returns)"/>
+    <param name="sensor_max_range" value="$(arg sensor_max_range)"/>
+    <param name="max_range_margin" value="$(arg max_range_margin)"/>
+    <param name="drop_far_boundary_band" value="$(arg drop_far_boundary_band)"/>
+    <param name="range_edge_margin" value="$(arg range_edge_margin)"/>
+    <param name="enable_voxel_filter" value="$(arg enable_voxel_filter)"/>
+    <param name="leaf_size" value="$(arg leaf_size)"/>
+  </node>
+
+  <node if="$(arg start_map_recorder)" pkg="uav_truth_tracker"
+        type="uav_pointcloud_map_recorder.py"
+        name="uav_pointcloud_map_recorder" output="screen">
+    <param name="input_topic" value="$(arg output_topic)"/>
+    <param name="accumulated_topic" value="$(arg accumulated_topic)"/>
+    <param name="frame_id" value="$(arg target_frame)"/>
+    <param name="output_dir" value="$(arg map_output_dir)"/>
+    <param name="map_name" value="$(arg map_name)"/>
+    <param name="voxel_leaf_size" value="$(arg map_voxel_leaf_size)"/>
+    <param name="min_observations" value="$(arg map_min_observations)"/>
+    <param name="min_z" value="$(arg map_min_z)"/>
+    <param name="max_z" value="$(arg map_max_z)"/>
+    <param name="drop_flat_ground" value="$(arg map_drop_flat_ground)"/>
+    <param name="ground_filter_mode" value="$(arg map_ground_filter_mode)"/>
+    <param name="ground_z" value="$(arg map_ground_z)"/>
+    <param name="ground_clearance" value="$(arg map_ground_clearance)"/>
+    <param name="obstacle_height_above_ground" value="$(arg map_obstacle_height_above_ground)"/>
+    <param name="ground_xy_cell_size" value="$(arg map_ground_xy_cell_size)"/>
+    <param name="keep_terrain_points" value="$(arg map_keep_terrain_points)"/>
+    <param name="terrain_cell_size" value="$(arg map_terrain_cell_size)"/>
+    <param name="publish_rate" value="$(arg map_publish_rate)"/>
+    <param name="save_interval" value="$(arg map_save_interval)"/>
+    <param name="ray_clearing_enabled" value="$(arg map_ray_clearing_enabled)"/>
+    <param name="sensor_frame" value="$(arg map_ray_clear_sensor_frame)"/>
+    <param name="ray_clear_max_range" value="$(arg map_ray_clear_max_range)"/>
+    <param name="ray_clear_min_range" value="$(arg map_ray_clear_min_range)"/>
+    <param name="ray_clear_step_size" value="$(arg map_ray_clear_step_size)"/>
+    <param name="ray_clear_keep_last_voxels" value="$(arg map_ray_clear_keep_last_voxels)"/>
+    <param name="ray_clear_decimation" value="$(arg map_ray_clear_decimation)"/>
+    <param name="tf_lookup_timeout" value="$(arg map_tf_lookup_timeout)"/>
+  </node>
+</launch>
