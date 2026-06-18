@@ -1,0 +1,89 @@
+<launch>
+  <arg name="fixed_frame" default="map"/>
+  <arg name="lidar_cloud_topic" default="/uav0/velodyne_points"/>
+  <arg name="lidar_raw_topic" default="/uav0/velodyne_points_raw"/>
+  <arg name="start_pointcloud2_relay" default="true"/>
+  <arg name="relay_frame_id" default=""/>
+
+  <arg name="range_min" default="0.5"/>
+  <arg name="range_max" default="20.0"/>
+  <arg name="z_min" default="2.0"/>
+  <arg name="z_max" default="5.0"/>
+  <arg name="voxel_leaf_size" default="0.08"/>
+  <arg name="cluster_tolerance" default="0.25"/>
+  <arg name="min_cluster_size" default="5"/>
+  <arg name="max_cluster_size" default="500"/>
+  <arg name="target_size_min" default="0.15"/>
+  <arg name="target_size_max" default="1.5"/>
+  <arg name="expected_target_size" default="0.6"/>
+  <arg name="enable_shape_filter" default="true"/>
+  <arg name="target_xy_size_min" default="0.05"/>
+  <arg name="target_xy_size_max" default="1.20"/>
+  <arg name="target_z_size_min" default="0.0"/>
+  <arg name="target_z_size_max" default="0.80"/>
+  <arg name="target_aspect_ratio_max" default="12.0"/>
+  <arg name="expected_target_xy_size" default="0.55"/>
+  <arg name="expected_target_z_size" default="0.25"/>
+  <arg name="reference_distance_weight" default="0.65"/>
+  <arg name="static_clutter_filter_enable" default="false"/>
+  <arg name="static_clutter_min_candidates" default="2"/>
+  <arg name="static_clutter_confirm_count" default="5"/>
+  <arg name="static_clutter_cell_size" default="0.40"/>
+  <arg name="static_clutter_max_spread" default="0.15"/>
+  <arg name="allow_reference_fallback" default="true"/>
+  <arg name="use_estimator_gating" default="true"/>
+  <arg name="gating_radius" default="2.0"/>
+  <arg name="max_detection_gap" default="0.5"/>
+  <arg name="publish_debug_cloud" default="true"/>
+
+  <node if="$(arg start_pointcloud2_relay)" pkg="uav_truth_tracker" type="pointcloud_to_pointcloud2_relay.py"
+        name="pointcloud_to_pointcloud2_relay" output="screen">
+    <param name="input_topic" value="$(arg lidar_raw_topic)"/>
+    <param name="output_topic" value="$(arg lidar_cloud_topic)"/>
+    <param name="frame_id" value="$(arg relay_frame_id)"/>
+  </node>
+
+  <node pkg="uav_truth_tracker" type="target_lidar_detector_node.py"
+        name="target_lidar_detector_node" output="screen">
+    <param name="fixed_frame" value="$(arg fixed_frame)"/>
+    <param name="lidar_cloud_topic" value="$(arg lidar_cloud_topic)"/>
+    <param name="uav0_odom_topic" value="/uav0/mavros/local_position/odom"/>
+    <param name="output_pose_topic" value="/target_observation/pose"/>
+    <param name="pose_cov_topic" value="/target_observation/pose_cov"/>
+    <param name="marker_topic" value="/target_observation/marker"/>
+    <param name="debug_cloud_topic" value="/target_observation/debug_cloud"/>
+    <param name="valid_topic" value="/target_observation/valid"/>
+    <param name="confidence_topic" value="/target_observation/confidence"/>
+    <param name="point_count_topic" value="/target_observation/point_count"/>
+    <param name="range_min" value="$(arg range_min)"/>
+    <param name="range_max" value="$(arg range_max)"/>
+    <param name="z_min" value="$(arg z_min)"/>
+    <param name="z_max" value="$(arg z_max)"/>
+    <param name="voxel_leaf_size" value="$(arg voxel_leaf_size)"/>
+    <param name="cluster_tolerance" value="$(arg cluster_tolerance)"/>
+    <param name="min_cluster_size" value="$(arg min_cluster_size)"/>
+    <param name="max_cluster_size" value="$(arg max_cluster_size)"/>
+    <param name="target_size_min" value="$(arg target_size_min)"/>
+    <param name="target_size_max" value="$(arg target_size_max)"/>
+    <param name="expected_target_size" value="$(arg expected_target_size)"/>
+    <param name="enable_shape_filter" value="$(arg enable_shape_filter)"/>
+    <param name="target_xy_size_min" value="$(arg target_xy_size_min)"/>
+    <param name="target_xy_size_max" value="$(arg target_xy_size_max)"/>
+    <param name="target_z_size_min" value="$(arg target_z_size_min)"/>
+    <param name="target_z_size_max" value="$(arg target_z_size_max)"/>
+    <param name="target_aspect_ratio_max" value="$(arg target_aspect_ratio_max)"/>
+    <param name="expected_target_xy_size" value="$(arg expected_target_xy_size)"/>
+    <param name="expected_target_z_size" value="$(arg expected_target_z_size)"/>
+    <param name="reference_distance_weight" value="$(arg reference_distance_weight)"/>
+    <param name="static_clutter_filter_enable" value="$(arg static_clutter_filter_enable)"/>
+    <param name="static_clutter_min_candidates" value="$(arg static_clutter_min_candidates)"/>
+    <param name="static_clutter_confirm_count" value="$(arg static_clutter_confirm_count)"/>
+    <param name="static_clutter_cell_size" value="$(arg static_clutter_cell_size)"/>
+    <param name="static_clutter_max_spread" value="$(arg static_clutter_max_spread)"/>
+    <param name="allow_reference_fallback" value="$(arg allow_reference_fallback)"/>
+    <param name="use_estimator_gating" value="$(arg use_estimator_gating)"/>
+    <param name="gating_radius" value="$(arg gating_radius)"/>
+    <param name="max_detection_gap" value="$(arg max_detection_gap)"/>
+    <param name="publish_debug_cloud" value="$(arg publish_debug_cloud)"/>
+  </node>
+</launch>

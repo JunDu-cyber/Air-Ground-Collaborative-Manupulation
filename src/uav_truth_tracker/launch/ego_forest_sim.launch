@@ -1,0 +1,176 @@
+<launch>
+  <!-- Original EGO-Planner simulator on the random_forest map.
+
+       This launch intentionally does not use PX4, MAVROS, Gazebo, or OctoMap.
+       It keeps the original EGO simulated quadrotor stack and replaces the
+       default mockamap map with map_generator/random_forest.
+  -->
+
+  <arg name="init_x" default="-18.0"/>
+  <arg name="init_y" default="0.0"/>
+  <arg name="init_z" default="0.0"/>
+
+  <arg name="map_size_x" default="60.0"/>
+  <arg name="map_size_y" default="60.0"/>
+  <arg name="map_size_z" default="15.0"/>
+  <arg name="odom_topic" default="/visual_slam/odom"/>
+
+  <arg name="forest_seed" default="1"/>
+  <arg name="forest_obs_num" default="80"/>
+  <arg name="forest_circle_num" default="60"/>
+  <arg name="forest_min_dist" default="1.5"/>
+  <arg name="forest_lower_rad" default="0.35"/>
+  <arg name="forest_upper_rad" default="0.75"/>
+  <arg name="forest_lower_height" default="2.0"/>
+  <arg name="forest_upper_height" default="4.5"/>
+
+  <arg name="sensing_horizon" default="8.0"/>
+  <arg name="sensing_rate" default="30.0"/>
+  <arg name="estimation_rate" default="30.0"/>
+
+  <arg name="goal_z" default="1.2"/>
+  <arg name="max_vel" default="1.0"/>
+  <arg name="max_acc" default="1.5"/>
+  <arg name="planning_horizon" default="8.0"/>
+
+  <node pkg="map_generator" name="random_forest" type="random_forest" output="screen">
+    <remap from="~odometry" to="$(arg odom_topic)"/>
+    <param name="init_state_x" value="$(arg init_x)"/>
+    <param name="init_state_y" value="$(arg init_y)"/>
+    <param name="map/x_size" value="$(arg map_size_x)"/>
+    <param name="map/y_size" value="$(arg map_size_y)"/>
+    <param name="map/z_size" value="$(arg map_size_z)"/>
+    <param name="map/resolution" value="0.1"/>
+
+    <param name="ObstacleShape/seed" value="$(arg forest_seed)"/>
+    <param name="map/obs_num" value="$(arg forest_obs_num)"/>
+    <param name="ObstacleShape/lower_rad" value="$(arg forest_lower_rad)"/>
+    <param name="ObstacleShape/upper_rad" value="$(arg forest_upper_rad)"/>
+    <param name="ObstacleShape/lower_hei" value="$(arg forest_lower_height)"/>
+    <param name="ObstacleShape/upper_hei" value="$(arg forest_upper_height)"/>
+
+    <param name="map/circle_num" value="$(arg forest_circle_num)"/>
+    <param name="ObstacleShape/radius_l" value="0.7"/>
+    <param name="ObstacleShape/radius_h" value="0.5"/>
+    <param name="ObstacleShape/z_l" value="0.7"/>
+    <param name="ObstacleShape/z_h" value="0.8"/>
+    <param name="ObstacleShape/theta" value="0.5"/>
+
+    <param name="sensing/radius" value="$(arg sensing_horizon)"/>
+    <param name="sensing/rate" value="10.0"/>
+    <param name="min_distance" value="$(arg forest_min_dist)"/>
+  </node>
+
+  <include file="$(find ego_planner)/launch/forest_param.xml">
+    <arg name="map_size_x_" value="$(arg map_size_x)"/>
+    <arg name="map_size_y_" value="$(arg map_size_y)"/>
+    <arg name="map_size_z_" value="$(arg map_size_z)"/>
+    <arg name="odometry_topic" value="$(arg odom_topic)"/>
+    <arg name="camera_pose_topic" value="/pcl_render_node/camera_pose"/>
+    <arg name="depth_topic" value="/pcl_render_node/depth"/>
+    <arg name="cloud_topic" value="/pcl_render_node/cloud"/>
+    <arg name="cx" value="321.04638671875"/>
+    <arg name="cy" value="243.44969177246094"/>
+    <arg name="fx" value="387.229248046875"/>
+    <arg name="fy" value="387.229248046875"/>
+    <arg name="max_vel" value="$(arg max_vel)"/>
+    <arg name="max_acc" value="$(arg max_acc)"/>
+    <arg name="planning_horizon" value="$(arg planning_horizon)"/>
+    <arg name="ground_filter_margin" value="0.08"/>
+    <arg name="skip_pixel" value="2"/>
+    <arg name="flight_type" value="1"/>
+    <arg name="point_num" value="5"/>
+    <arg name="point0_x" value="-15.0"/>
+    <arg name="point0_y" value="0.0"/>
+    <arg name="point0_z" value="$(arg goal_z)"/>
+    <arg name="point1_x" value="0.0"/>
+    <arg name="point1_y" value="15.0"/>
+    <arg name="point1_z" value="$(arg goal_z)"/>
+    <arg name="point2_x" value="15.0"/>
+    <arg name="point2_y" value="0.0"/>
+    <arg name="point2_z" value="$(arg goal_z)"/>
+    <arg name="point3_x" value="0.0"/>
+    <arg name="point3_y" value="-15.0"/>
+    <arg name="point3_z" value="$(arg goal_z)"/>
+    <arg name="point4_x" value="-15.0"/>
+    <arg name="point4_y" value="0.0"/>
+    <arg name="point4_z" value="$(arg goal_z)"/>
+  </include>
+
+  <node pkg="ego_planner" name="traj_server" type="traj_server" output="screen">
+    <remap from="/position_cmd" to="planning/pos_cmd"/>
+    <remap from="/odom_world" to="$(arg odom_topic)"/>
+    <param name="traj_server/time_forward" value="1.0" type="double"/>
+  </node>
+
+  <node pkg="waypoint_generator" name="waypoint_generator" type="waypoint_generator"
+        output="screen">
+    <remap from="~odom" to="$(arg odom_topic)"/>
+    <remap from="~goal" to="/goal_elevated"/>
+    <remap from="~traj_start_trigger" to="/traj_start_trigger"/>
+    <param name="waypoint_type" value="manual-lonely-waypoint"/>
+  </node>
+
+  <node pkg="forest_avoidance_utils" name="goal_elevator"
+        type="goal_elevator.py" output="screen">
+    <param name="input_topic" value="/move_base_simple/goal"/>
+    <param name="output_topic" value="/goal_elevated"/>
+    <param name="goal_z" value="$(arg goal_z)"/>
+  </node>
+
+  <node pkg="so3_quadrotor_simulator" type="quadrotor_simulator_so3"
+        name="quadrotor_simulator_so3" output="screen">
+    <param name="rate/odom" value="200.0"/>
+    <param name="simulator/init_state_x" value="$(arg init_x)"/>
+    <param name="simulator/init_state_y" value="$(arg init_y)"/>
+    <param name="simulator/init_state_z" value="$(arg init_z)"/>
+    <remap from="~odom" to="$(arg odom_topic)"/>
+    <remap from="~cmd" to="so3_cmd"/>
+    <remap from="~force_disturbance" to="force_disturbance"/>
+    <remap from="~moment_disturbance" to="moment_disturbance"/>
+  </node>
+
+  <node pkg="nodelet" type="nodelet" args="standalone so3_control/SO3ControlNodelet"
+        name="so3_control" required="true" output="screen">
+    <param name="so3_control/init_state_x" value="$(arg init_x)"/>
+    <param name="so3_control/init_state_y" value="$(arg init_y)"/>
+    <param name="so3_control/init_state_z" value="$(arg init_z)"/>
+    <remap from="~odom" to="$(arg odom_topic)"/>
+    <remap from="~position_cmd" to="/planning/pos_cmd"/>
+    <remap from="~motors" to="motors"/>
+    <remap from="~corrections" to="corrections"/>
+    <remap from="~so3_cmd" to="so3_cmd"/>
+    <rosparam file="$(find so3_control)/config/gains_hummingbird.yaml"/>
+    <rosparam file="$(find so3_control)/config/corrections_hummingbird.yaml"/>
+    <param name="mass" value="0.98"/>
+    <param name="use_angle_corrections " value="false"/>
+    <param name="use_external_yaw " value="false"/>
+    <param name="gains/rot/z" value="1.0"/>
+    <param name="gains/ang/z" value="0.1"/>
+  </node>
+
+  <node pkg="odom_visualization" name="odom_visualization"
+        type="odom_visualization" output="screen">
+    <remap from="~odom" to="$(arg odom_topic)"/>
+    <param name="color/a" value="1.0"/>
+    <param name="color/r" value="0.0"/>
+    <param name="color/g" value="0.0"/>
+    <param name="color/b" value="0.0"/>
+    <param name="covariance_scale" value="100.0"/>
+    <param name="robot_scale" value="1.0"/>
+    <param name="tf45" value="true"/>
+  </node>
+
+  <node pkg="local_sensing_node" type="pcl_render_node"
+        name="pcl_render_node" output="screen">
+    <rosparam command="load" file="$(find local_sensing_node)/params/camera.yaml"/>
+    <param name="sensing_horizon" value="$(arg sensing_horizon)"/>
+    <param name="sensing_rate" value="$(arg sensing_rate)"/>
+    <param name="estimation_rate" value="$(arg estimation_rate)"/>
+    <param name="map/x_size" value="$(arg map_size_x)"/>
+    <param name="map/y_size" value="$(arg map_size_y)"/>
+    <param name="map/z_size" value="$(arg map_size_z)"/>
+    <remap from="~global_map" to="/map_generator/global_cloud"/>
+    <remap from="~odometry" to="$(arg odom_topic)"/>
+  </node>
+</launch>

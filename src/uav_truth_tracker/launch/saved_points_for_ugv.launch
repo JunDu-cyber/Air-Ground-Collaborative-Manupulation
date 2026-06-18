@@ -1,0 +1,16 @@
+<launch>
+  <arg name="pcd_file" default="$(env HOME)/pointcloud_maps/uav_points_map_latest.pcd"/>
+  <arg name="output_topic" default="/uav0/mapping/points_saved"/>
+  <arg name="frame_id" default="map"/>
+  <arg name="publish_rate" default="1.0"/>
+  <arg name="latch" default="true"/>
+
+  <node pkg="uav_truth_tracker" type="pcd_pointcloud_publisher.py"
+        name="pcd_pointcloud_publisher" output="screen">
+    <param name="pcd_file" value="$(arg pcd_file)"/>
+    <param name="output_topic" value="$(arg output_topic)"/>
+    <param name="frame_id" value="$(arg frame_id)"/>
+    <param name="publish_rate" value="$(arg publish_rate)"/>
+    <param name="latch" value="$(arg latch)"/>
+  </node>
+</launch>

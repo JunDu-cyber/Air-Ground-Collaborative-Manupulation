@@ -1,0 +1,259 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- ================================================================
+       forest_uav_mapping.launch — 一键启动所有 ROS 层组件
+
+       替代 one_key_takeoff.sh 中 gnome-terminal 散开的节点，
+       减少终端窗口数量。Gazebo / PX4 / MAVROS 仍需独立终端。
+
+       启动顺序:
+         1. Gazebo + world (独立终端)
+         2. PX4 spawn (独立终端)
+         3. MAVROS (独立终端)
+         4. 本文件 — 包含下面所有组件
+
+       包含: TF 胶水, TF 桥接/里程计, UGV marker, forest markers,
+             depth preprocess, UAV→UGV 点云, EGO-Planner, RViz
+       ================================================================ -->
+
+  <!-- ===== 参数 ===== -->
+  <arg name="enable_octomap" default="true"/>
+  <arg name="start_rviz" default="true"/>
+  <arg name="rviz_config" default="$(find ego_planner)/launch/forest_debug.rviz"/>
+  <arg name="use_mavros" default="true"/>  <!-- false → Gazebo Odom Bridge -->
+  <arg name="forest_world_file" default="$(env HOME)/worlds/forest_corridor.world"/>
+  <arg name="gazebo_uav_model_name" default="iris_depth_camera"/>
+
+  <!-- ===== TF 静态变换 ===== -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="tf_map_world"
+        args="0 0 0 0 0 0 map world"/>
+  <node pkg="tf2_ros" type="static_transform_publisher" name="tf_camera"
+        args="0.1 0 0 -1.5707963 0 -1.5707963 base_link camera_link"/>
+  <node pkg="tf2_ros" type="static_transform_publisher" name="tf_lidar"
+        args="0 0 0.06 0 0 0 base_link uav0/velodyne_link"/>
+
+  <!-- ===== 位姿 → TF + RViz marker ===== -->
+  <node if="$(arg use_mavros)" pkg="uav_truth_tracker" type="mavros_tf_bridge.py"
+        name="mavros_tf_bridge" output="screen">
+    <param name="odom_topic" value="/mavros/local_position/odom"/>
+    <param name="frame_id" value="map"/>
+    <param name="publish_marker" value="true"/>
+  </node>
+  <node unless="$(arg use_mavros)" pkg="uav_truth_tracker"
+        type="gazebo_odom_bridge.py" name="gazebo_odom_bridge" output="screen">
+    <param name="model_name" value="$(arg gazebo_uav_model_name)"/>
+    <param name="world_frame" value="map"/>
+    <param name="body_frame" value="base_link"/>
+    <param name="publish_rate" value="30.0"/>
+  </node>
+
+  <!-- Gazebo-pose debug marker. Keep this off /drone_visual because LiDAR TF,
+       EGO, and control use the MAVROS local frame in the default stack. -->
+  <node pkg="uav_truth_tracker" type="gazebo_uav_marker.py"
+        name="gazebo_uav_marker" output="screen">
+    <param name="uav_model_name" value="$(arg gazebo_uav_model_name)"/>
+    <param name="frame_id" value="map"/>
+    <param name="uav_marker_topic" value="/gazebo_drone_visual"/>
+    <param name="uav_path_topic" value="/gazebo_drone_path"/>
+    <param name="fallback_x" value="0.0"/>
+    <param name="fallback_y" value="-18.0"/>
+    <param name="fallback_z" value="1.5"/>
+    <param name="fallback_yaw" value="1.5707963"/>
+  </node>
+
+  <!-- Lightweight forest corridor visualization in RViz. Gazebo renders the
+       real world; this marker copy makes the obstacles visible in RViz too. -->
+  <node pkg="uav_truth_tracker" type="forest_world_markers.py"
+        name="forest_world_markers" output="screen">
+    <param name="world_file" value="$(arg forest_world_file)"/>
+    <param name="frame_id" value="map"/>
+    <param name="topic" value="/forest_world_markers"/>
+  </node>
+
+  <!-- ===== UGV 模型 (Husky UR5) ===== -->
+  <arg name="ugv_ws" default="$(env HOME)/Air-Ground-Collaborative-Manupulation"/>
+  <arg name="ugv_urdf" default="$(arg ugv_ws)/src/husky_ur5_moveit_config/config/gazebo_husky_ur5.urdf"/>
+  <node pkg="uav_truth_tracker" type="ugv_robot_model_helper.py" name="ugv_model_helper"
+        output="screen" if="$(eval arg('ugv_urdf') != '')">
+    <param name="urdf_file" value="$(arg ugv_urdf)"/>
+    <param name="link_prefix" value="ugv_"/>
+    <param name="root_frame" value="map"/>
+    <param name="x" value="2.5"/>
+    <param name="y" value="-18.0"/>
+    <param name="z" value="0.25"/>
+    <param name="yaw" value="0.0"/>
+  </node>
+
+  <!-- ===== UGV robot_state_publisher (TF for UGV links) ===== -->
+  <node pkg="robot_state_publisher" type="robot_state_publisher"
+        name="ugv_robot_state_publisher" output="screen" respawn="true"/>
+
+  <!-- ===== 深度预处理 → /depth/image_dilated ===== -->
+  <include file="$(find forest_avoidance_utils)/launch/forest_utils.launch"/>
+
+  <!-- ===== UAV LiDAR → 世界系点云 (供 UGV 使用) ===== -->
+  <include file="$(find uav_truth_tracker)/launch/uav_points_to_ugv.launch">
+    <arg name="raw_input_topic" value="/uav0/velodyne_points_raw"/>
+    <arg name="input_topic" value="/uav0/mapping/velodyne_points_sensor"/>
+    <arg name="output_topic" value="/uav0/mapping/points_world"/>
+    <arg name="target_frame" value="map"/>
+    <arg name="publish_rate" value="0.0"/>
+    <arg name="imu_topic" value="/mavros/imu/data"/>
+    <arg name="odom_topic" value="/mavros/local_position/odom"/>
+    <!-- Use the odometry stamp for the filtered LiDAR cloud before TF projection.
+         Gazebo LiDAR and MAVROS odom can be slightly offset in time; stamping
+         with the odom used by the relay reduces map smearing while the UAV moves. -->
+    <arg name="stamp_with_odom" value="true"/>
+    <!-- Drop fast-turn / high-speed scans; they are the main source of smeared maps. -->
+    <arg name="max_linear_velocity" value="2.0"/>
+    <arg name="max_angular_velocity" value="0.0"/>
+    <arg name="max_odom_angular_velocity" value="0.8"/>
+    <arg name="max_imu_age" value="999.0"/>
+    <arg name="max_odom_age" value="0.30"/>
+    <!-- Range filter: this lightweight LiDAR is 16m max. Keep a margin so max-range
+         no-hit returns do not become a fake boundary shell in the map. -->
+    <arg name="min_range" value="0.35"/>
+    <arg name="max_range" value="15.0"/>
+    <arg name="sensor_max_range" value="16.0"/>
+    <arg name="drop_max_range_returns" value="true"/>
+    <arg name="max_range_margin" value="0.8"/>
+    <arg name="drop_far_boundary_band" value="false"/>
+    <arg name="range_edge_margin" value="0.0"/>
+    <!-- Self-filter ON: remove drone body + rotor points -->
+    <arg name="self_filter_enabled" value="true"/>
+    <!-- Mild sparse outlier removal: enough to remove boundary speckles without
+         deleting tree trunks or real obstacles. -->
+    <arg name="neighbor_voxel_size" value="0.16"/>
+    <arg name="min_neighbors" value="2"/>
+    <arg name="relay_voxel_size" value="0.06"/>
+    <arg name="leaf_size" value="0.0"/>
+    <arg name="enable_voxel_filter" value="false"/>
+    <!-- Repeat the range filter after TF as a safety net. -->
+    <arg name="enable_range_filter" value="true"/>
+    <arg name="allow_latest_tf_fallback" value="false"/>
+    <arg name="tf_lookup_timeout" value="0.20"/>
+    <!-- Map recorder: require repeated observations so single-frame boundary returns
+         and pose jitter do not enter the saved map. -->
+    <arg name="start_map_recorder" value="true"/>
+    <arg name="map_output_dir" value="$(env HOME)/pointcloud_maps"/>
+    <arg name="map_name" value="uav_points_map"/>
+    <!-- min_observations=2 filters single-frame LiDAR ghosts and noise.
+         ground_filter_mode=none keeps ALL returns — the projector's large-
+         window ground-smoothing + per-cell obstacle detection handles the
+         rest.  voxel_leaf_size=0.10 balances density against file size. -->
+    <arg name="map_min_observations" value="2"/>
+    <arg name="map_voxel_leaf_size" value="0.10"/>
+    <arg name="map_publish_rate" value="2.0"/>
+    <arg name="map_drop_flat_ground" value="false"/>
+    <!-- ground_filter_mode=none saves ALL ground + obstacle returns.
+         The projector (v4) handles ground-surface extraction with a
+         large-window median filter — it needs raw point density, not
+         decimated terrain samples. -->
+    <arg name="map_ground_filter_mode" value="none"/>
+    <arg name="map_keep_terrain_points" value="false"/>
+    <arg name="map_terrain_cell_size" value="0.25"/>
+    <arg name="map_ground_z" value="0.0"/>
+    <arg name="map_ground_clearance" value="0.3"/>
+    <arg name="map_obstacle_height_above_ground" value="0.45"/>
+    <arg name="map_ground_xy_cell_size" value="0.25"/>
+    <arg name="map_ray_clearing_enabled" value="true"/>
+    <arg name="map_ray_clear_sensor_frame" value="uav0/velodyne_link"/>
+    <arg name="map_ray_clear_max_range" value="15.0"/>
+    <arg name="map_ray_clear_min_range" value="0.5"/>
+    <arg name="map_ray_clear_step_size" value="0.20"/>
+    <arg name="map_ray_clear_keep_last_voxels" value="3"/>
+    <arg name="map_ray_clear_decimation" value="8"/>
+    <arg name="map_tf_lookup_timeout" value="0.20"/>
+  </include>
+
+  <!-- ===== EGO-Planner (深度相机避障) ===== -->
+  <arg name="map_size_x" value="60.0"/>
+  <arg name="map_size_y" value="60.0"/>
+  <arg name="map_size_z" value="15.0"/>
+  <arg name="odom_topic" value="/mavros/local_position/odom"/>
+
+  <include file="$(find ego_planner)/launch/forest_param.xml">
+    <arg name="map_size_x_" value="$(arg map_size_x)"/>
+    <arg name="map_size_y_" value="$(arg map_size_y)"/>
+    <arg name="map_size_z_" value="$(arg map_size_z)"/>
+    <arg name="odometry_topic" value="$(arg odom_topic)"/>
+    <arg name="camera_pose_topic" value="/mavros/local_position/pose"/>
+    <arg name="depth_topic" value="/depth/image_dilated"/>
+    <arg name="cloud_topic" value="fake"/>
+    <arg name="cx" value="320.0"/>
+    <arg name="cy" value="180.0"/>
+    <arg name="fx" value="343.158"/>
+    <arg name="fy" value="343.158"/>
+    <arg name="max_vel" value="0.75"/>
+    <arg name="max_acc" value="1.0"/>
+    <arg name="planning_horizon" value="8.0"/>
+    <arg name="ground_filter_margin" value="0.08"/>
+    <arg name="skip_pixel" value="2"/>
+    <arg name="flight_type" value="1"/>
+    <arg name="point_num" value="5"/>
+    <arg name="point0_x" value="0.0"/>
+    <arg name="point0_y" value="-15.0"/>
+    <arg name="point0_z" value="2.5"/>
+    <arg name="point1_x" value="3.0"/>
+    <arg name="point1_y" value="0.0"/>
+    <arg name="point1_z" value="2.5"/>
+    <arg name="point2_x" value="0.0"/>
+    <arg name="point2_y" value="10.0"/>
+    <arg name="point2_z" value="2.5"/>
+    <arg name="point3_x" value="-3.0"/>
+    <arg name="point3_y" value="0.0"/>
+    <arg name="point3_z" value="2.5"/>
+    <arg name="point4_x" value="0.0"/>
+    <arg name="point4_y" value="-15.0"/>
+    <arg name="point4_z" value="2.5"/>
+  </include>
+
+  <!-- EGO-Planner 辅助节点 -->
+  <node pkg="ego_planner" name="traj_server" type="traj_server" output="screen">
+    <remap from="/position_cmd" to="planning/pos_cmd"/>
+    <remap from="/odom_world" to="$(arg odom_topic)"/>
+    <param name="traj_server/time_forward" value="1.0" type="double"/>
+  </node>
+  <node pkg="waypoint_generator" name="waypoint_generator" type="waypoint_generator"
+        output="screen">
+    <remap from="~odom" to="$(arg odom_topic)"/>
+    <remap from="~goal" to="/goal_elevated"/>
+    <remap from="~traj_start_trigger" to="/traj_start_trigger"/>
+    <param name="waypoint_type" value="manual-lonely-waypoint"/>
+  </node>
+  <node pkg="forest_avoidance_utils" name="goal_elevator" type="goal_elevator.py"
+        output="screen">
+    <param name="goal_z" value="2.5"/>
+  </node>
+  <node pkg="forest_avoidance_utils" name="trajectory_logger"
+        type="trajectory_logger.py" output="screen">
+    <param name="actual_topic" value="/mavros/local_position/pose"/>
+    <param name="desired_topic" value="/planning/pos_cmd"/>
+    <param name="output_dir" value="$(env HOME)/trajectory_logs"/>
+    <param name="max_cmd_age" value="0.5"/>
+  </node>
+
+  <!-- ===== OctoMap 3D 建图 (32-line LiDAR) ===== -->
+  <include if="$(arg enable_octomap)"
+           file="$(find forest_avoidance_utils)/launch/forest_octomap.launch">
+    <arg name="raw_lidar_topic" value="/uav0/velodyne_points_raw"/>
+    <arg name="cloud_topic" value="/uav0/velodyne_points"/>
+    <arg name="lidar_frame" value="uav0/velodyne_link"/>
+    <arg name="imu_topic" value="/mavros/imu/data"/>
+    <arg name="odom_topic" value="/mavros/local_position/odom"/>
+    <arg name="frame_id" value="map"/>
+    <arg name="autosave_updates_latest" value="true"/>
+    <arg name="start_lidar_relay" value="true"/>
+    <!-- Relax motion filter so relay doesn't drop frames -->
+    <arg name="max_linear_velocity" value="0.0"/>
+    <arg name="max_angular_velocity" value="0.0"/>
+    <arg name="max_odom_angular_velocity" value="0.0"/>
+    <arg name="max_imu_age" value="999.0"/>
+    <arg name="max_odom_age" value="999.0"/>
+  </include>
+
+  <!-- ===== RViz ===== -->
+  <node if="$(arg start_rviz)" pkg="rviz" type="rviz" name="rviz"
+        args="-d $(arg rviz_config)" output="screen"/>
+
+</launch>

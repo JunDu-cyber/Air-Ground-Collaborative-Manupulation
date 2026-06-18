@@ -1,0 +1,72 @@
+<launch>
+  <!-- ====================================================================
+       将 UAV 保存的 PCD 转为高程图（使用仓库原有的 elevation_mapping）。
+
+       流程：PCD 回放 → 体素降采样 → elevation_mapping → GridMap 可视化
+
+       用法：
+         roslaunch mobile_manipulator pcd_to_elevation.launch \
+             pcd_file:=~/pointcloud_maps/uav_points_map_latest.pcd
+
+       输出：
+         /elevation_mapping/elevation_map_postprocessed   (GridMap 高程图层)
+         /elevation_mapping/elevation_map_raw             (GridMap 原始层)
+       ==================================================================== -->
+
+  <arg name="pcd_file" default="$(env HOME)/pointcloud_maps/uav_points_map_latest.pcd"/>
+  <arg name="rviz"     default="true"/>
+  <!-- 离线模式：无机器人时发布静态 base_link TF，让 elevation_mapping 正常工作。
+       如果已有机器人在跑，设为 false 避免 TF 冲突。 -->
+  <arg name="static_tf" default="true"/>
+
+  <!-- 0. 静态 TF：map → base_link（离线处理用，无机器人时必需） -->
+  <node if="$(arg static_tf)" pkg="tf2_ros" type="static_transform_publisher"
+        name="static_base_link" args="0 0 0 0 0 0 map base_link"/>
+
+  <!-- 1. PCD 回放：将保存的点云发布到 ROS -->
+  <node name="pcd_pointcloud_publisher" pkg="uav_truth_tracker"
+        type="pcd_pointcloud_publisher.py" output="screen">
+    <param name="pcd_file" value="$(arg pcd_file)"/>
+    <param name="output_topic" value="/uav0/mapping/points_saved"/>
+    <param name="frame_id" value="map"/>
+    <param name="publish_rate" value="1.0"/>
+    <param name="latch" value="true"/>
+  </node>
+
+  <!-- 2. 体素降采样：密集点云 → ~0.2m 分辨率 -->
+  <node pkg="nodelet" type="nodelet" name="uav_pcl_manager"
+        args="manager" output="screen"/>
+  <node pkg="nodelet" type="nodelet" name="uav_voxel_grid"
+        args="load pcl/VoxelGrid uav_pcl_manager" output="screen">
+    <remap from="~input"  to="/uav0/mapping/points_saved"/>
+    <remap from="~output" to="/uav/points_downsampled"/>
+    <rosparam>
+      leaf_size: 0.2
+      filter_field_name: z
+      filter_limit_min: -5.0
+      filter_limit_max: 250.0
+      filter_limit_negative: False
+    </rosparam>
+  </node>
+
+  <!-- 3. 高程建图（仓库原有 elevation_mapping） -->
+  <node pkg="elevation_mapping" type="elevation_mapping"
+        name="elevation_mapping" output="screen">
+    <rosparam command="load"
+        file="$(find mobile_manipulator)/config/elevation_mapping.yaml"/>
+    <rosparam command="load"
+        file="$(find mobile_manipulator)/config/elevation_postprocessor.yaml"/>
+  </node>
+
+  <!-- 4. 可视化：GridMap → 彩色点云 + 地图轮廓 -->
+  <node pkg="grid_map_visualization" type="grid_map_visualization"
+        name="elevation_map_visualization" output="screen">
+    <param name="grid_map_topic"
+           value="/elevation_mapping/elevation_map_postprocessed"/>
+    <rosparam command="load"
+        file="$(find mobile_manipulator)/config/elevation_visualization.yaml"/>
+  </node>
+
+  <node if="$(arg rviz)" name="elevation_rviz" pkg="rviz" type="rviz"
+        args="-d $(find mobile_manipulator)/rviz/elevation_mapping.rviz"/>
+</launch>

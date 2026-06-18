@@ -1,0 +1,220 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+  <world name="default">
+    <scene><ambient>0.7 0.72 0.68 1</ambient><background>0.42 0.50 0.44 1</background><shadows>true</shadows></scene>
+    <include><uri>model://sun</uri></include>
+    <include><uri>model://ground_plane</uri></include>
+    <model name="tree_0">
+      <static>true</static>
+      <pose>1.408 1.869 0.600 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.407</radius><length>1.200</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.407</radius><length>1.200</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_1">
+      <static>true</static>
+      <pose>-3.222 4.057 2.100 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.500</radius><length>4.200</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.500</radius><length>4.200</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_2">
+      <static>true</static>
+      <pose>2.050 3.900 2.039 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.226</radius><length>4.077</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.226</radius><length>4.077</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_3">
+      <static>true</static>
+      <pose>2.995 5.026 2.100 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.492</radius><length>4.200</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.492</radius><length>4.200</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_4">
+      <static>true</static>
+      <pose>-1.989 6.100 0.600 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.500</radius><length>1.200</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.500</radius><length>1.200</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_5">
+      <static>true</static>
+      <pose>-0.070 8.856 2.100 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.500</radius><length>4.200</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.500</radius><length>4.200</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_6">
+      <static>true</static>
+      <pose>2.027 9.718 1.097 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.374</radius><length>2.194</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.374</radius><length>2.194</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_7">
+      <static>true</static>
+      <pose>-3.388 10.884 2.100 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.500</radius><length>4.200</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.500</radius><length>4.200</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_8">
+      <static>true</static>
+      <pose>3.204 12.074 2.100 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.500</radius><length>4.200</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.500</radius><length>4.200</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_9">
+      <static>true</static>
+      <pose>-3.320 15.175 1.949 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.500</radius><length>3.899</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.500</radius><length>3.899</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_10">
+      <static>true</static>
+      <pose>-0.865 15.900 2.100 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.500</radius><length>4.200</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.500</radius><length>4.200</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_11">
+      <static>true</static>
+      <pose>1.664 17.091 0.600 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.500</radius><length>1.200</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.500</radius><length>1.200</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_12">
+      <static>true</static>
+      <pose>-3.282 19.718 2.100 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.500</radius><length>4.200</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.500</radius><length>4.200</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_13">
+      <static>true</static>
+      <pose>3.482 20.518 2.100 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.500</radius><length>4.200</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.500</radius><length>4.200</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_14">
+      <static>true</static>
+      <pose>-1.700 21.700 1.212 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.339</radius><length>2.423</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.339</radius><length>2.423</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_15">
+      <static>true</static>
+      <pose>1.732 24.126 2.100 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.500</radius><length>4.200</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.500</radius><length>4.200</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_16">
+      <static>true</static>
+      <pose>-2.960 27.330 2.100 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.500</radius><length>4.200</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.500</radius><length>4.200</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_17">
+      <static>true</static>
+      <pose>-1.340 27.953 1.853 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.437</radius><length>3.706</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.437</radius><length>3.706</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_18">
+      <static>true</static>
+      <pose>3.184 28.321 2.100 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.492</radius><length>4.200</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.492</radius><length>4.200</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_19">
+      <static>true</static>
+      <pose>1.748 30.924 0.600 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.500</radius><length>1.200</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.500</radius><length>1.200</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_20">
+      <static>true</static>
+      <pose>-4.333 32.222 2.100 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.479</radius><length>4.200</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.479</radius><length>4.200</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_21">
+      <static>true</static>
+      <pose>4.556 32.767 2.100 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.479</radius><length>4.200</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.479</radius><length>4.200</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="tree_22">
+      <static>true</static>
+      <pose>-2.045 34.700 1.063 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><cylinder><radius>0.374</radius><length>2.126</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.374</radius><length>2.126</length></cylinder></geometry>
+          <material><ambient>0.25 0.16 0.08 1</ambient><diffuse>0.34 0.22 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+    <physics name="p" default="0" type="ode">
+      <gravity>0 0 -9.8066</gravity>
+      <max_step_size>0.004</max_step_size>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+  </world>
+</sdf>

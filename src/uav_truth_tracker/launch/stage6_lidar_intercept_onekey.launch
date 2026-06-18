@@ -1,0 +1,25 @@
+<launch>
+  <arg name="world" default="/home/lnwuu/PX4-Autopilot/Tools/simulation/gazebo-classic/sitl_gazebo-classic/worlds/empty.world"/>
+  <arg name="gui" default="true"/>
+  <arg name="target_mode" default="circle_z_sine"/>
+  <arg name="uav1_speed" default="0.6"/>
+  <arg name="z_amplitude" default="0.5"/>
+  <arg name="estimator_model" default="kalman_cv"/>
+  <arg name="auto_arm" default="false"/>
+  <arg name="auto_offboard" default="false"/>
+
+  <include file="$(find uav_truth_tracker)/launch/dual_uav_mavros_sitl.launch">
+    <arg name="uav0_sdf_jinja" value="$(find uav_truth_tracker)/models/iris_depth_camera_lidar/iris_depth_camera_lidar.sdf.jinja"/>
+    <arg name="world" value="$(arg world)"/>
+    <arg name="gui" value="$(arg gui)"/>
+  </include>
+
+  <include file="$(find uav_truth_tracker)/launch/intercept_lidar_estimator_chase.launch">
+    <arg name="target_mode" value="$(arg target_mode)"/>
+    <arg name="uav1_speed" value="$(arg uav1_speed)"/>
+    <arg name="z_amplitude" value="$(arg z_amplitude)"/>
+    <arg name="estimator_model" value="$(arg estimator_model)"/>
+    <arg name="auto_arm" value="$(arg auto_arm)"/>
+    <arg name="auto_offboard" value="$(arg auto_offboard)"/>
+  </include>
+</launch>

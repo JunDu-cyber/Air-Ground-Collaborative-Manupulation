@@ -1,0 +1,242 @@
+<launch>
+  <arg name="frame_id" default="map"/>
+
+  <arg name="target_mode" default="circle_z_sine"/>
+  <arg name="target_height" default="3.0"/>
+  <arg name="target_radius" default="3.0"/>
+  <arg name="uav1_speed" default="0.6"/>
+  <arg name="target_center_x" default="2.0"/>
+  <arg name="target_center_y" default="0.0"/>
+  <arg name="target_direction" default="1.0"/>
+  <arg name="z_amplitude" default="0.5"/>
+  <arg name="z_period" default="12.0"/>
+  <arg name="z_min" default="2.0"/>
+  <arg name="z_max" default="5.0"/>
+  <arg name="figure8_x_amp" default="3.0"/>
+  <arg name="figure8_y_amp" default="2.0"/>
+  <arg name="x_min" default="-2.0"/>
+  <arg name="x_max" default="6.0"/>
+  <arg name="y_min" default="-3.0"/>
+  <arg name="y_max" default="3.0"/>
+  <arg name="waypoint_accept_radius" default="0.5"/>
+  <arg name="waypoint_hold_time" default="1.0"/>
+
+  <arg name="lidar_cloud_topic" default="/uav0/velodyne_points"/>
+  <arg name="lidar_raw_topic" default="/uav0/velodyne_points_raw"/>
+  <arg name="start_pointcloud2_relay" default="true"/>
+  <arg name="relay_frame_id" default=""/>
+  <arg name="detector_range_min" default="0.7"/>
+  <arg name="detector_range_max" default="20.0"/>
+  <arg name="detector_z_min" default="2.0"/>
+  <arg name="detector_z_max" default="5.0"/>
+  <arg name="voxel_leaf_size" default="0.08"/>
+  <arg name="cluster_tolerance" default="0.25"/>
+  <arg name="min_cluster_size" default="5"/>
+  <arg name="max_cluster_size" default="500"/>
+  <arg name="target_size_min" default="0.15"/>
+  <arg name="target_size_max" default="1.5"/>
+  <arg name="expected_target_size" default="0.6"/>
+  <arg name="enable_shape_filter" default="true"/>
+  <arg name="target_xy_size_min" default="0.05"/>
+  <arg name="target_xy_size_max" default="1.20"/>
+  <arg name="target_z_size_min" default="0.0"/>
+  <arg name="target_z_size_max" default="0.80"/>
+  <arg name="target_aspect_ratio_max" default="12.0"/>
+  <arg name="expected_target_xy_size" default="0.55"/>
+  <arg name="expected_target_z_size" default="0.25"/>
+  <arg name="reference_distance_weight" default="0.65"/>
+  <arg name="static_clutter_filter_enable" default="true"/>
+  <arg name="static_clutter_min_candidates" default="2"/>
+  <arg name="static_clutter_confirm_count" default="5"/>
+  <arg name="static_clutter_cell_size" default="0.40"/>
+  <arg name="static_clutter_max_spread" default="0.15"/>
+  <arg name="static_clutter_startup_hold" default="true"/>
+  <arg name="allow_reference_fallback" default="false"/>
+  <arg name="use_estimator_gating" default="false"/>
+  <arg name="continuity_enable" default="true"/>
+  <arg name="gating_radius" default="2.0"/>
+  <arg name="max_detection_gap" default="0.5"/>
+  <arg name="publish_debug_cloud" default="true"/>
+
+  <arg name="estimator_model" default="kalman_cv"/>
+  <arg name="assumed_chaser_speed_xy" default="1.5"/>
+  <arg name="assumed_chaser_speed_z" default="0.8"/>
+  <arg name="min_prediction_time" default="0.3"/>
+  <arg name="max_prediction_time" default="2.5"/>
+  <arg name="intercept_iterations" default="5"/>
+  <arg name="estimator_publish_rate" default="20.0"/>
+  <arg name="min_observations_for_prediction" default="3"/>
+  <arg name="velocity_fit_window" default="0.8"/>
+  <arg name="min_velocity_fit_points" default="3"/>
+  <arg name="velocity_smoothing_alpha" default="0.35"/>
+  <arg name="kf_velocity_blend" default="0.0"/>
+  <arg name="kf_measurement_noise" default="0.15"/>
+  <arg name="use_observation_confidence" default="false"/>
+  <arg name="min_update_confidence" default="0.0"/>
+  <arg name="max_prediction_only_age" default="1.5"/>
+  <arg name="max_predict_only_time" default="0.8"/>
+  <arg name="target_lost_timeout" default="1.5"/>
+  <arg name="reject_observation_jumps" default="true"/>
+  <arg name="max_observation_jump_speed_xy" default="4.0"/>
+  <arg name="max_observation_jump_speed_z" default="2.5"/>
+  <arg name="max_observation_jump_distance_xy" default="5.0"/>
+  <arg name="max_observation_jump_distance_z" default="3.0"/>
+
+  <arg name="vxy_max" default="2.2"/>
+  <arg name="vz_max" default="0.8"/>
+  <arg name="axy_max" default="1.8"/>
+  <arg name="az_max" default="1.0"/>
+  <arg name="Kp" default="1.5"/>
+  <arg name="max_closing_speed" default="2.0"/>
+  <arg name="capture_slowdown_distance" default="1.5"/>
+  <arg name="stop_distance" default="0.3"/>
+  <arg name="target_input_mode" default="estimator"/>
+  <arg name="lost_target_behavior" default="continue_predict"/>
+  <arg name="predict_only_speed_scale" default="0.7"/>
+  <arg name="yaw_mode" default="face_guidance"/>
+  <arg name="face_guidance_before_move" default="false"/>
+  <arg name="yaw_gate_xy_scale" default="1.0"/>
+  <arg name="allow_vertical_during_yaw_align" default="true"/>
+
+  <arg name="capture_distance" default="0.35"/>
+  <arg name="hard_capture_distance" default="0.25"/>
+  <arg name="hold_time" default="0.15"/>
+  <arg name="stop_on_capture_success" default="false"/>
+  <arg name="latch_capture_success" default="false"/>
+  <arg name="start_evaluator" default="true"/>
+  <arg name="evaluator_log_dir" default="$(env HOME)/uav_intercept_logs"/>
+  <arg name="evaluator_sample_rate" default="20.0"/>
+
+  <arg name="auto_arm" default="false"/>
+  <arg name="auto_offboard" default="false"/>
+
+  <node if="$(arg start_pointcloud2_relay)" pkg="uav_truth_tracker" type="pointcloud_to_pointcloud2_relay.py"
+        name="pointcloud_to_pointcloud2_relay" output="screen">
+    <param name="input_topic" value="$(arg lidar_raw_topic)"/>
+    <param name="output_topic" value="$(arg lidar_cloud_topic)"/>
+    <param name="frame_id" value="$(arg relay_frame_id)"/>
+  </node>
+
+  <node pkg="uav_truth_tracker" type="target_lidar_detector_node.py"
+        name="target_lidar_detector_node" output="screen">
+    <param name="fixed_frame" value="$(arg frame_id)"/>
+    <param name="lidar_cloud_topic" value="$(arg lidar_cloud_topic)"/>
+    <param name="uav0_odom_topic" value="/uav0/mavros/local_position/odom"/>
+    <param name="output_pose_topic" value="/target_observation/pose"/>
+    <param name="pose_cov_topic" value="/target_observation/pose_cov"/>
+    <param name="marker_topic" value="/target_observation/marker"/>
+    <param name="debug_cloud_topic" value="/target_observation/debug_cloud"/>
+    <param name="valid_topic" value="/target_observation/valid"/>
+    <param name="confidence_topic" value="/target_observation/confidence"/>
+    <param name="point_count_topic" value="/target_observation/point_count"/>
+    <param name="range_min" value="$(arg detector_range_min)"/>
+    <param name="range_max" value="$(arg detector_range_max)"/>
+    <param name="z_min" value="$(arg detector_z_min)"/>
+    <param name="z_max" value="$(arg detector_z_max)"/>
+    <param name="voxel_leaf_size" value="$(arg voxel_leaf_size)"/>
+    <param name="cluster_tolerance" value="$(arg cluster_tolerance)"/>
+    <param name="min_cluster_size" value="$(arg min_cluster_size)"/>
+    <param name="max_cluster_size" value="$(arg max_cluster_size)"/>
+    <param name="target_size_min" value="$(arg target_size_min)"/>
+    <param name="target_size_max" value="$(arg target_size_max)"/>
+    <param name="expected_target_size" value="$(arg expected_target_size)"/>
+    <param name="enable_shape_filter" value="$(arg enable_shape_filter)"/>
+    <param name="target_xy_size_min" value="$(arg target_xy_size_min)"/>
+    <param name="target_xy_size_max" value="$(arg target_xy_size_max)"/>
+    <param name="target_z_size_min" value="$(arg target_z_size_min)"/>
+    <param name="target_z_size_max" value="$(arg target_z_size_max)"/>
+    <param name="target_aspect_ratio_max" value="$(arg target_aspect_ratio_max)"/>
+    <param name="expected_target_xy_size" value="$(arg expected_target_xy_size)"/>
+    <param name="expected_target_z_size" value="$(arg expected_target_z_size)"/>
+    <param name="reference_distance_weight" value="$(arg reference_distance_weight)"/>
+    <param name="static_clutter_filter_enable" value="$(arg static_clutter_filter_enable)"/>
+    <param name="static_clutter_min_candidates" value="$(arg static_clutter_min_candidates)"/>
+    <param name="static_clutter_confirm_count" value="$(arg static_clutter_confirm_count)"/>
+    <param name="static_clutter_cell_size" value="$(arg static_clutter_cell_size)"/>
+    <param name="static_clutter_max_spread" value="$(arg static_clutter_max_spread)"/>
+    <param name="static_clutter_startup_hold" value="$(arg static_clutter_startup_hold)"/>
+    <param name="allow_reference_fallback" value="$(arg allow_reference_fallback)"/>
+    <param name="use_estimator_gating" value="$(arg use_estimator_gating)"/>
+    <param name="continuity_enable" value="$(arg continuity_enable)"/>
+    <param name="gating_radius" value="$(arg gating_radius)"/>
+    <param name="max_detection_gap" value="$(arg max_detection_gap)"/>
+    <param name="publish_debug_cloud" value="$(arg publish_debug_cloud)"/>
+  </node>
+
+  <include file="$(find uav_truth_tracker)/launch/intercept_estimator_velocity_chase.launch">
+    <arg name="frame_id" value="$(arg frame_id)"/>
+    <arg name="target_mode" value="$(arg target_mode)"/>
+    <arg name="target_height" value="$(arg target_height)"/>
+    <arg name="target_radius" value="$(arg target_radius)"/>
+    <arg name="uav1_speed" value="$(arg uav1_speed)"/>
+    <arg name="target_center_x" value="$(arg target_center_x)"/>
+    <arg name="target_center_y" value="$(arg target_center_y)"/>
+    <arg name="target_direction" value="$(arg target_direction)"/>
+    <arg name="z_amplitude" value="$(arg z_amplitude)"/>
+    <arg name="z_period" value="$(arg z_period)"/>
+    <arg name="z_min" value="$(arg z_min)"/>
+    <arg name="z_max" value="$(arg z_max)"/>
+    <arg name="figure8_x_amp" value="$(arg figure8_x_amp)"/>
+    <arg name="figure8_y_amp" value="$(arg figure8_y_amp)"/>
+    <arg name="x_min" value="$(arg x_min)"/>
+    <arg name="x_max" value="$(arg x_max)"/>
+    <arg name="y_min" value="$(arg y_min)"/>
+    <arg name="y_max" value="$(arg y_max)"/>
+    <arg name="waypoint_accept_radius" value="$(arg waypoint_accept_radius)"/>
+    <arg name="waypoint_hold_time" value="$(arg waypoint_hold_time)"/>
+
+    <arg name="observation_source" value="target_pose"/>
+    <arg name="target_pose_topic" value="/target_observation/pose"/>
+    <arg name="use_spawn_offsets" value="false"/>
+    <arg name="estimator_model" value="$(arg estimator_model)"/>
+    <arg name="assumed_chaser_speed_xy" value="$(arg assumed_chaser_speed_xy)"/>
+    <arg name="assumed_chaser_speed_z" value="$(arg assumed_chaser_speed_z)"/>
+    <arg name="min_prediction_time" value="$(arg min_prediction_time)"/>
+    <arg name="max_prediction_time" value="$(arg max_prediction_time)"/>
+    <arg name="intercept_iterations" value="$(arg intercept_iterations)"/>
+    <arg name="estimator_publish_rate" value="$(arg estimator_publish_rate)"/>
+    <arg name="min_observations_for_prediction" value="$(arg min_observations_for_prediction)"/>
+    <arg name="velocity_fit_window" value="$(arg velocity_fit_window)"/>
+    <arg name="min_velocity_fit_points" value="$(arg min_velocity_fit_points)"/>
+    <arg name="velocity_smoothing_alpha" value="$(arg velocity_smoothing_alpha)"/>
+    <arg name="kf_velocity_blend" value="$(arg kf_velocity_blend)"/>
+    <arg name="kf_measurement_noise" value="$(arg kf_measurement_noise)"/>
+    <arg name="use_observation_confidence" value="$(arg use_observation_confidence)"/>
+    <arg name="min_update_confidence" value="$(arg min_update_confidence)"/>
+    <arg name="max_prediction_only_age" value="$(arg max_prediction_only_age)"/>
+    <arg name="max_predict_only_time" value="$(arg max_predict_only_time)"/>
+    <arg name="target_lost_timeout" value="$(arg target_lost_timeout)"/>
+    <arg name="reject_observation_jumps" value="$(arg reject_observation_jumps)"/>
+    <arg name="max_observation_jump_speed_xy" value="$(arg max_observation_jump_speed_xy)"/>
+    <arg name="max_observation_jump_speed_z" value="$(arg max_observation_jump_speed_z)"/>
+    <arg name="max_observation_jump_distance_xy" value="$(arg max_observation_jump_distance_xy)"/>
+    <arg name="max_observation_jump_distance_z" value="$(arg max_observation_jump_distance_z)"/>
+
+    <arg name="target_input_mode" value="$(arg target_input_mode)"/>
+    <arg name="Kp" value="$(arg Kp)"/>
+    <arg name="max_closing_speed" value="$(arg max_closing_speed)"/>
+    <arg name="vxy_max" value="$(arg vxy_max)"/>
+    <arg name="vz_max" value="$(arg vz_max)"/>
+    <arg name="axy_max" value="$(arg axy_max)"/>
+    <arg name="az_max" value="$(arg az_max)"/>
+    <arg name="capture_slowdown_distance" value="$(arg capture_slowdown_distance)"/>
+    <arg name="stop_distance" value="$(arg stop_distance)"/>
+    <arg name="lost_target_behavior" value="$(arg lost_target_behavior)"/>
+    <arg name="predict_only_speed_scale" value="$(arg predict_only_speed_scale)"/>
+    <arg name="yaw_mode" value="$(arg yaw_mode)"/>
+    <arg name="face_guidance_before_move" value="$(arg face_guidance_before_move)"/>
+    <arg name="yaw_gate_xy_scale" value="$(arg yaw_gate_xy_scale)"/>
+    <arg name="allow_vertical_during_yaw_align" value="$(arg allow_vertical_during_yaw_align)"/>
+
+    <arg name="capture_distance" value="$(arg capture_distance)"/>
+    <arg name="hard_capture_distance" value="$(arg hard_capture_distance)"/>
+    <arg name="hold_time" value="$(arg hold_time)"/>
+    <arg name="stop_on_capture_success" value="$(arg stop_on_capture_success)"/>
+    <arg name="latch_capture_success" value="$(arg latch_capture_success)"/>
+    <arg name="start_evaluator" value="$(arg start_evaluator)"/>
+    <arg name="evaluator_log_dir" value="$(arg evaluator_log_dir)"/>
+    <arg name="evaluator_sample_rate" value="$(arg evaluator_sample_rate)"/>
+    <arg name="auto_arm" value="$(arg auto_arm)"/>
+    <arg name="auto_offboard" value="$(arg auto_offboard)"/>
+  </include>
+</launch>

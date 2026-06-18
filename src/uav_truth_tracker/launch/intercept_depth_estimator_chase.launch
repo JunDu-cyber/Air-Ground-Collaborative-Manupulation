@@ -1,0 +1,99 @@
+<launch>
+  <arg name="frame_id" default="map"/>
+
+  <arg name="target_mode" default="circle_z_sine"/>
+  <arg name="uav1_speed" default="0.6"/>
+  <arg name="z_amplitude" default="0.5"/>
+  <arg name="estimator_model" default="kalman_cv"/>
+  <arg name="start_evaluator" default="true"/>
+
+  <arg name="detector_input_mode" default="depth_points"/>
+  <arg name="depth_points_topic" default="/iris0/camera/depth/points"/>
+  <arg name="depth_image_topic" default="/iris0/camera/depth/image_raw"/>
+  <arg name="camera_info_topic" default="/iris0/camera/depth/camera_info"/>
+  <arg name="depth_min" default="0.5"/>
+  <arg name="depth_max" default="20.0"/>
+  <arg name="detector_z_min" default="1.0"/>
+  <arg name="detector_z_max" default="8.0"/>
+  <arg name="cluster_tolerance" default="0.20"/>
+  <arg name="min_cluster_size" default="10"/>
+  <arg name="max_cluster_size" default="50000"/>
+  <arg name="target_size_min" default="0.10"/>
+  <arg name="target_size_max" default="2.0"/>
+  <arg name="use_estimator_roi" default="false"/>
+  <arg name="roi_radius" default="2.0"/>
+  <arg name="max_jump_distance" default="3.0"/>
+  <arg name="continuity_weight" default="1.0"/>
+  <arg name="publish_object_cloud" default="true"/>
+  <arg name="depth_tf_lookup_timeout" default="0.05"/>
+  <arg name="depth_allow_latest_tf_fallback" default="true"/>
+
+  <arg name="visual_pose_topic" default="/target_visual/pose"/>
+  <arg name="visual_pose_cov_topic" default="/target_visual/pose_cov"/>
+  <arg name="visual_confidence_topic" default="/target_visual/confidence"/>
+  <arg name="visual_valid_topic" default="/target_visual/valid"/>
+
+  <arg name="capture_distance" default="0.60"/>
+  <arg name="hard_capture_distance" default="0.45"/>
+  <arg name="hold_time" default="0.05"/>
+  <arg name="latch_capture_success" default="true"/>
+  <arg name="stop_on_capture_success" default="true"/>
+  <arg name="predict_only_speed_scale" default="0.6"/>
+  <arg name="lost_target_behavior" default="continue_predict"/>
+  <arg name="min_update_confidence" default="0.45"/>
+  <arg name="evaluator_log_dir" default="$(env HOME)/uav_intercept_logs"/>
+  <arg name="auto_arm" default="false"/>
+  <arg name="auto_offboard" default="false"/>
+  <arg name="offboard_request_interval" default="1.0"/>
+
+  <include file="$(find uav_truth_tracker)/launch/target_depth_detector_debug.launch">
+    <arg name="detector_input_mode" value="$(arg detector_input_mode)"/>
+    <arg name="fixed_frame" value="$(arg frame_id)"/>
+    <arg name="depth_points_topic" value="$(arg depth_points_topic)"/>
+    <arg name="depth_image_topic" value="$(arg depth_image_topic)"/>
+    <arg name="camera_info_topic" value="$(arg camera_info_topic)"/>
+    <arg name="output_pose_topic" value="$(arg visual_pose_topic)"/>
+    <arg name="pose_cov_topic" value="$(arg visual_pose_cov_topic)"/>
+    <arg name="confidence_topic" value="$(arg visual_confidence_topic)"/>
+    <arg name="valid_topic" value="$(arg visual_valid_topic)"/>
+    <arg name="depth_min" value="$(arg depth_min)"/>
+    <arg name="depth_max" value="$(arg depth_max)"/>
+    <arg name="z_min" value="$(arg detector_z_min)"/>
+    <arg name="z_max" value="$(arg detector_z_max)"/>
+    <arg name="cluster_tolerance" value="$(arg cluster_tolerance)"/>
+    <arg name="min_cluster_size" value="$(arg min_cluster_size)"/>
+    <arg name="max_cluster_size" value="$(arg max_cluster_size)"/>
+    <arg name="target_size_min" value="$(arg target_size_min)"/>
+    <arg name="target_size_max" value="$(arg target_size_max)"/>
+    <arg name="use_estimator_roi" value="$(arg use_estimator_roi)"/>
+    <arg name="roi_radius" value="$(arg roi_radius)"/>
+    <arg name="max_jump_distance" value="$(arg max_jump_distance)"/>
+    <arg name="continuity_weight" value="$(arg continuity_weight)"/>
+    <arg name="publish_object_cloud" value="$(arg publish_object_cloud)"/>
+    <arg name="tf_lookup_timeout" value="$(arg depth_tf_lookup_timeout)"/>
+    <arg name="allow_latest_tf_fallback" value="$(arg depth_allow_latest_tf_fallback)"/>
+  </include>
+
+  <include file="$(find uav_truth_tracker)/launch/intercept_estimator_velocity_chase.launch">
+    <arg name="frame_id" value="$(arg frame_id)"/>
+    <arg name="target_mode" value="$(arg target_mode)"/>
+    <arg name="uav1_speed" value="$(arg uav1_speed)"/>
+    <arg name="z_amplitude" value="$(arg z_amplitude)"/>
+    <arg name="estimator_model" value="$(arg estimator_model)"/>
+    <arg name="observation_source" value="target_pose"/>
+    <arg name="target_pose_topic" value="$(arg visual_pose_topic)"/>
+    <arg name="target_pose_cov_topic" value="$(arg visual_pose_cov_topic)"/>
+    <arg name="observation_confidence_topic" value="$(arg visual_confidence_topic)"/>
+    <arg name="observation_valid_topic" value="$(arg visual_valid_topic)"/>
+    <arg name="start_evaluator" value="$(arg start_evaluator)"/>
+    <arg name="stop_on_capture_success" value="$(arg stop_on_capture_success)"/>
+    <arg name="capture_distance" value="$(arg capture_distance)"/>
+    <arg name="hard_capture_distance" value="$(arg hard_capture_distance)"/>
+    <arg name="hold_time" value="$(arg hold_time)"/>
+    <arg name="latch_capture_success" value="$(arg latch_capture_success)"/>
+    <arg name="evaluator_log_dir" value="$(arg evaluator_log_dir)"/>
+    <arg name="auto_arm" value="$(arg auto_arm)"/>
+    <arg name="auto_offboard" value="$(arg auto_offboard)"/>
+    <arg name="offboard_request_interval" value="$(arg offboard_request_interval)"/>
+  </include>
+</launch>

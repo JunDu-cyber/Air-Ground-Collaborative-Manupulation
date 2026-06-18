@@ -1,0 +1,103 @@
+<?xml version="1.0" ?>
+<sdf version="1.5">
+  <model name="iris_depth_camera_lidar">
+    <include>
+      <uri>model://iris</uri>
+    </include>
+
+    <include>
+      <uri>model://depth_camera</uri>
+      <pose>0.1 0 0 0 0 0</pose>
+    </include>
+    <joint name="depth_camera_joint" type="revolute">
+      <child>depth_camera::link</child>
+      <parent>iris::base_link</parent>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <upper>0</upper>
+          <lower>0</lower>
+        </limit>
+      </axis>
+    </joint>
+
+    <link name="velodyne_link">
+      <pose>0 0 0.06 0 0 0</pose>
+      <inertial>
+        <mass>0.10</mass>
+        <inertia>
+          <ixx>0.00008</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.00008</iyy>
+          <iyz>0</iyz>
+          <izz>0.00008</izz>
+        </inertia>
+      </inertial>
+      <visual name="vlp32_visual">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.025</radius>
+            <length>0.030</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.05 0.05 0.05 1</ambient>
+          <diffuse>0.05 0.05 0.05 1</diffuse>
+        </material>
+      </visual>
+      <sensor name="velodyne_vlp32" type="ray">
+        <pose>0 0 0 0 0 0</pose>
+        <visualize>false</visualize>
+        <update_rate>5</update_rate>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>640</samples>
+              <resolution>1</resolution>
+              <min_angle>-3.14159265359</min_angle>
+              <max_angle>3.14159265359</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>32</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.698131701</min_angle>
+              <max_angle>0.959931089</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>0.3</min>
+            <max>16.0</max>
+            <resolution>0.01</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.0</stddev>
+          </noise>
+        </ray>
+        <plugin name="uav0_vlp32_block_laser" filename="libgazebo_ros_block_laser.so">
+          <robotNamespace>/uav0</robotNamespace>
+          <alwaysOn>true</alwaysOn>
+          <updateRate>5</updateRate>
+          <topicName>/uav0/velodyne_points_raw</topicName>
+          <frameName>uav0/velodyne_link</frameName>
+          <gaussianNoise>0.0</gaussianNoise>
+        </plugin>
+      </sensor>
+    </link>
+
+    <joint name="velodyne_joint" type="revolute">
+      <child>velodyne_link</child>
+      <parent>iris::base_link</parent>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <upper>0</upper>
+          <lower>0</lower>
+        </limit>
+      </axis>
+    </joint>
+  </model>
+</sdf>

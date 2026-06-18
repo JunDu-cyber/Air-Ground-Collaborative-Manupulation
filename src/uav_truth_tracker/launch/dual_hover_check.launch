@@ -1,0 +1,26 @@
+<launch>
+  <arg name="auto_arm" default="false"/>
+  <arg name="auto_offboard" default="false"/>
+  <arg name="uav0_z" default="3.0"/>
+  <arg name="uav1_z" default="3.0"/>
+
+  <node pkg="uav_truth_tracker" type="mavros_hover_node.py"
+        name="uav0_hover" output="screen">
+    <param name="mavros_ns" value="/uav0/mavros"/>
+    <param name="x" value="0.0"/>
+    <param name="y" value="0.0"/>
+    <param name="takeoff_z" value="$(arg uav0_z)"/>
+    <param name="auto_arm" value="$(arg auto_arm)"/>
+    <param name="auto_offboard" value="$(arg auto_offboard)"/>
+  </node>
+
+  <node pkg="uav_truth_tracker" type="mavros_hover_node.py"
+        name="uav1_hover" output="screen">
+    <param name="mavros_ns" value="/uav1/mavros"/>
+    <param name="x" value="2.0"/>
+    <param name="y" value="0.0"/>
+    <param name="takeoff_z" value="$(arg uav1_z)"/>
+    <param name="auto_arm" value="$(arg auto_arm)"/>
+    <param name="auto_offboard" value="$(arg auto_offboard)"/>
+  </node>
+</launch>

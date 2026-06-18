@@ -1,0 +1,106 @@
+<launch>
+  <!--
+    Original EGO-Planner simulator + UAV map export for UGV use.
+
+    This is intentionally not the PX4/MAVROS/Gazebo path. The UAV here is the
+    original EGO-Planner quadrotor simulator. By default this launch uses the
+    random_forest map for forest testing. EGO keeps using its original local
+    sensing topics, while this launch exports the sensed world-frame cloud to:
+
+      /uav0/mapping/points_world
+      /uav0/mapping/points_accumulated
+      ~/ego_ws/pointcloud_maps/uav_points_map_latest.pcd
+  -->
+
+  <arg name="start_ego_sim" default="true"/>
+  <arg name="ego_sim_launch" default="$(find uav_truth_tracker)/launch/ego_forest_sim.launch"/>
+  <arg name="rviz" default="true"/>
+  <arg name="rviz_config" default="$(find ego_planner)/launch/forest_debug.rviz"/>
+
+  <!-- Original EGO local sensing output. If your build uses CUDA and publishes
+       /pcl_render_node/rendered_pcl instead, override source_cloud_topic. -->
+  <arg name="source_cloud_topic" default="/pcl_render_node/cloud"/>
+  <arg name="output_topic" default="/uav0/mapping/points_world"/>
+  <arg name="accumulated_topic" default="/uav0/mapping/points_accumulated"/>
+  <arg name="target_frame" default="map"/>
+  <!-- Keep the export rate high enough for mapping. A low value can miss
+       obstacles that are only visible for a short part of the EGO trajectory. -->
+  <arg name="publish_rate" default="10.0"/>
+  <arg name="leaf_size" default="0.05"/>
+
+  <arg name="map_output_dir" default="$(env HOME)/pointcloud_maps"/>
+  <arg name="map_name" default="uav_points_map"/>
+  <arg name="map_voxel_leaf_size" default="0.10"/>
+  <arg name="map_min_observations" default="1"/>
+  <arg name="map_save_interval" default="30.0"/>
+  <arg name="map_save_on_shutdown" default="true"/>
+
+  <arg name="start_ugv_model" default="true"/>
+  <arg name="ugv_ws" default="$(env HOME)/Air-Ground-Collaborative-Manupulation"/>
+  <arg name="ugv_urdf" default="$(arg ugv_ws)/src/husky_ur5_moveit_config/config/gazebo_husky_ur5.urdf"/>
+  <arg name="ugv_x" default="2.5"/>
+  <arg name="ugv_y" default="-18.0"/>
+  <arg name="ugv_z" default="0.25"/>
+  <arg name="ugv_yaw" default="0.0"/>
+
+  <!-- Original EGO uses world in RViz/global map and map in some local sensing
+       outputs. Treat them as the same fixed frame for this integrated test. -->
+  <node pkg="tf2_ros" type="static_transform_publisher"
+        name="map_world_identity_tf"
+        args="0 0 0 0 0 0 map world"/>
+
+  <include if="$(arg start_ego_sim)" file="$(arg ego_sim_launch)"/>
+
+  <node pkg="uav_truth_tracker" type="uav_pointcloud_to_world.py"
+        name="ego_uav_cloud_to_world" output="screen">
+    <param name="input_topic" value="$(arg source_cloud_topic)"/>
+    <param name="output_topic" value="$(arg output_topic)"/>
+    <param name="target_frame" value="$(arg target_frame)"/>
+    <param name="publish_rate" value="$(arg publish_rate)"/>
+    <param name="enable_range_filter" value="false"/>
+    <param name="enable_voxel_filter" value="true"/>
+    <param name="leaf_size" value="$(arg leaf_size)"/>
+    <param name="allow_latest_tf_fallback" value="true"/>
+  </node>
+
+  <node pkg="uav_truth_tracker" type="uav_pointcloud_map_recorder.py"
+        name="uav_pointcloud_map_recorder" output="screen">
+    <param name="input_topic" value="$(arg output_topic)"/>
+    <param name="accumulated_topic" value="$(arg accumulated_topic)"/>
+    <param name="frame_id" value="$(arg target_frame)"/>
+    <param name="output_dir" value="$(arg map_output_dir)"/>
+    <param name="map_name" value="$(arg map_name)"/>
+    <param name="voxel_leaf_size" value="$(arg map_voxel_leaf_size)"/>
+    <param name="min_observations" value="$(arg map_min_observations)"/>
+    <param name="ground_filter_mode" value="none"/>
+    <param name="min_z" value="-999.0"/>
+    <param name="max_z" value="999.0"/>
+    <param name="publish_rate" value="1.0"/>
+    <param name="publish_on_update" value="true"/>
+    <param name="min_update_publish_period" value="0.5"/>
+    <param name="save_interval" value="$(arg map_save_interval)"/>
+    <param name="save_on_shutdown" value="$(arg map_save_on_shutdown)"/>
+  </node>
+
+  <node if="$(arg start_ugv_model)" pkg="uav_truth_tracker"
+        type="ugv_robot_model_helper.py"
+        name="ugv_robot_model_helper" output="screen">
+    <env name="ROS_PACKAGE_PATH"
+         value="$(arg ugv_ws)/src:$(arg ugv_ws)/src/robotiq:$(optenv ROS_PACKAGE_PATH)"/>
+    <param name="urdf_file" value="$(arg ugv_urdf)"/>
+    <param name="link_prefix" value="ugv_"/>
+    <param name="root_frame" value="$(arg target_frame)"/>
+    <param name="x" value="$(arg ugv_x)"/>
+    <param name="y" value="$(arg ugv_y)"/>
+    <param name="z" value="$(arg ugv_z)"/>
+    <param name="yaw" value="$(arg ugv_yaw)"/>
+    <param name="override_visual_materials" value="true"/>
+    <param name="start_robot_state_publisher" value="true"/>
+  </node>
+
+  <node if="$(arg rviz)" pkg="rviz" type="rviz" name="ego_uav_ugv_rviz"
+        args="-d $(arg rviz_config)">
+    <env name="ROS_PACKAGE_PATH"
+         value="$(arg ugv_ws)/src:$(arg ugv_ws)/src/robotiq:$(optenv ROS_PACKAGE_PATH)"/>
+  </node>
+</launch>

@@ -1,0 +1,53 @@
+<launch>
+  <arg name="model_path" default="$(env HOME)/uav_yolo_runs/uav_detector_v2/weights/best.pt"/>
+  <arg name="target_mode" default="circle_z_sine"/>
+  <arg name="uav1_speed" default="1.2"/>
+  <arg name="z_amplitude" default="0.5"/>
+  <arg name="estimator_model" default="kalman_cv"/>
+  <arg name="semantic_min_confidence" default="0.40"/>
+  <arg name="semantic_process_rate" default="10.0"/>
+  <arg name="lidar_recent_visual_max_age" default="8.0"/>
+  <arg name="lidar_recent_visual_gate_radius" default="6.0"/>
+  <arg name="uav1_motion_start_delay" default="8.0"/>
+  <arg name="stop_on_capture_success" default="false"/>
+  <arg name="latch_capture_success" default="false"/>
+  <arg name="lost_target_behavior" default="hold"/>
+  <arg name="auto_arm" default="true"/>
+  <arg name="auto_offboard" default="true"/>
+
+  <!-- YOLO semantic detector -->
+  <include file="$(find uav_truth_tracker)/launch/target_yolo_detector_debug.launch">
+    <arg name="model_path" value="$(arg model_path)"/>
+    <arg name="min_confidence" value="$(arg semantic_min_confidence)"/>
+    <arg name="process_rate" value="$(arg semantic_process_rate)"/>
+  </include>
+
+  <!-- Depth+LiDAR fusion with YOLO as visual source -->
+  <include file="$(find uav_truth_tracker)/launch/intercept_depth_lidar_fusion_chase.launch">
+    <arg name="start_depth_detector" value="false"/>
+    <arg name="visual_pose_topic" value="/target_semantic/pose"/>
+    <arg name="visual_pose_cov_topic" value="/target_semantic/pose_cov"/>
+    <arg name="visual_valid_topic" value="/target_semantic/valid"/>
+    <arg name="visual_confidence_topic" value="/target_semantic/confidence"/>
+    <arg name="visual_marker_topic" value="/target_semantic/marker"/>
+    <arg name="target_mode" value="$(arg target_mode)"/>
+    <arg name="uav1_speed" value="$(arg uav1_speed)"/>
+    <arg name="z_amplitude" value="$(arg z_amplitude)"/>
+    <arg name="estimator_model" value="$(arg estimator_model)"/>
+    <arg name="visual_min_confidence" value="$(arg semantic_min_confidence)"/>
+    <!-- YOLO gives semantic certainty: trust it as primary, LiDAR validates -->
+    <arg name="prefer_visual" value="true"/>
+    <arg name="fusion_mode" value="weighted"/>
+    <arg name="require_consistency_for_visual" value="false"/>
+    <arg name="fusion_lidar_requires_recent_visual" value="true"/>
+    <arg name="fusion_lidar_recent_visual_max_age" value="$(arg lidar_recent_visual_max_age)"/>
+    <arg name="fusion_lidar_recent_visual_gate_radius" value="$(arg lidar_recent_visual_gate_radius)"/>
+    <arg name="fusion_lidar_fallback_visual_gap" value="0.35"/>
+    <arg name="uav1_motion_start_delay" value="$(arg uav1_motion_start_delay)"/>
+    <arg name="stop_on_capture_success" value="$(arg stop_on_capture_success)"/>
+    <arg name="latch_capture_success" value="$(arg latch_capture_success)"/>
+    <arg name="lost_target_behavior" value="$(arg lost_target_behavior)"/>
+    <arg name="auto_arm" value="$(arg auto_arm)"/>
+    <arg name="auto_offboard" value="$(arg auto_offboard)"/>
+  </include>
+</launch>

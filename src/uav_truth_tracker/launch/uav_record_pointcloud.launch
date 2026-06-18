@@ -1,0 +1,53 @@
+<launch>
+  <!-- ====================================================================
+       UAV 点云录制：将 UAV LiDAR 点云转到 world 帧，累积保存为 PCD。
+
+       用法：在 ego_ws 启动 UAV（PX4 + MAVROS + EGO-Planner）后，
+             roslaunch 本文件开始录制。
+             定时自动保存，Ctrl-C 退出时也会保存。
+
+       roslaunch uav_truth_tracker uav_record_pointcloud.launch
+       ==================================================================== -->
+
+  <arg name="input_topic" default="/uav0/velodyne_points_raw"/>
+  <arg name="output_dir" default="$(env HOME)/pointcloud_maps"/>
+  <arg name="target_frame" default="map"/>
+
+  <!-- 1. 点云坐标转换：LiDAR 帧 → world 帧 -->
+  <node name="uav_pointcloud_to_world" pkg="uav_truth_tracker"
+        type="uav_pointcloud_to_world.py" output="screen">
+    <param name="input_topic" value="$(arg input_topic)"/>
+    <param name="output_topic" value="/uav0/mapping/points_world"/>
+    <param name="target_frame" value="$(arg target_frame)"/>
+    <param name="throttle_rate" value="3.0"/>
+    <param name="enable_range_filter" value="true"/>
+    <param name="min_range" value="1.0"/>
+    <param name="max_range" value="30.0"/>
+    <param name="enable_voxel_filter" value="true"/>
+    <param name="leaf_size" value="0.15"/>
+  </node>
+
+  <!-- 2. 点云累积 + 保存 PCD -->
+  <node name="uav_pointcloud_map_recorder" pkg="uav_truth_tracker"
+        type="uav_pointcloud_map_recorder.py" output="screen">
+    <param name="input_topic" value="/uav0/mapping/points_world"/>
+    <param name="accumulated_topic" value="/uav0/mapping/points_accumulated"/>
+    <param name="frame_id" value="$(arg target_frame)"/>
+    <param name="output_dir" value="$(arg output_dir)"/>
+    <param name="map_name" value="uav_points_map"/>
+    <param name="voxel_leaf_size" value="0.15"/>
+    <param name="min_observations" value="2"/>
+    <param name="min_z" value="0.0"/>
+    <param name="max_z" value="30.0"/>
+    <param name="ground_filter_mode" value="local"/>
+    <param name="ground_clearance" value="0.18"/>
+    <param name="ground_xy_cell_size" value="0.35"/>
+    <param name="keep_terrain_points" value="true"/>
+    <param name="terrain_cell_size" value="0.80"/>
+    <param name="save_interval" value="30.0"/>
+    <param name="save_latest" value="true"/>
+    <param name="save_timestamped" value="true"/>
+    <param name="save_on_shutdown" value="true"/>
+    <param name="publish_rate" value="1.0"/>
+  </node>
+</launch>

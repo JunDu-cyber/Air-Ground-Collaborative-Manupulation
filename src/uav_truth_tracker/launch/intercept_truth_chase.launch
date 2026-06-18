@@ -1,0 +1,144 @@
+<launch>
+  <arg name="frame_id" default="map"/>
+
+  <arg name="prediction_mode" default="intercept"/>
+  <arg name="prediction_time" default="1.5"/>
+  <arg name="goal_update_rate" default="5.0"/>
+  <arg name="use_prediction" default="true"/>
+  <arg name="assumed_chaser_speed" default="1.2"/>
+  <arg name="min_prediction_time" default="0.5"/>
+  <arg name="max_prediction_time" default="4.0"/>
+  <arg name="prediction_model" default="auto"/>
+  <arg name="intercept_iterations" default="5"/>
+  <arg name="velocity_source" default="diff"/>
+  <arg name="use_twist_velocity" default="false"/>
+  <arg name="max_goal_jump" default="0.0"/>
+  <arg name="smooth_prediction" default="true"/>
+  <arg name="t_go_smoothing_alpha" default="0.25"/>
+  <arg name="goal_smoothing_alpha" default="0.35"/>
+  <arg name="max_t_go_rate" default="0.8"/>
+  <arg name="max_goal_speed" default="1.0"/>
+  <arg name="keep_goal_on_circle" default="true"/>
+  <arg name="target_odom_topic" default="/uav1/mavros/local_position/odom"/>
+  <arg name="chaser_odom_topic" default="/uav0/mavros/local_position/odom"/>
+  <arg name="goal_topic" default="/uav0/tracker/goal"/>
+  <arg name="tracker_marker_topic" default="/uav0/tracker/marker"/>
+
+  <arg name="target_mode" default="circle"/>
+  <arg name="target_height" default="3.0"/>
+  <arg name="target_radius" default="3.0"/>
+  <arg name="uav1_speed" default="0.6"/>
+  <arg name="target_speed" default="$(arg uav1_speed)"/>
+  <arg name="target_center_x" default="2.0"/>
+  <arg name="target_center_y" default="0.0"/>
+  <arg name="target_direction" default="1.0"/>
+  <arg name="infer_target_direction" default="true"/>
+
+  <arg name="uav0_max_speed" default="1.2"/>
+  <arg name="uav0_max_accel" default="0.7"/>
+  <arg name="accept_radius" default="0.5"/>
+  <arg name="stop_at_goal" default="false"/>
+  <arg name="min_pursuit_speed" default="0.15"/>
+  <arg name="pursuit_slow_radius" default="1.2"/>
+  <arg name="max_setpoint_lead" default="0.9"/>
+  <arg name="keep_setpoint_between_uav_and_goal" default="true"/>
+  <arg name="command_yaw" default="false"/>
+  <arg name="face_goal_before_move" default="false"/>
+  <arg name="yaw_align_threshold" default="0.35"/>
+  <arg name="max_step" default="0.3"/>
+  <arg name="max_tracking_distance" default="20.0"/>
+  <arg name="hold_height_from_goal" default="true"/>
+  <arg name="goal_timeout" default="2.0"/>
+
+  <arg name="capture_distance" default="0.8"/>
+  <arg name="hold_time" default="1.0"/>
+
+  <arg name="auto_arm" default="false"/>
+  <arg name="auto_offboard" default="false"/>
+
+  <node pkg="uav_truth_tracker" type="truth_tracker_node.py"
+        name="truth_tracker_node" output="screen">
+    <param name="prediction_mode" value="$(arg prediction_mode)"/>
+    <param name="prediction_time" value="$(arg prediction_time)"/>
+    <param name="goal_update_rate" value="$(arg goal_update_rate)"/>
+    <param name="use_prediction" value="$(arg use_prediction)"/>
+    <param name="assumed_chaser_speed" value="$(arg assumed_chaser_speed)"/>
+    <param name="min_prediction_time" value="$(arg min_prediction_time)"/>
+    <param name="max_prediction_time" value="$(arg max_prediction_time)"/>
+    <param name="prediction_model" value="$(arg prediction_model)"/>
+    <param name="target_motion_mode" value="$(arg target_mode)"/>
+    <param name="intercept_iterations" value="$(arg intercept_iterations)"/>
+    <param name="velocity_source" value="$(arg velocity_source)"/>
+    <param name="use_twist_velocity" value="$(arg use_twist_velocity)"/>
+    <param name="max_goal_jump" value="$(arg max_goal_jump)"/>
+    <param name="smooth_prediction" value="$(arg smooth_prediction)"/>
+    <param name="t_go_smoothing_alpha" value="$(arg t_go_smoothing_alpha)"/>
+    <param name="goal_smoothing_alpha" value="$(arg goal_smoothing_alpha)"/>
+    <param name="max_t_go_rate" value="$(arg max_t_go_rate)"/>
+    <param name="max_goal_speed" value="$(arg max_goal_speed)"/>
+    <param name="keep_goal_on_circle" value="$(arg keep_goal_on_circle)"/>
+    <param name="target_odom_topic" value="$(arg target_odom_topic)"/>
+    <param name="chaser_odom_topic" value="$(arg chaser_odom_topic)"/>
+    <param name="goal_topic" value="$(arg goal_topic)"/>
+    <param name="marker_topic" value="$(arg tracker_marker_topic)"/>
+    <param name="frame_id" value="$(arg frame_id)"/>
+    <param name="target_center_x" value="$(arg target_center_x)"/>
+    <param name="target_center_y" value="$(arg target_center_y)"/>
+    <param name="target_radius" value="$(arg target_radius)"/>
+    <param name="target_direction" value="$(arg target_direction)"/>
+    <param name="infer_target_direction" value="$(arg infer_target_direction)"/>
+    <param name="target_speed" value="$(arg target_speed)"/>
+    <param name="target_height" value="$(arg target_height)"/>
+  </node>
+
+  <node pkg="uav_truth_tracker" type="uav1_motion_node.py"
+        name="uav1_motion_node" output="screen">
+    <param name="mavros_ns" value="/uav1/mavros"/>
+    <param name="frame_id" value="$(arg frame_id)"/>
+    <param name="mode" value="$(arg target_mode)"/>
+    <param name="height" value="$(arg target_height)"/>
+    <param name="radius" value="$(arg target_radius)"/>
+    <param name="speed" value="$(arg target_speed)"/>
+    <param name="center_x" value="$(arg target_center_x)"/>
+    <param name="center_y" value="$(arg target_center_y)"/>
+    <param name="auto_arm" value="$(arg auto_arm)"/>
+    <param name="auto_offboard" value="$(arg auto_offboard)"/>
+  </node>
+
+  <node pkg="uav_truth_tracker" type="uav0_goal_follower_node.py"
+        name="uav0_goal_follower_node" output="screen">
+    <param name="mavros_ns" value="/uav0/mavros"/>
+    <param name="frame_id" value="$(arg frame_id)"/>
+    <param name="goal_topic" value="$(arg goal_topic)"/>
+    <param name="odom_topic" value="/uav0/mavros/local_position/odom"/>
+    <param name="setpoint_topic" value="/uav0/mavros/setpoint_position/local"/>
+    <param name="max_speed" value="$(arg uav0_max_speed)"/>
+    <param name="max_accel" value="$(arg uav0_max_accel)"/>
+    <param name="accept_radius" value="$(arg accept_radius)"/>
+    <param name="stop_at_goal" value="$(arg stop_at_goal)"/>
+    <param name="min_pursuit_speed" value="$(arg min_pursuit_speed)"/>
+    <param name="pursuit_slow_radius" value="$(arg pursuit_slow_radius)"/>
+    <param name="max_setpoint_lead" value="$(arg max_setpoint_lead)"/>
+    <param name="keep_setpoint_between_uav_and_goal" value="$(arg keep_setpoint_between_uav_and_goal)"/>
+    <param name="command_yaw" value="$(arg command_yaw)"/>
+    <param name="face_goal_before_move" value="$(arg face_goal_before_move)"/>
+    <param name="yaw_align_threshold" value="$(arg yaw_align_threshold)"/>
+    <param name="max_step" value="$(arg max_step)"/>
+    <param name="max_tracking_distance" value="$(arg max_tracking_distance)"/>
+    <param name="hold_height_from_goal" value="$(arg hold_height_from_goal)"/>
+    <param name="goal_timeout" value="$(arg goal_timeout)"/>
+    <param name="auto_arm" value="$(arg auto_arm)"/>
+    <param name="auto_offboard" value="$(arg auto_offboard)"/>
+  </node>
+
+  <node pkg="uav_truth_tracker" type="capture_decision_node.py"
+        name="capture_decision_node" output="screen">
+    <param name="frame_id" value="$(arg frame_id)"/>
+    <param name="uav0_odom_topic" value="/uav0/mavros/local_position/odom"/>
+    <param name="uav1_odom_topic" value="/uav1/mavros/local_position/odom"/>
+    <param name="success_topic" value="/uav0/capture/success"/>
+    <param name="marker_topic" value="/uav0/capture/marker"/>
+    <param name="capture_distance" value="$(arg capture_distance)"/>
+    <param name="hold_time" value="$(arg hold_time)"/>
+  </node>
+</launch>

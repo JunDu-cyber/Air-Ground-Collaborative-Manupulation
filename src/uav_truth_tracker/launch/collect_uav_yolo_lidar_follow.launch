@@ -1,0 +1,35 @@
+<launch>
+  <arg name="dataset_dir" default="$(env HOME)/uav_yolo_dataset"/>
+  <arg name="max_images" default="3000"/>
+  <arg name="max_new_images" default="0"/>
+  <arg name="sample_rate" default="5.0"/>
+  <arg name="dataset_tag" default="lidar_follow"/>
+  <arg name="target_mode" default="circle_z_sine"/>
+  <arg name="uav1_speed" default="0.6"/>
+  <arg name="z_amplitude" default="0.5"/>
+  <arg name="estimator_model" default="kalman_cv"/>
+  <arg name="auto_arm" default="true"/>
+  <arg name="auto_offboard" default="true"/>
+
+  <!-- LiDAR drives uav0 only during offline dataset collection. -->
+  <include file="$(find uav_truth_tracker)/launch/intercept_lidar_estimator_chase.launch">
+    <arg name="target_mode" value="$(arg target_mode)"/>
+    <arg name="uav1_speed" value="$(arg uav1_speed)"/>
+    <arg name="z_amplitude" value="$(arg z_amplitude)"/>
+    <arg name="estimator_model" value="$(arg estimator_model)"/>
+    <arg name="stop_on_capture_success" value="false"/>
+    <arg name="latch_capture_success" value="false"/>
+    <arg name="start_evaluator" value="false"/>
+    <arg name="auto_arm" value="$(arg auto_arm)"/>
+    <arg name="auto_offboard" value="$(arg auto_offboard)"/>
+  </include>
+
+  <!-- Truth odom is used only here to create offline YOLO labels. -->
+  <include file="$(find uav_truth_tracker)/launch/collect_uav_yolo_dataset.launch">
+    <arg name="dataset_dir" value="$(arg dataset_dir)"/>
+    <arg name="max_images" value="$(arg max_images)"/>
+    <arg name="max_new_images" value="$(arg max_new_images)"/>
+    <arg name="sample_rate" value="$(arg sample_rate)"/>
+    <arg name="dataset_tag" value="$(arg dataset_tag)"/>
+  </include>
+</launch>
