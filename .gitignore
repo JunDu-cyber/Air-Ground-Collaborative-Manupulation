@@ -49,4 +49,4 @@ src/gazebo_models_worlds_collection/models/*
 !src/gazebo_models_worlds_collection/models/gas_station/
 !src/gazebo_models_worlds_collection/models/dumpster/
 !src/gazebo_models_worlds_collection/models/mailbox/
-!src/gazebo_models_worlds_collection/models/speed_limit_sign/src/ego-planner/
+src/ego-planner/

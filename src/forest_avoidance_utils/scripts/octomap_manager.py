@@ -10,7 +10,22 @@ import time
 from datetime import datetime
 from glob import glob
 
+import roslib.packages
 import rospy
+
+
+def find_ros_executable(package, executable):
+    """Resolve a package executable's absolute path without relying on rosrun.
+
+    `rosrun` (ros-noetic-rosbash) is not installed on every machine, so spawning
+    it via subprocess can fail with FileNotFoundError. roslib.packages.find_node
+    looks up the binary the same way rosrun does internally.
+    """
+    matches = roslib.packages.find_node(package, executable)
+    if not matches:
+        raise RuntimeError(
+            "could not find executable '%s' in package '%s'" % (executable, package))
+    return matches[0]
 
 
 class OctomapManager(object):
@@ -83,7 +98,7 @@ class OctomapManager(object):
 
     def start_octomap_server(self):
         cmd = [
-            "rosrun", "octomap_server", "octomap_server_node",
+            find_ros_executable("octomap_server", "octomap_server_node"),
             "__name:=octomap_server",
             "cloud_in:=%s" % self.cloud_topic,
         ]
@@ -115,7 +130,7 @@ class OctomapManager(object):
             map_path = os.path.join(self.output_dir, "%s_%s.bt" % (self.filename_prefix, stamp))
         else:
             map_path = os.path.join(self.output_dir, "autosave_latest.bt")
-        cmd = ["rosrun", "octomap_server", "octomap_saver", map_path]
+        cmd = [find_ros_executable("octomap_server", "octomap_saver"), map_path]
         rospy.logwarn("[OctomapManager] saving map: %s", map_path)
         try:
             subprocess.check_call(cmd, timeout=self.save_timeout)

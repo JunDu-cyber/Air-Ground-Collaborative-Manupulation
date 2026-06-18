@@ -1,0 +1,229 @@
+<launch>
+  <arg name="enable_octomap" default="false"/>
+  <arg name="octomap_autosave_updates_latest" default="false"/>
+  <arg name="octomap_resolution" default="$(optenv OCTOMAP_RESOLUTION 0.07)"/>
+  <arg name="octomap_min_range" default="$(optenv OCTOMAP_MIN_RANGE 0.35)"/>
+  <arg name="octomap_max_range" default="$(optenv OCTOMAP_MAX_RANGE 12.0)"/>
+  <arg name="octomap_sensor_max_range" default="$(optenv OCTOMAP_SENSOR_MAX_RANGE 18.0)"/>
+  <arg name="octomap_min_z" default="$(optenv OCTOMAP_MIN_Z -0.05)"/>
+  <arg name="octomap_occupancy_min_z" default="$(optenv OCTOMAP_OCCUPANCY_MIN_Z 0.05)"/>
+  <arg name="octomap_occupancy_max_z" default="$(optenv OCTOMAP_OCCUPANCY_MAX_Z 1.20)"/>
+  <arg name="octomap_max_z" default="$(optenv OCTOMAP_MAX_Z 1.50)"/>
+  <arg name="lidar_voxel_size" default="$(optenv LIDAR_VOXEL_SIZE 0.06)"/>
+  <arg name="octomap_hit" default="$(optenv OCTOMAP_HIT 0.80)"/>
+  <arg name="octomap_miss" default="$(optenv OCTOMAP_MISS 0.48)"/>
+  <arg name="octomap_sensor_model_max" default="$(optenv OCTOMAP_SENSOR_MODEL_MAX 0.97)"/>
+  <arg name="octomap_filter_ground" default="$(optenv OCTOMAP_FILTER_GROUND false)"/>
+  <arg name="octomap_ground_filter_distance" default="$(optenv OCTOMAP_GROUND_FILTER_DISTANCE 0.015)"/>
+  <arg name="octomap_ground_filter_plane_distance" default="$(optenv OCTOMAP_GROUND_FILTER_PLANE_DISTANCE 0.035)"/>
+  <arg name="octomap_autosave_interval" default="$(optenv OCTOMAP_AUTOSAVE_INTERVAL 45.0)"/>
+  <arg name="octomap_max_angular_velocity" default="$(optenv OCTOMAP_MAX_ANGULAR_VELOCITY 0.60)"/>
+  <arg name="octomap_max_linear_velocity" default="$(optenv OCTOMAP_MAX_LINEAR_VELOCITY 2.50)"/>
+  <arg name="octomap_max_odom_angular_velocity" default="$(optenv OCTOMAP_MAX_ODOM_ANGULAR_VELOCITY 0.60)"/>
+  <arg name="octomap_max_imu_age" default="$(optenv OCTOMAP_MAX_IMU_AGE 0.25)"/>
+  <arg name="octomap_max_odom_age" default="$(optenv OCTOMAP_MAX_ODOM_AGE 0.25)"/>
+  <arg name="octomap_ground_filter_enabled" default="$(optenv OCTOMAP_GROUND_FILTER_ENABLED true)"/>
+  <arg name="octomap_ground_z" default="$(optenv OCTOMAP_GROUND_Z 0.0)"/>
+  <arg name="octomap_ground_keep_above" default="$(optenv OCTOMAP_GROUND_KEEP_ABOVE 0.35)"/>
+  <arg name="octomap_ground_column_filter_enabled" default="$(optenv OCTOMAP_GROUND_COLUMN_FILTER_ENABLED true)"/>
+  <arg name="octomap_ground_column_size" default="$(optenv OCTOMAP_GROUND_COLUMN_SIZE 0.08)"/>
+  <arg name="octomap_ground_column_min_height" default="$(optenv OCTOMAP_GROUND_COLUMN_MIN_HEIGHT 0.20)"/>
+  <arg name="octomap_ground_column_support_radius" default="$(optenv OCTOMAP_GROUND_COLUMN_SUPPORT_RADIUS 0)"/>
+  <arg name="octomap_self_filter_enabled" default="$(optenv OCTOMAP_SELF_FILTER_ENABLED true)"/>
+  <arg name="octomap_self_filter_body_radius" default="$(optenv OCTOMAP_SELF_FILTER_BODY_RADIUS 0.28)"/>
+  <arg name="octomap_self_filter_body_z_min" default="$(optenv OCTOMAP_SELF_FILTER_BODY_Z_MIN -0.16)"/>
+  <arg name="octomap_self_filter_body_z_max" default="$(optenv OCTOMAP_SELF_FILTER_BODY_Z_MAX 0.16)"/>
+  <arg name="octomap_self_filter_rotor_radius" default="$(optenv OCTOMAP_SELF_FILTER_ROTOR_RADIUS 0.17)"/>
+  <arg name="octomap_self_filter_rotor_z_min" default="$(optenv OCTOMAP_SELF_FILTER_ROTOR_Z_MIN -0.14)"/>
+  <arg name="octomap_self_filter_rotor_z_max" default="$(optenv OCTOMAP_SELF_FILTER_ROTOR_Z_MAX 0.06)"/>
+  <arg name="ego_ground_filter_margin" default="$(optenv EGO_GROUND_FILTER_MARGIN 0.08)"/>
+  <arg name="ego_skip_pixel" default="$(optenv EGO_SKIP_PIXEL 2)"/>
+
+  <!-- 启动丛林避障辅助节点 -->
+  <include file="$(find forest_avoidance_utils)/launch/forest_utils.launch"/>
+
+  <!-- 32-line LiDAR is for offline OctoMap mapping only. Keep it off during EGO online avoidance. -->
+  <include if="$(arg enable_octomap)" file="$(find forest_avoidance_utils)/launch/forest_lidar_relay.launch">
+    <arg name="raw_lidar_topic" value="/uav0/velodyne_points_raw"/>
+    <arg name="cloud_topic" value="/uav0/velodyne_points"/>
+    <arg name="lidar_frame" value="uav0/velodyne_link"/>
+    <arg name="output_frame" value="uav0/velodyne_link"/>
+    <arg name="publish_in_world_frame" value="false"/>
+    <arg name="world_frame" value="map"/>
+    <arg name="stamp_with_odom" value="true"/>
+    <arg name="imu_topic" value="/mavros/imu/data"/>
+    <arg name="odom_topic" value="/mavros/local_position/odom"/>
+    <arg name="min_range" value="$(arg octomap_min_range)"/>
+    <arg name="max_range" value="$(arg octomap_max_range)"/>
+    <arg name="sensor_max_range" value="$(arg octomap_sensor_max_range)"/>
+    <arg name="max_range_margin" value="0.30"/>
+    <arg name="voxel_size" value="$(arg lidar_voxel_size)"/>
+    <arg name="neighbor_voxel_size" value="0.0"/>
+    <arg name="min_neighbors" value="1"/>
+    <arg name="max_angular_velocity" value="$(arg octomap_max_angular_velocity)"/>
+    <arg name="max_imu_age" value="$(arg octomap_max_imu_age)"/>
+    <arg name="max_linear_velocity" value="$(arg octomap_max_linear_velocity)"/>
+    <arg name="max_odom_angular_velocity" value="$(arg octomap_max_odom_angular_velocity)"/>
+    <arg name="max_odom_age" value="$(arg octomap_max_odom_age)"/>
+    <arg name="ground_filter_enabled" value="$(arg octomap_ground_filter_enabled)"/>
+    <arg name="ground_z" value="$(arg octomap_ground_z)"/>
+    <arg name="ground_keep_above" value="$(arg octomap_ground_keep_above)"/>
+    <arg name="ground_column_filter_enabled" value="$(arg octomap_ground_column_filter_enabled)"/>
+    <arg name="ground_column_size" value="$(arg octomap_ground_column_size)"/>
+    <arg name="ground_column_min_height" value="$(arg octomap_ground_column_min_height)"/>
+    <arg name="ground_column_support_radius" value="$(arg octomap_ground_column_support_radius)"/>
+    <arg name="self_filter_enabled" value="$(arg octomap_self_filter_enabled)"/>
+    <arg name="self_filter_body_radius" value="$(arg octomap_self_filter_body_radius)"/>
+    <arg name="self_filter_body_z_min" value="$(arg octomap_self_filter_body_z_min)"/>
+    <arg name="self_filter_body_z_max" value="$(arg octomap_self_filter_body_z_max)"/>
+    <arg name="self_filter_rotor_radius" value="$(arg octomap_self_filter_rotor_radius)"/>
+    <arg name="self_filter_rotor_z_min" value="$(arg octomap_self_filter_rotor_z_min)"/>
+    <arg name="self_filter_rotor_z_max" value="$(arg octomap_self_filter_rotor_z_max)"/>
+    <arg name="lidar_mount_x" value="0.0"/>
+    <arg name="lidar_mount_y" value="0.0"/>
+    <arg name="lidar_mount_z" value="0.06"/>
+    <arg name="local_min_z" value="-999.0"/>
+    <arg name="local_max_z" value="999.0"/>
+    <arg name="min_publish_interval" value="0.0"/>
+  </include>
+
+  <!-- OctoMap mapping from 32-channel LiDAR; autosaves latest data and can be saved explicitly. -->
+  <include if="$(arg enable_octomap)" file="$(find forest_avoidance_utils)/launch/forest_octomap.launch">
+    <arg name="raw_lidar_topic" value="/uav0/velodyne_points_raw"/>
+    <arg name="cloud_topic" value="/uav0/velodyne_points"/>
+    <arg name="lidar_frame" value="uav0/velodyne_link"/>
+    <arg name="imu_topic" value="/mavros/imu/data"/>
+    <arg name="odom_topic" value="/mavros/local_position/odom"/>
+    <arg name="frame_id" value="map"/>
+    <arg name="resolution" value="$(arg octomap_resolution)"/>
+    <arg name="min_range" value="$(arg octomap_min_range)"/>
+    <arg name="max_range" value="$(arg octomap_max_range)"/>
+    <arg name="sensor_max_range" value="$(arg octomap_sensor_max_range)"/>
+    <arg name="pointcloud_min_z" value="$(arg octomap_min_z)"/>
+    <arg name="pointcloud_max_z" value="$(arg octomap_max_z)"/>
+    <arg name="occupancy_min_z" value="$(arg octomap_occupancy_min_z)"/>
+    <arg name="occupancy_max_z" value="$(arg octomap_occupancy_max_z)"/>
+    <arg name="filter_speckles" value="false"/>
+    <arg name="filter_ground" value="$(arg octomap_filter_ground)"/>
+    <arg name="ground_filter_distance" value="$(arg octomap_ground_filter_distance)"/>
+    <arg name="ground_filter_angle" value="0.15"/>
+    <arg name="ground_filter_plane_distance" value="$(arg octomap_ground_filter_plane_distance)"/>
+    <arg name="sensor_model_hit" value="$(arg octomap_hit)"/>
+    <arg name="sensor_model_miss" value="$(arg octomap_miss)"/>
+    <arg name="sensor_model_max" value="$(arg octomap_sensor_model_max)"/>
+    <arg name="lidar_voxel_size" value="$(arg lidar_voxel_size)"/>
+    <arg name="output_dir" value="$(env HOME)/ego_ws/octomap_maps"/>
+    <arg name="start_lidar_relay" value="false"/>
+    <arg name="autosave_interval" value="$(arg octomap_autosave_interval)"/>
+    <arg name="autosave_updates_latest" value="$(arg octomap_autosave_updates_latest)"/>
+  </include>
+	
+  <!-- size of map, change the size inflate x, y, z according to your application -->
+  <arg name="map_size_x" value="60.0"/>
+  <arg name="map_size_y" value="60.0"/>
+  <arg name="map_size_z" value="15.0"/>
+
+  <!-- topic of your odometry such as VIO or LIO -->
+  <arg name="odom_topic" value="/mavros/local_position/odom" />
+
+  <!-- main algorithm params -->
+  <include file="$(find uav_truth_tracker)/launch/forest_param.xml">
+
+    <arg name="map_size_x_" value="$(arg map_size_x)"/>
+    <arg name="map_size_y_" value="$(arg map_size_y)"/>
+    <arg name="map_size_z_" value="$(arg map_size_z)"/>
+    <arg name="odometry_topic" value="$(arg odom_topic)"/>
+
+    <!-- 纯实时感知：使用机载深度 + 当前机体位姿，不使用先验点云 -->
+    <arg name="camera_pose_topic" value="/mavros/local_position/pose"/>
+    <arg name="depth_topic" value="/depth/image_dilated"/>
+
+    <!-- cloud_topic 置为无效占位，避免吃全局先验地形 -->
+    <arg name="cloud_topic" value="fake"/>
+
+    <!-- PX4 depth camera resized to 640x360, hfov=1.500983 rad -->
+    <arg name="cx" value="320.0"/>
+    <arg name="cy" value="180.0"/>
+    <arg name="fx" value="343.158"/>
+    <arg name="fy" value="343.158"/>
+
+    <!-- maximum velocity and acceleration the drone will reach -->
+    <arg name="max_vel" value="0.75" />
+    <arg name="max_acc" value="1.0" />
+
+    <!-- planning horizon for local depth-only forest testing -->
+    <arg name="planning_horizon" value="8.0" />
+    <arg name="ground_filter_margin" value="$(arg ego_ground_filter_margin)" />
+    <arg name="skip_pixel" value="$(arg ego_skip_pixel)" />
+
+    <!-- 1: use 2D Nav Goal to select goal  -->
+    <!-- 2: use global waypoints below  -->
+    <arg name="flight_type" value="1" />
+    
+    <!-- global waypoints -->
+    <!-- It generates a piecewise min-snap traj passing all waypoints -->
+    <arg name="point_num" value="5" />
+
+    <arg name="point0_x" value="-15.0" />
+    <arg name="point0_y" value="0.0" />
+    <arg name="point0_z" value="1.0" />
+
+    <arg name="point1_x" value="0.0" />
+    <arg name="point1_y" value="15.0" />
+    <arg name="point1_z" value="1.0" />
+
+    <arg name="point2_x" value="15.0" />
+    <arg name="point2_y" value="0.0" />
+    <arg name="point2_z" value="1.0" />
+
+    <arg name="point3_x" value="0.0" />
+    <arg name="point3_y" value="-15.0" />
+    <arg name="point3_z" value="1.0" />
+
+    <arg name="point4_x" value="-15.0" />
+    <arg name="point4_y" value="0.0" />
+    <arg name="point4_z" value="1.0" />
+    
+  </include>
+
+  <!-- trajectory server -->
+  <node pkg="ego_planner" name="traj_server" type="traj_server" output="screen">
+    <remap from="/position_cmd" to="planning/pos_cmd"/>
+
+    <remap from="/odom_world" to="$(arg odom_topic)"/>
+    <param name="traj_server/time_forward" value="1.0" type="double"/>
+  </node>
+
+  <node pkg="waypoint_generator" name="waypoint_generator" type="waypoint_generator" output="screen">
+    <remap from="~odom" to="$(arg odom_topic)"/>
+    <remap from="~goal" to="/goal_elevated"/>
+    <remap from="~traj_start_trigger" to="/traj_start_trigger" />
+    <param name="waypoint_type" value="manual-lonely-waypoint"/>
+  </node>
+
+  <node pkg="forest_avoidance_utils" name="goal_elevator" type="goal_elevator.py" output="screen">
+    <param name="goal_z" value="1.0"/>
+  </node>
+
+  <node pkg="forest_avoidance_utils" name="trajectory_logger" type="trajectory_logger.py" output="screen">
+    <param name="actual_topic" value="/mavros/local_position/pose"/>
+    <param name="desired_topic" value="/planning/pos_cmd"/>
+    <param name="output_dir" value="$(env HOME)/ego_ws/trajectory_logs"/>
+    <param name="max_cmd_age" value="0.5"/>
+  </node>
+
+  <!-- pcl_render: 保留但不用于 planner 点云通路 -->
+  <!--node pkg="local_sensing_node" type="pcl_render_node" name="pcl_render_node" output="screen">
+    <rosparam command="load" file="$(find local_sensing_node)/params/camera.yaml"/>
+    <param name="sensing_horizon"  value="30.0"/>
+    <param name="sensing_rate"     value="30.0"/>
+    <param name="estimation_rate"  value="30.0"/>
+    <param name="map/x_size"     value="$(arg map_size_x)"/>
+    <param name="map/y_size"     value="$(arg map_size_y)"/>
+    <param name="map/z_size"     value="$(arg map_size_z)"/>
+    <remap from="~global_map" to="/map_generator/global_cloud"/>
+    <remap from="~odometry"   to="$(arg odom_topic)"/>
+    <remap from="~rendered_pcl" to="/pcl_render_node/cloud"/>
+  </node-->
+
+</launch>

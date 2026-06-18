@@ -68,6 +68,18 @@ rosdep update 2>/dev/null || true
 if ! rosdep install --from-paths src --ignore-src -r -y; then
     echo "  警告: rosdep 部分依赖缺失，构建可能失败（请检查上方输出）"
 fi
+# 应用自定义修改（地面滤波、A* 池自适应、森林仿真配置）
+echo "  应用 Air-Ground 自定义补丁..."
+cp "$WS_DIR/patches/grid_map.h" "$WS_DIR/src/ego-planner/src/planner/plan_env/include/plan_env/"
+cp "$WS_DIR/patches/grid_map.cpp" "$WS_DIR/src/ego-planner/src/planner/plan_env/src/"
+cp "$WS_DIR/patches/planner_manager.cpp" "$WS_DIR/src/ego-planner/src/planner/plan_manage/src/"
+cp "$WS_DIR/patches/ego_replan_fsm.cpp" "$WS_DIR/src/ego-planner/src/planner/plan_manage/src/"
+cp "$WS_DIR/patches/default.rviz" "$WS_DIR/src/ego-planner/src/planner/plan_manage/launch/"
+cp "$WS_DIR/patches/forest_debug.rviz" "$WS_DIR/src/ego-planner/src/planner/plan_manage/launch/"
+cp "$WS_DIR/patches/video_demo.rviz" "$WS_DIR/src/ego-planner/src/planner/plan_manage/launch/"
+cp "$WS_DIR/patches/minimal.rviz" "$WS_DIR/src/ego-planner/src/planner/plan_manage/launch/"
+cp "$WS_DIR/patches/run_forest_sim.launch" "$WS_DIR/src/ego-planner/src/planner/plan_manage/launch/"
+cp -r "$WS_DIR/patches/scripts/"* "$WS_DIR/src/ego-planner/src/planner/plan_manage/scripts/" 2>/dev/null || true
 
 # ---- PX4 SITL ----
 echo "[4/7] 安装 PX4 SITL（首次约需 15-30 分钟）..."

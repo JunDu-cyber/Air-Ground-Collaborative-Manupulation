@@ -156,7 +156,20 @@ bash one_key_takeoff.sh
 - `~/pointcloud_maps/uav_points_map_latest.pcd` — 始终最新
 - `~/pointcloud_maps/uav_points_map_YYYYMMDD_HHMMSS.pcd` — 带时间戳
 
-Ctrl-C 退出时自动保存最终版本。
+Ctrl-C 退出时自动保存最终版本。也可随时手动存一版：
+```bash
+rosservice call /uav_pointcloud_map_recorder/save "{}"
+```
+
+### 建图飞行高度与避障说明（重要）
+
+`forest_uav_mapping.launch`（`one_key_takeoff.sh` 内部调用）暴露了几个关键参数。EGO-Planner 是**局部规划器**，对大体量建筑（楼）避障很弱——直线初始轨迹扎进楼体后无法弹出，规划失败、原地卡死（日志 `first_optimize_step_success=0` 死循环）。因此建图采用**飞到所有建筑之上、从上往下扫**的策略：
+
+- **`flight_height`（默认 12 m）** — 点击目标点 / 预设航点的飞行高度。`outdoor_city` 的楼最高约 11 m，故默认 12 m 以清楚所有楼。压低（更密的低处细节）：`flight_height:=10`，但**不要低于楼高+1 m**，否则会撞楼或卡死。
+- **`ground_filter_margin`（默认 10）** — EGO 避障地图忽略 z ≤ 10 m 的所有点，巡航高度时地图为空 → 不撞楼、不卡。需要低空精细避障再调回 ~0.1（但低空在楼群里 EGO 仍会卡）。
+- **`map_size_x/y`（默认 200）** — EGO 规划地图以世界原点为中心、覆盖 x,y ∈ [−100, 100] m。**点击目标必须落在 ±100 m 内**，否则出界 → `terminal in obstacle` 规划失败。要扫更远：同时加大 `map_size` 并调粗 `grid_map/resolution`（`forest_param.xml`）。
+
+> **本质约束**：楼高 ~11 m + EGO 局部规划器 ⇒ 没有“低空 + 安全避障”的中间地带，城区建图须从楼顶之上俯扫。真正的低空贴墙建图需要带全局路径搜索的规划器。
 
 ### PCD 点云 → 高程图
 

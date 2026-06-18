@@ -21,7 +21,7 @@
   <arg name="start_rviz" default="true"/>
   <arg name="rviz_config" default="$(find ego_planner)/launch/forest_debug.rviz"/>
   <arg name="use_mavros" default="true"/>  <!-- false → Gazebo Odom Bridge -->
-  <arg name="forest_world_file" default="$(env HOME)/worlds/forest_corridor.world"/>
+  <arg name="forest_world_file" default="$(find mobile_manipulator)/worlds/outdoor_city.world"/>
   <arg name="gazebo_uav_model_name" default="iris_depth_camera"/>
 
   <!-- ===== TF 静态变换 ===== -->
@@ -82,11 +82,10 @@
     <param name="y" value="-18.0"/>
     <param name="z" value="0.25"/>
     <param name="yaw" value="0.0"/>
+    <param name="start_robot_state_publisher" value="true"/>
   </node>
 
-  <!-- ===== UGV robot_state_publisher (TF for UGV links) ===== -->
-  <node pkg="robot_state_publisher" type="robot_state_publisher"
-        name="ugv_robot_state_publisher" output="screen" respawn="true"/>
+  <!-- UGV robot_state_publisher moved into ugv_robot_model_helper (start_rsp=true) -->
 
   <!-- ===== 深度预处理 → /depth/image_dilated ===== -->
   <include file="$(find forest_avoidance_utils)/launch/forest_utils.launch"/>
@@ -167,12 +166,21 @@
   </include>
 
   <!-- ===== EGO-Planner (深度相机避障) ===== -->
-  <arg name="map_size_x" value="60.0"/>
-  <arg name="map_size_y" value="60.0"/>
+  <!-- EGO 规划地图以世界原点为中心, 覆盖 x,y ∈ [-map/2, +map/2]. 城很大(模型排到
+       x=175), 地图太小无人机一往外飞目标就出界 → EGO 判"terminal in obstacle"卡死.
+       放大到 200 (覆盖 ±100m); 配合粗分辨率 0.3 控制内存(高空空地图无需细分辨率). -->
+  <arg name="map_size_x" value="200.0"/>
+  <arg name="map_size_y" value="200.0"/>
   <arg name="map_size_z" value="15.0"/>
   <arg name="odom_topic" value="/mavros/local_position/odom"/>
 
-  <include file="$(find ego_planner)/launch/forest_param.xml">
+  <!-- 建图飞行高度: 抬到所有楼之上(outdoor_city 楼最高 ~8m). 点击目标/航点都用
+       这个高度. 配合下面 ground_filter_margin=10, EGO 在巡航高度看不到任何障碍 →
+       永远不会"目标在障碍里"、不会卡, 自由飞从上往下扫图.
+       想压低/抬高: roslaunch ... flight_height:=10.0 (但别低于楼高+2m) -->
+  <arg name="flight_height" default="12.0"/>
+
+  <include file="$(find uav_truth_tracker)/launch/forest_param.xml">
     <arg name="map_size_x_" value="$(arg map_size_x)"/>
     <arg name="map_size_y_" value="$(arg map_size_y)"/>
     <arg name="map_size_z_" value="$(arg map_size_z)"/>
@@ -187,25 +195,27 @@
     <arg name="max_vel" value="0.75"/>
     <arg name="max_acc" value="1.0"/>
     <arg name="planning_horizon" value="8.0"/>
-    <arg name="ground_filter_margin" value="0.08"/>
+    <!-- EGO 障碍地图忽略 z<=10m 的所有点 (楼全在此之下) → 巡航 12m 时地图为空,
+         不会卡在障碍/目标前. 低空避障需求请调回 ~0.1. -->
+    <arg name="ground_filter_margin" value="10.0"/>
     <arg name="skip_pixel" value="2"/>
     <arg name="flight_type" value="1"/>
     <arg name="point_num" value="5"/>
     <arg name="point0_x" value="0.0"/>
     <arg name="point0_y" value="-15.0"/>
-    <arg name="point0_z" value="2.5"/>
+    <arg name="point0_z" value="$(arg flight_height)"/>
     <arg name="point1_x" value="3.0"/>
     <arg name="point1_y" value="0.0"/>
-    <arg name="point1_z" value="2.5"/>
+    <arg name="point1_z" value="$(arg flight_height)"/>
     <arg name="point2_x" value="0.0"/>
     <arg name="point2_y" value="10.0"/>
-    <arg name="point2_z" value="2.5"/>
+    <arg name="point2_z" value="$(arg flight_height)"/>
     <arg name="point3_x" value="-3.0"/>
     <arg name="point3_y" value="0.0"/>
-    <arg name="point3_z" value="2.5"/>
+    <arg name="point3_z" value="$(arg flight_height)"/>
     <arg name="point4_x" value="0.0"/>
     <arg name="point4_y" value="-15.0"/>
-    <arg name="point4_z" value="2.5"/>
+    <arg name="point4_z" value="$(arg flight_height)"/>
   </include>
 
   <!-- EGO-Planner 辅助节点 -->
@@ -223,7 +233,7 @@
   </node>
   <node pkg="forest_avoidance_utils" name="goal_elevator" type="goal_elevator.py"
         output="screen">
-    <param name="goal_z" value="2.5"/>
+    <param name="goal_z" value="$(arg flight_height)"/>
   </node>
   <node pkg="forest_avoidance_utils" name="trajectory_logger"
         type="trajectory_logger.py" output="screen">

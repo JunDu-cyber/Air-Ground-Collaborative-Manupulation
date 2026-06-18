@@ -15,8 +15,18 @@ import subprocess
 import argparse
 import math
 
+import roslib.packages
 import rospy
 from nav_msgs.msg import OccupancyGrid
+
+
+def find_ros_executable(package, executable):
+    """Resolve a package executable's absolute path (rosrun may not be installed)."""
+    matches = roslib.packages.find_node(package, executable)
+    if not matches:
+        raise RuntimeError(
+            "could not find executable '%s' in package '%s'" % (executable, package))
+    return matches[0]
 
 
 class BtTo2DMap(object):
@@ -36,7 +46,7 @@ class BtTo2DMap(object):
 
         # Start octomap_server with the .bt file
         cmd = [
-            "rosrun", "octomap_server", "octomap_server_node",
+            find_ros_executable("octomap_server", "octomap_server_node"),
             self.bt_path,
             "__name:=octomap_server_convert",
             "_frame_id:=map",

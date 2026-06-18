@@ -61,7 +61,7 @@
     <param name="min_distance" value="$(arg forest_min_dist)"/>
   </node>
 
-  <include file="$(find ego_planner)/launch/forest_param.xml">
+  <include file="$(find uav_truth_tracker)/launch/forest_param.xml">
     <arg name="map_size_x_" value="$(arg map_size_x)"/>
     <arg name="map_size_y_" value="$(arg map_size_y)"/>
     <arg name="map_size_z_" value="$(arg map_size_z)"/>
