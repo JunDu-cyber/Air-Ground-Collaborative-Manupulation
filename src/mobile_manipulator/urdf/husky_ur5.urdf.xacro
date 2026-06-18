@@ -59,7 +59,7 @@
        joints mimic it via the gazebo_mimic_joint plugins defined in the macro. -->
   <xacro:include filename="$(find robotiq_description)/urdf/robotiq_140_gripper.urdf.xacro" />
   <xacro:robotiq_140_gripper prefix="" parent="ur5_tool0" >
-    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <origin xyz="0 0 0" rpy="0 -1.57 1.57"/>
   </xacro:robotiq_140_gripper>
 
   <!-- Grasp fix: creates a virtual joint between gripper and object when both

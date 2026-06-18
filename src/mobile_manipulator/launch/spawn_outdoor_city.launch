@@ -10,11 +10,12 @@
   <env name="GAZEBO_RESOURCE_PATH"
        value="$(find mobile_manipulator)/worlds:$(optenv GAZEBO_RESOURCE_PATH)"/>
 
-  <!-- Launch Gazebo: NOT paused initially, clock available immediately -->
+  <!-- Launch Gazebo paused so -J joint positions are held until controllers
+       start. spawn_model -unpause resumes physics after model is loaded. -->
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
     <arg name="world_name"
          value="$(find mobile_manipulator)/worlds/outdoor_city.world"/>
-    <arg name="paused" value="false"/>
+    <arg name="paused" value="true"/>
     <arg name="use_sim_time" value="true"/>
     <arg name="gui" value="$(arg gui)"/>
   </include>
@@ -30,10 +31,13 @@
   <node name="spawn_urdf" pkg="gazebo_ros" type="spawn_model"
         args="-param robot_description -urdf -model husky_ur5
               -x 0.0 -y 0.0 -z 0.5 -Y 0.0
-              -J ur5_shoulder_lift_joint -1.9
-              -J ur5_elbow_joint 0.7
-              -J ur5_wrist_1_joint 1.8
-              -J ur5_wrist_2_joint 1.57"
+              -J ur5_shoulder_pan_joint 0
+              -J ur5_shoulder_lift_joint -1.57
+              -J ur5_elbow_joint 0.33
+              -J ur5_wrist_1_joint 2.2
+              -J ur5_wrist_2_joint 1.57
+              -J ur5_wrist_3_joint 0
+              -unpause"
         output="screen" />
 
   <!-- Controllers -->
