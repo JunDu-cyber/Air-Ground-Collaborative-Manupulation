@@ -92,8 +92,30 @@ if [ ! -d "$PX4_DIR" ]; then
     fi
 
     make px4_sitl_default gazebo-classic
+    # 从 Jinja 模板生成所有 SDF 文件（make 不总是生成它们）
+    SITL_DIR=Tools/simulation/gazebo-classic/sitl_gazebo-classic
+    find "$SITL_DIR/models" -name "*.sdf.jinja" | while read jinja; do
+        out="${jinja%.jinja}"
+        [ -f "$out" ] || python3 "$SITL_DIR/scripts/jinja_gen.py" "$jinja" "$SITL_DIR" --output-file "$out"
+    done
+    # iris_depth_camera airframe: reuse iris airframe (same flight dynamics)
+    ATF_DIR=build/px4_sitl_default/etc/init.d-posix/airframes
+    if [ ! -e "$ATF_DIR/1021_gazebo-classic_iris_depth_camera" ]; then
+        ln -s 10015_gazebo-classic_iris "$ATF_DIR/1021_gazebo-classic_iris_depth_camera"
+    fi
 else
     echo "  PX4 已存在，跳过 clone。"
+    # 如已存在但 SDF 未生成（例如之前构建中断），补全生成
+    SITL_DIR="$PX4_DIR/Tools/simulation/gazebo-classic/sitl_gazebo-classic"
+    find "$SITL_DIR/models" -name "*.sdf.jinja" | while read jinja; do
+        out="${jinja%.jinja}"
+        [ -f "$out" ] || python3 "$SITL_DIR/scripts/jinja_gen.py" "$jinja" "$SITL_DIR" --output-file "$out"
+    done
+    # iris_depth_camera airframe: reuse iris airframe (same flight dynamics)
+    ATF_DIR="$PX4_DIR/build/px4_sitl_default/etc/init.d-posix/airframes"
+    if [ ! -e "$ATF_DIR/1021_gazebo-classic_iris_depth_camera" ]; then
+        ln -s 10015_gazebo-classic_iris "$ATF_DIR/1021_gazebo-classic_iris_depth_camera"
+    fi
 fi
 
 # ---- Install geographiclib datasets（MAVROS 需要） ----
@@ -112,7 +134,7 @@ if ! grep -qF "$SENTINEL" "$HOME/.bashrc" 2>/dev/null; then
 export PX4_DIR="${PX4_DIR:-$HOME/PX4-Autopilot}"
 export GAZEBO_PLUGIN_PATH="$PX4_DIR/build/px4_sitl_default/build_gazebo-classic:$GAZEBO_PLUGIN_PATH"
 export GAZEBO_MODEL_PATH="$PX4_DIR/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models:$HOME/.gazebo/models:$GAZEBO_MODEL_PATH"
-source "$PX4_DIR/Tools/simulation/gazebo-classic/setup_gazebo.bash" "$PX4_DIR" "$PX4_DIR/build/px4_sitl_default" || true
+source "$PX4_DIR/Tools/simulation/gazebo-classic/setup_gazebo.bash" "$PX4_DIR" "$PX4_DIR/build/px4_sitl_default" > /dev/null || true
 BASHEOF
 fi
 

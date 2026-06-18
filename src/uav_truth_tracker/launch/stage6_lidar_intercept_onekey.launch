@@ -1,5 +1,5 @@
 <launch>
-  <arg name="world" default="/home/lnwuu/PX4-Autopilot/Tools/simulation/gazebo-classic/sitl_gazebo-classic/worlds/empty.world"/>
+  <arg name="world" default="$(env HOME)/PX4-Autopilot/Tools/simulation/gazebo-classic/sitl_gazebo-classic/worlds/empty.world"/>
   <arg name="gui" default="true"/>
   <arg name="target_mode" default="circle_z_sine"/>
   <arg name="uav1_speed" default="0.6"/>

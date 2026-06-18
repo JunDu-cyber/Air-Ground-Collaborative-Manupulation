@@ -2,7 +2,7 @@
   <arg name="uav0_vehicle" default="iris"/>
   <arg name="uav0_sdf_jinja" default="$(find uav_truth_tracker)/models/iris_depth_camera_visible/iris_depth_camera_visible.sdf.jinja"/>
   <arg name="uav1_vehicle" default="iris"/>
-  <arg name="world" default="/home/lnwuu/PX4-Autopilot/Tools/simulation/gazebo-classic/sitl_gazebo-classic/worlds/empty.world"/>
+  <arg name="world" default="$(env HOME)/PX4-Autopilot/Tools/simulation/gazebo-classic/sitl_gazebo-classic/worlds/empty.world"/>
   <arg name="gui" default="true"/>
   <arg name="debug" default="false"/>
   <arg name="verbose" default="false"/>
