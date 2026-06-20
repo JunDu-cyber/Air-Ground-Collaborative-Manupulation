@@ -23,7 +23,11 @@ PX4_DIR=${PX4_DIR:-$HOME/PX4-Autopilot}
 # EGO_WS 指向本仓库（UAV 包已集成）
 EGO_WS=${EGO_WS:-$SCRIPT_DIR}
 UGV_WS=${UGV_WS:-$SCRIPT_DIR}
-PX4_GAZEBO_GUI=${PX4_GAZEBO_GUI:-false}
+PX4_GAZEBO_GUI=${PX4_GAZEBO_GUI:-true}
+# 锁步 SITL 实时倍率。必须=1，否则 lockstep 会以 200-300x 狂奔，
+# 而 px4_bridge/MAVROS/EGO 按墙钟 50Hz 发指令，在 PX4 仿真时间里变成亚赫兹，
+# PX4 因 OFFBOARD 指令超时而怠速不起飞。
+PX4_SIM_SPEED_FACTOR=${PX4_SIM_SPEED_FACTOR:-1}
 START_RVIZ=${START_RVIZ:-true}
 # 默认使用村庄地图
 FOREST_WORLD=${FOREST_WORLD:-$SCRIPT_DIR/worlds/forest_corridor.world}
@@ -126,14 +130,42 @@ fi
 gnome-terminal --tab --title="1_Gazebo_Forest_Headless" -- bash -c "
 source /opt/ros/noetic/setup.bash && \
 source /usr/share/gazebo/setup.sh && \
+export PX4_SIM_SPEED_FACTOR='$PX4_SIM_SPEED_FACTOR' && \
 export GAZEBO_MODEL_DATABASE_URI='' && \
 export GAZEBO_PLUGIN_PATH=\"$PX4_DIR/build/px4_sitl_default/build_gazebo-classic:\$GAZEBO_PLUGIN_PATH\" && \
 export GAZEBO_MODEL_PATH=\"$EGO_WS/models:$EGO_WS/src/uav_truth_tracker/models:$UGV_WS/src/gazebo_models_worlds_collection/models:$UGV_WS/src/mobile_manipulator/gazebo_models:$UGV_WS/src/mobile_manipulator/models:$PX4_DIR/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models:$HOME/.gazebo/gazebo_models:$HOME/.gazebo/models:\$GAZEBO_MODEL_PATH\" && \
 export GAZEBO_RESOURCE_PATH=\"$EGO_WS/worlds:$UGV_WS/src/mobile_manipulator/worlds:\$GAZEBO_RESOURCE_PATH\" && \
-roslaunch gazebo_ros empty_world.launch world_name:='$GAZEBO_WORLD' paused:=false use_sim_time:=true gui:='${PX4_GAZEBO_GUI}' 2>&1 | grep -v \"parser.cc\"; exec bash"
+roslaunch gazebo_ros empty_world.launch world_name:='$GAZEBO_WORLD' paused:=true use_sim_time:=true gui:='${PX4_GAZEBO_GUI}' 2>&1 | grep -v \"parser.cc\"; exec bash"
 
 echo "⏳ 给 Gazebo $GAZEBO_LOAD_WAIT 秒加载轻量 forest 世界..."
 sleep "$GAZEBO_LOAD_WAIT"
+
+# 1.4 关键(非锁步 SITL): 把物理步长放大到 CPU 能跑满实时(RTF≈1.0)再启动 PX4。
+# PX4 用 NOLOCKSTEP 编译(墙钟), Gazebo 用 sim-time。若 RTF<1(默认 0.004×250=目标1.0
+# 但重 world 下 gzserver 只能跑到 ~213Hz → RTF 0.85), PX4 墙钟比 sim 快 ~15%, EKF 把
+# IMU 多积分 15% → 高度估计发散(以为在 4~5m 高空)→ 收油门 → 永远起不来。
+# 实测把步长 0.004→0.005 (250→200Hz) 让 gzserver 跑满实时, RTF≈0.99, EKF 收敛, 可起飞。
+# 必须在 PX4 spawn 之前设好, 让 PX4 一上来就处在 RTF≈1 的世界, 避免发散后再纠正引发的瞬态。
+PHYSICS_STEP=${PHYSICS_STEP:-0.005}
+PHYSICS_RATE=${PHYSICS_RATE:-200.0}
+echo "⚙️  设置物理步长=$PHYSICS_STEP, 更新率=$PHYSICS_RATE (非锁步 SITL 需 RTF≈1.0 防 EKF 发散)..."
+( source /opt/ros/noetic/setup.bash && \
+  rosservice call --wait /gazebo/set_physics_properties "
+time_step: $PHYSICS_STEP
+max_update_rate: $PHYSICS_RATE
+gravity: {x: 0.0, y: 0.0, z: -9.8}
+ode_config:
+  auto_disable_bodies: false
+  sor_pgs_precon_iters: 0
+  sor_pgs_iters: 50
+  sor_pgs_w: 1.3
+  sor_pgs_rms_error_tol: 0.0
+  contact_surface_layer: 0.001
+  contact_max_correcting_vel: 100.0
+  cfm: 0.0
+  erp: 0.2
+  max_contacts: 20
+" ) 2>/dev/null && echo "✅ 物理参数已设置" || echo "⚠️  set_physics_properties 调用失败"
 
 # 1.5 Gazebo 已经起来后，再启动 PX4 并把 UAV spawn 进去，避免重 world 导致 PX4 等仿真器超时
 gnome-terminal --tab --title="1.5_PX4_Spawn_UAV" -- bash -c "
@@ -145,10 +177,23 @@ source Tools/simulation/gazebo-classic/setup_gazebo.bash \$(pwd) \$(pwd)/build/p
 export GAZEBO_MODEL_PATH=\"$EGO_WS/models:$EGO_WS/src/uav_truth_tracker/models:$UGV_WS/src/gazebo_models_worlds_collection/models:$UGV_WS/src/mobile_manipulator/gazebo_models:$UGV_WS/src/mobile_manipulator/models:\$(pwd)/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models:$HOME/.gazebo/gazebo_models:$HOME/.gazebo/models:\$GAZEBO_MODEL_PATH\" && \
 export GAZEBO_RESOURCE_PATH=\"$EGO_WS/worlds:$UGV_WS/src/mobile_manipulator/worlds:\$GAZEBO_RESOURCE_PATH\" && \
 export ROS_PACKAGE_PATH=\$ROS_PACKAGE_PATH:\$(pwd):\$(pwd)/Tools/simulation/gazebo-classic/sitl_gazebo-classic && \
-roslaunch uav_truth_tracker px4_spawn_existing_gazebo.launch vehicle:=iris_depth_camera sdf:='$LIDAR_SDF' x:='$SPAWN_X' y:='$SPAWN_Y' z:='$SPAWN_Z' Y:='$SPAWN_YAW' 2>&1 | grep -v \"parser.cc\"; exec bash"
+export PX4_SIM_SPEED_FACTOR='$PX4_SIM_SPEED_FACTOR' && \
+roslaunch uav_truth_tracker px4_spawn_existing_gazebo.launch vehicle:=iris_depth_camera sdf:='$LIDAR_SDF' x:='$SPAWN_X' y:='$SPAWN_Y' z:='$SPAWN_Z' Y:='$SPAWN_YAW' sim_speed_factor:='$PX4_SIM_SPEED_FACTOR' 2>&1 | grep -v \"parser.cc\"; exec bash"
 
-echo "⏳ 等待 $PX4_WAIT 秒，让 PX4 与 Gazebo 完成连接..."
+echo "⏳ 等待 PX4 启动并与 Gazebo 插件建立 TCP(4560) 连接..."
 sleep "$PX4_WAIT"
+
+# 关键: Gazebo 以 paused 启动，避免在 PX4/模型出现前自由空跑(700x)。
+# PX4 是 lockstep 编译版，会持续向插件发送执行器(HIL_ACTUATOR_CONTROLS)。
+# 若 Gazebo 在握手前已空跑，插件不会进入 lockstep 读取循环 -> 执行器数据在
+# TCP 4560 上积压不被读取(Send-Q/Recv-Q 卡 93B) -> 电机停在 disarmed 怠速 -> 无法起飞。
+# 现在 PX4 已连接，unpause 让 lockstep 从干净状态握手并开始消费执行器指令。
+echo "▶️  Unpause Gazebo，让 lockstep 干净握手(修复执行器死锁)..."
+( source /opt/ros/noetic/setup.bash && \
+  rosservice call --wait /gazebo/unpause_physics "{}" ) 2>/dev/null \
+  && echo "✅ Gazebo 已 unpause" \
+  || echo "⚠️  unpause 调用失败，请手动执行: rosservice call /gazebo/unpause_physics"
+sleep 2
 
 # 2. 仓库加载好后，独立连接 MAVROS
 if [ "$START_MAVROS" = "true" ]; then

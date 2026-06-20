@@ -13,6 +13,11 @@ from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
 from tf.transformations import quaternion_from_euler
 
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from px4_paths import default_iris_mesh_resource
+
 
 class GazeboUavMarker:
     def __init__(self):
@@ -21,9 +26,7 @@ class GazeboUavMarker:
             "~uav_model_name", "iris_depth_camera"
         )
         self.uav_mesh = rospy.get_param(
-            "~uav_mesh_resource",
-            "file:///home/lnwuu/PX4-Autopilot/Tools/simulation/gazebo-classic/"
-            "sitl_gazebo-classic/models/iris/meshes/iris.stl",
+            "~uav_mesh_resource", default_iris_mesh_resource()
         )
         self.uav_ns = rospy.get_param("~uav_ns", "drone")
         self.uav_marker_topic = rospy.get_param(

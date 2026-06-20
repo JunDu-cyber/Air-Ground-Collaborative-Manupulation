@@ -8,6 +8,11 @@ from nav_msgs.msg import Odometry
 from nav_msgs.msg import Path
 from visualization_msgs.msg import Marker
 
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from px4_paths import default_iris_mesh_path
+
 
 class MavrosTFBridge:
     def __init__(self):
@@ -24,6 +29,14 @@ class MavrosTFBridge:
         self.publish_marker = rospy.get_param("~publish_marker", True)
         self.odom_topic = rospy.get_param("~odom_topic", "/mavros/local_position/odom")
         self.pose_topic = rospy.get_param("~pose_topic", "/mavros/local_position/pose")
+
+        # mesh_path must be set BEFORE subscribing (sub callbacks may fire immediately)
+        self.mesh_path = rospy.get_param("~mesh_path", "file:///dev/null")
+        try:
+            self.mesh_path = "file://" + rospy.get_param("~mesh_path", default_iris_mesh_path())
+        except Exception:
+            self.mesh_path = "file:///dev/null"
+            rospy.logwarn("[MavrosTFBridge] mesh_path unavailable, marker disabled")
         if self.odom_topic:
             self.sub = rospy.Subscriber(self.odom_topic, Odometry, self.odom_cb, queue_size=20)
             rospy.logwarn("[MavrosTFBridge] publishing TF from odom %s", self.odom_topic)
@@ -31,11 +44,7 @@ class MavrosTFBridge:
             self.sub = rospy.Subscriber(self.pose_topic, PoseStamped, self.pose_cb, queue_size=20)
             rospy.logwarn("[MavrosTFBridge] publishing TF from pose %s", self.pose_topic)
 
-        self.mesh_path = (
-            "file://" + rospy.get_param("~mesh_path",
-            "/home/lnwuu/PX4-Autopilot/Tools/simulation/gazebo-classic/"
-            "sitl_gazebo-classic/models/iris/meshes/iris.stl")
-        )
+        # NOTE: mesh_path was already set above, before subscriber setup
 
     def odom_cb(self, msg: Odometry):
         pose_msg = PoseStamped()

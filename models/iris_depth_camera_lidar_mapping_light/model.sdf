@@ -50,11 +50,11 @@
       <sensor name="velodyne_vlp16_mapping" type="ray">
         <pose>0 0 0 0 0 0</pose>
         <visualize>false</visualize>
-        <update_rate>5</update_rate>
+        <update_rate>3</update_rate>
         <ray>
           <scan>
             <horizontal>
-              <samples>1080</samples>
+              <samples>360</samples>
               <resolution>1</resolution>
               <min_angle>-3.14159265359</min_angle>
               <max_angle>3.14159265359</max_angle>
@@ -80,7 +80,7 @@
         <plugin name="uav0_vlp16_mapping_block_laser" filename="libgazebo_ros_block_laser.so">
           <robotNamespace>/uav0</robotNamespace>
           <alwaysOn>true</alwaysOn>
-          <updateRate>5</updateRate>
+          <updateRate>3</updateRate>
           <topicName>/uav0/velodyne_points_raw</topicName>
           <frameName>uav0/velodyne_link</frameName>
           <gaussianNoise>0.0</gaussianNoise>

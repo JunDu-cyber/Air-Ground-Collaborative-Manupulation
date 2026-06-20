@@ -1,6 +1,16 @@
 <launch>
   <!-- Start PX4 SITL and spawn the UAV into an already-running Gazebo world. -->
   <arg name="vehicle" default="iris_depth_camera"/>
+  <!-- PX4 airframe (SYS_AUTOSTART) is selected by PX4_SIM_MODEL matching an
+       airframe file [id]_${PX4_SIM_MODEL}. It is INTENTIONALLY decoupled from
+       the Gazebo model name ('vehicle'): the Gazebo model is iris_depth_camera
+       (spawned from the SDF below), but PX4 only needs a quad airframe.
+       Using the built-in 'gazebo-classic_iris' (10015) avoids the previous bug
+       where 'gazebo-classic_iris_depth_camera' matched TWO build symlinks whose
+       id 1021 collided with 1021_gazebo-classic_uuv_hippocampus (a submarine),
+       loading CA_AIRFRAME=7 / CA_R_REV=255 (reversible thrusters) so the quad
+       commanded motors around zero and never produced lift. -->
+  <arg name="px4_airframe" default="iris"/>
   <arg name="sdf" default="$(env HOME)/Air-Ground-Collaborative-Manupulation/models/iris_depth_camera_lidar_mapping_light/model.sdf"/>
   <arg name="x" default="0"/>
   <arg name="y" default="0"/>
@@ -9,8 +19,14 @@
   <arg name="P" default="0"/>
   <arg name="Y" default="0"/>
   <arg name="interactive" default="true"/>
+  <!-- Cap lockstep SITL to real-time. Without this, lockstep SITL free-runs at
+       200-300x wall-clock, so wall-paced setpoint streams (px4_bridge @ 50Hz,
+       MAVROS, EGO) become sub-Hz in PX4's sim-time frame; PX4 starves out of
+       OFFBOARD and idles the rotors on the ground. 1 = real-time. -->
+  <arg name="sim_speed_factor" default="1"/>
 
-  <env name="PX4_SIM_MODEL" value="gazebo-classic_$(arg vehicle)"/>
+  <env name="PX4_SIM_MODEL" value="gazebo-classic_$(arg px4_airframe)"/>
+  <env name="PX4_SIM_SPEED_FACTOR" value="$(arg sim_speed_factor)"/>
 
   <arg unless="$(arg interactive)" name="px4_command_arg1" value="-d"/>
   <arg     if="$(arg interactive)" name="px4_command_arg1" value=""/>

@@ -6,6 +6,11 @@ from nav_msgs.msg import Path
 from tf.transformations import quaternion_from_euler
 from visualization_msgs.msg import Marker
 
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from px4_paths import default_iris_mesh_resource
+
 
 def main():
     rospy.init_node("static_uav_marker")
@@ -15,9 +20,7 @@ def main():
     marker_topic = rospy.get_param("~marker_topic", "/drone_visual")
     path_topic = rospy.get_param("~path_topic", "/drone_path")
     mesh_resource = rospy.get_param(
-        "~mesh_resource",
-        "file:///home/lnwuu/PX4-Autopilot/Tools/simulation/gazebo-classic/"
-        "sitl_gazebo-classic/models/iris/meshes/iris.stl",
+        "~mesh_resource", default_iris_mesh_resource()
     )
     if "://" not in mesh_resource:
         mesh_resource = "file://" + mesh_resource

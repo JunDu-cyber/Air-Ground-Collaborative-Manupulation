@@ -160,8 +160,12 @@ def enter_offboard_and_arm(pub, set_mode, arm, rate):
             if current_state.mode != "OFFBOARD":
                 try:
                     mode_resp = set_mode(custom_mode="OFFBOARD")
-                    rospy.logwarn(
-                        "[Bridge] set_mode OFFBOARD response: mode_sent=%s current_mode=%s",
+                    # mode_sent 只是“指令已送达”的回执，不代表已切换；
+                    # current_mode 此刻仍是切换前的状态(状态回调尚未刷新)，仅供参考，
+                    # 真正确认见循环退出后的 "OFFBOARD + armed confirmed"。
+                    rospy.loginfo_throttle(
+                        2.0,
+                        "[Bridge] set_mode OFFBOARD 已发送(回执 mode_sent=%s)，等待状态切换…(当前 %s)",
                         getattr(mode_resp, "mode_sent", None),
                         current_state.mode,
                     )
@@ -171,8 +175,11 @@ def enter_offboard_and_arm(pub, set_mode, arm, rate):
             if not current_state.armed:
                 try:
                     arm_resp = arm(True)
-                    rospy.logwarn(
-                        "[Bridge] arm response: success=%s result=%s current_armed=%s",
+                    # success/result 是解锁请求的回执(result=0 为已接受)；
+                    # current_armed 此刻可能仍为旧值，确认见循环退出日志。
+                    rospy.loginfo_throttle(
+                        2.0,
+                        "[Bridge] arm 已发送(success=%s result=%s)，等待解锁确认…(当前 armed=%s)",
                         getattr(arm_resp, "success", None),
                         getattr(arm_resp, "result", None),
                         current_state.armed,

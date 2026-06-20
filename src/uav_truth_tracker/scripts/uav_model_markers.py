@@ -6,14 +6,17 @@ import rospy
 from nav_msgs.msg import Odometry
 from visualization_msgs.msg import Marker, MarkerArray
 
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from px4_paths import default_iris_mesh_resource
+
 
 class UavModelMarkers:
     def __init__(self):
         self.frame_id = rospy.get_param("~frame_id", "map")
         self.mesh_resource = rospy.get_param(
-            "~mesh_resource",
-            "file:///home/lnwuu/PX4-Autopilot/Tools/simulation/gazebo-classic/"
-            "sitl_gazebo-classic/models/iris/meshes/iris.stl",
+            "~mesh_resource", default_iris_mesh_resource()
         )
         self.scale = rospy.get_param("~scale", 1.0)
         self.publish_rate = rospy.get_param("~publish_rate", 10.0)

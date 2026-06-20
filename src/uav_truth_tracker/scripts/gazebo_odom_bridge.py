@@ -28,6 +28,11 @@ from sensor_msgs.msg import Imu
 from std_msgs.msg import Header
 from visualization_msgs.msg import Marker
 
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from px4_paths import default_iris_mesh_resource
+
 
 class GazeboOdomBridge:
     def __init__(self):
@@ -43,9 +48,7 @@ class GazeboOdomBridge:
 
         # --- Marker mesh ---
         self.mesh_resource = rospy.get_param(
-            "~mesh_resource",
-            "file:///home/lnwuu/PX4-Autopilot/Tools/simulation/gazebo-classic/"
-            "sitl_gazebo-classic/models/iris/meshes/iris.stl",
+            "~mesh_resource", default_iris_mesh_resource()
         )
 
         # --- State ---
