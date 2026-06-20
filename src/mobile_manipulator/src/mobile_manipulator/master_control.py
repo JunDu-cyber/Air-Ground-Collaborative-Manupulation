@@ -11,9 +11,10 @@ import tf2_ros
 import tf2_geometry_msgs  # registers PoseStamped/etc. with tf2_ros.Buffer.transform()
 import moveit_commander
 import numpy as np
-from tf.transformations import quaternion_from_euler, quaternion_matrix, quaternion_multiply
+from tf.transformations import (quaternion_from_euler, quaternion_matrix,
+                                quaternion_multiply, quaternion_from_matrix)
 from visualization_msgs.msg import Marker
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Point
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2
 import sensor_msgs.point_cloud2 as pc2
 from std_msgs.msg import Header
@@ -24,6 +25,9 @@ from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 
 # Custom YOLO Service
 from mobile_manipulator.srv import DetectObjects, DetectObjectsRequest
+
+# GPD (Grasp Pose Detection) messages — used to request learned 6-DOF grasps.
+from gpd_ros.msg import CloudSamples, CloudSources, GraspConfigList
 
 class MasterControl:
     def __init__(self):
@@ -43,6 +47,11 @@ class MasterControl:
         self.bridge = CvBridge()
         self._filtered_cloud_pub = rospy.Publisher(
             "/scene_filtered_cloud", PointCloud2, queue_size=1, latch=True)
+
+        # Cloud (cropped to the target object) fed to the GPD detect_grasps node.
+        # GPD returns grasps on /clustered_grasps in the same frame (ur5_base_link).
+        self._gpd_cloud_pub = rospy.Publisher(
+            "/gpd_cloud", CloudSamples, queue_size=1)
 
         # MoveIt advertises clear_octomap on whichever node handle the
         # ClearOctomapService capability was initialised with. Default is
@@ -444,54 +453,248 @@ class MasterControl:
         rospy.loginfo(f"[SCENE] Published {len(pts_base)} pts to OctoMap sensor topic.")
         return refined_pose, refined_diameter
 
-    def execute_pick(self, base_pose: PoseStamped, target_class: str = "", obj_diameter: float = 0.0) -> bool:
-        p = base_pose.pose.position
-        rospy.loginfo(f"[PICK] Target in {base_pose.header.frame_id}: "
-                      f"x={p.x:.3f} y={p.y:.3f} z={p.z:.3f}")
+    # ── GPD (Grasp Pose Detection) integration ───────────────────────────────
+    # Distance (m) the GPD hand-base center sits ahead of ur5_tool0 along the
+    # approach axis. GPD's grasp `position` is the hand base; tool0 must sit this
+    # far behind it so the fingers close around the sampled point. Tune in sim.
+    GPD_TOOL_OFFSET = 0.12
 
-        # Horizontal approach: gripper comes from behind along the XY approach vector.
-        # Approach direction = unit vector from arm origin to object (XY only).
-        horiz_dist = math.hypot(p.x, p.y)
-        if horiz_dist < 0.15:
-            rospy.logerr(f"[PICK] Object too close to arm base ({horiz_dist:.3f} m) — aborting.")
-            return False
-        dx, dy = p.x / horiz_dist, p.y / horiz_dist
-        approach_yaw = math.atan2(p.y, p.x)
+    def _build_gpd_cloud(self, target_pose: PoseStamped):
+        """Capture one depth frame, back-project to ur5_base_link, and crop to a
+        box around the target object. Returns (points_Nx3_list, view_point) where
+        view_point is the camera origin in ur5_base_link (geometry_msgs/Point),
+        or (None, None) on failure. Mirrors the back-projection in
+        _update_scene_collisions but keeps the target points (no self-filter)."""
+        try:
+            cam_info = rospy.wait_for_message("/camera/color/camera_info", CameraInfo, timeout=3.0)
+            depth_msg = rospy.wait_for_message("/camera/depth/image_raw", Image, timeout=3.0)
+        except rospy.ROSException:
+            rospy.logwarn("[GPD] Depth/camera_info timeout — cannot build cloud.")
+            return None, None
 
-        # Orientation: tool Z pointing horizontally toward the object.
-        # With sxyz extrinsic Euler, R = R_z(yaw)*R_y(pitch):
-        #   pitch=+π/2 → EE-Z maps to [cos(yaw), sin(yaw), 0]  (toward object) ✓
-        #   pitch=-π/2 → EE-Z maps to [-cos(yaw),-sin(yaw), 0] (away — wrong)
-        # Then rotate 90° around EE-Z (intrinsic) so EE-X becomes horizontal
-        # (fingers open left/right) instead of vertical (fingers would hit the table).
-        q_approach = quaternion_from_euler(0.0, math.pi / 2, approach_yaw)
-        q_roll90   = (0.0, 0.0, math.sin(math.pi / 4), math.cos(math.pi / 4))
-        q = quaternion_multiply(q_approach, q_roll90)
+        depth = self.bridge.imgmsg_to_cv2(depth_msg, "32FC1")
+        h, w = depth.shape
+        fx, cx, fy, cy = cam_info.K[0], cam_info.K[2], cam_info.K[4], cam_info.K[5]
 
-        # base_pose is the cylinder CENTRE (get_3d_coordinates already shifted from
-        # near surface by the radius derived from bbox width).
-        # tool0 must sit FINGER_REACH behind the centre so the fingertips land there.
-        # 2F-140 is longer than the Hand-E: fingertip pad sits ~0.18 m ahead of
-        # ur5_tool0 when open. Tune empirically against the sim if grasps land short/long.
-        FINGER_REACH = 0.18   # 2F-140 fingertip distance from ur5_tool0, metres
-        PRE_OFFSET   = 0.18   # additional standoff before the insertion stroke
+        try:
+            tf_s = self.tf_buffer.lookup_transform(
+                "ur5_base_link", "realsense_camera_optical_frame",
+                rospy.Time(0), rospy.Duration(3.0))
+        except Exception as e:
+            rospy.logwarn(f"[GPD] TF lookup failed: {e}")
+            return None, None
 
-        grasp_pose = copy.deepcopy(base_pose)
-        grasp_pose.pose.position.x = p.x - dx * FINGER_REACH
-        grasp_pose.pose.position.y = p.y - dy * FINGER_REACH
+        T = quaternion_matrix([tf_s.transform.rotation.x,
+                               tf_s.transform.rotation.y,
+                               tf_s.transform.rotation.z,
+                               tf_s.transform.rotation.w])
+        T[0, 3] = tf_s.transform.translation.x
+        T[1, 3] = tf_s.transform.translation.y
+        T[2, 3] = tf_s.transform.translation.z
+
+        # Denser sampling than the octomap path (step=4) so GPD has enough surface.
+        step = 4
+        vs, us = np.mgrid[0:h:step, 0:w:step]
+        zs = depth[::step, ::step].ravel().astype(np.float64)
+        us = us.ravel().astype(np.float64)
+        vs = vs.ravel().astype(np.float64)
+        valid = (zs > 0.20) & (zs < 3.0) & np.isfinite(zs)
+        zs, us, vs = zs[valid], us[valid], vs[valid]
+        if len(zs) < 10:
+            rospy.logwarn("[GPD] Too few valid depth pixels.")
+            return None, None
+
+        xs_cam = (us - cx) * zs / fx
+        ys_cam = (vs - cy) * zs / fy
+        pts_cam = np.vstack([xs_cam, ys_cam, zs, np.ones(len(zs))])
+        pts_base = (T @ pts_cam)[:3].T  # N×3 in ur5_base_link
+
+        # Crop to a box around the target so GPD samples grasps on the object
+        # (plus immediate support surface), not the whole scene.
+        ox = target_pose.pose.position.x
+        oy = target_pose.pose.position.y
+        oz = target_pose.pose.position.z
+        HALF = 0.20  # box half-extent (m)
+        m = (
+            (np.abs(pts_base[:, 0] - ox) < HALF) &
+            (np.abs(pts_base[:, 1] - oy) < HALF) &
+            (np.abs(pts_base[:, 2] - oz) < HALF)
+        )
+        pts_base = pts_base[m]
+        if len(pts_base) < 50:
+            rospy.logwarn(f"[GPD] Only {len(pts_base)} pts in crop box — too sparse.")
+            return None, None
+
+        view_point = Point(x=float(T[0, 3]), y=float(T[1, 3]), z=float(T[2, 3]))
+        return pts_base.tolist(), view_point
+
+    def get_gpd_grasp(self, target_pose: PoseStamped, target_class: str = ""):
+        """Ask GPD for a 6-DOF grasp on the target object. Returns
+        (grasp_pose_stamped, approach_unit_np3, width_m) where grasp_pose is the
+        ur5_tool0 target in ur5_base_link, or None to fall back to the heuristic."""
+        pts, view_point = self._build_gpd_cloud(target_pose)
+        if pts is None:
+            return None
+
+        # Build the CloudSamples request: cropped cloud + camera view_point +
+        # sample points on/around the target so GPD searches there.
+        header = Header(frame_id="ur5_base_link", stamp=rospy.Time.now())
+        cloud_msg = pc2.create_cloud_xyz32(header, pts)
+
+        sources = CloudSources()
+        sources.cloud = cloud_msg
+        sources.camera_source = [0] * len(pts)          # single camera (index 0)
+        sources.view_points = [view_point]
+
+        oc = target_pose.pose.position
+        samples = [Point(x=oc.x, y=oc.y, z=oc.z)]
+        for dx, dy, dz in ((0.03, 0, 0), (-0.03, 0, 0), (0, 0.03, 0),
+                           (0, -0.03, 0), (0, 0, 0.03), (0, 0, -0.03)):
+            samples.append(Point(x=oc.x + dx, y=oc.y + dy, z=oc.z + dz))
+
+        req = CloudSamples()
+        req.cloud_sources = sources
+        req.samples = samples
+
+        self._gpd_cloud_pub.publish(req)
+        rospy.loginfo(f"[GPD] Published cloud ({len(pts)} pts) + {len(samples)} "
+                      f"samples; waiting for grasps...")
+        try:
+            grasp_list = rospy.wait_for_message(
+                "/clustered_grasps", GraspConfigList, timeout=20.0)
+        except rospy.ROSException:
+            rospy.logwarn("[GPD] No grasps received within timeout — using heuristic.")
+            return None
+        if not grasp_list.grasps:
+            rospy.logwarn("[GPD] Empty grasp list — using heuristic.")
+            return None
+
+        # Pick the highest-scoring grasp whose position is near the target.
+        ox, oy, oz = oc.x, oc.y, oc.z
+        best, best_score = None, -1e9
+        for g in grasp_list.grasps:
+            d = math.sqrt((g.position.x - ox) ** 2 + (g.position.y - oy) ** 2
+                          + (g.position.z - oz) ** 2)
+            if d > 0.15:
+                continue
+            s = g.score.data
+            if s > best_score:
+                best, best_score = g, s
+        if best is None:
+            rospy.logwarn("[GPD] No grasp near the target — using heuristic.")
+            return None
+
+        # GPD orientation: R = [approach binormal axis] (columns). The Robotiq
+        # tool0 convention used here is tool0 +Z = approach, tool0 +X = finger
+        # closing direction (= binormal). So build tool0 rotation with columns
+        # [binormal, axis, approach] and convert to a quaternion.
+        approach = np.array([best.approach.x, best.approach.y, best.approach.z])
+        binormal = np.array([best.binormal.x, best.binormal.y, best.binormal.z])
+        axis     = np.array([best.axis.x,     best.axis.y,     best.axis.z])
+        n = np.linalg.norm(approach)
+        if n < 1e-6:
+            rospy.logwarn("[GPD] Degenerate approach vector — using heuristic.")
+            return None
+        approach = approach / n
+
+        R = np.eye(4)
+        R[0:3, 0] = binormal
+        R[0:3, 1] = axis
+        R[0:3, 2] = approach
+        q = quaternion_from_matrix(R)
+
+        # tool0 sits GPD_TOOL_OFFSET behind the GPD hand-base center, along -approach.
+        gx = best.position.x - approach[0] * self.GPD_TOOL_OFFSET
+        gy = best.position.y - approach[1] * self.GPD_TOOL_OFFSET
+        gz = best.position.z - approach[2] * self.GPD_TOOL_OFFSET
+
+        grasp_pose = PoseStamped()
+        grasp_pose.header.frame_id = "ur5_base_link"
+        grasp_pose.header.stamp = rospy.Time(0)
+        grasp_pose.pose.position.x = gx
+        grasp_pose.pose.position.y = gy
+        grasp_pose.pose.position.z = gz
         grasp_pose.pose.orientation.x = q[0]
         grasp_pose.pose.orientation.y = q[1]
         grasp_pose.pose.orientation.z = q[2]
         grasp_pose.pose.orientation.w = q[3]
 
-        pre_grasp = copy.deepcopy(base_pose)
-        pre_grasp.pose.position.x = p.x - dx * (FINGER_REACH + PRE_OFFSET)
-        pre_grasp.pose.position.y = p.y - dy * (FINGER_REACH + PRE_OFFSET)
-        # z unchanged — horizontal approach stays at object height
-        pre_grasp.pose.orientation.x = q[0]
-        pre_grasp.pose.orientation.y = q[1]
-        pre_grasp.pose.orientation.z = q[2]
-        pre_grasp.pose.orientation.w = q[3]
+        width = float(best.width.data)
+        rospy.loginfo(f"[GPD] Selected grasp score={best_score:.3f} "
+                      f"width={width*1000:.0f} mm at "
+                      f"tool0=({gx:.3f},{gy:.3f},{gz:.3f})")
+        return grasp_pose, approach, width
+
+    def execute_pick(self, base_pose: PoseStamped, target_class: str = "", obj_diameter: float = 0.0) -> bool:
+        p = base_pose.pose.position
+        rospy.loginfo(f"[PICK] Target in {base_pose.header.frame_id}: "
+                      f"x={p.x:.3f} y={p.y:.3f} z={p.z:.3f}")
+
+        PRE_OFFSET = 0.18   # standoff (m) before the insertion stroke (both paths)
+
+        # ── Try GPD first (captured now, while the camera is still on the object).
+        # On any failure get_gpd_grasp returns None and we fall back to the
+        # fixed-horizontal heuristic below.
+        gpd = None
+        try:
+            gpd = self.get_gpd_grasp(base_pose, target_class)
+        except Exception as e:
+            rospy.logwarn(f"[PICK] GPD grasp failed ({e}) — using heuristic.")
+            gpd = None
+
+        if gpd is not None:
+            # ── GPD path: learned 6-DOF grasp. Approach along GPD's approach axis.
+            grasp_pose, approach, gpd_width = gpd
+            obj_diameter = gpd_width
+            grasp_pose.header.frame_id = base_pose.header.frame_id
+            gp = grasp_pose.pose.position
+            pre_grasp = copy.deepcopy(grasp_pose)
+            pre_grasp.pose.position.x = gp.x - approach[0] * PRE_OFFSET
+            pre_grasp.pose.position.y = gp.y - approach[1] * PRE_OFFSET
+            pre_grasp.pose.position.z = gp.z - approach[2] * PRE_OFFSET
+            rospy.loginfo("[PICK] using GPD grasp")
+        else:
+            # ── Heuristic path: horizontal approach from behind along the XY vector.
+            horiz_dist = math.hypot(p.x, p.y)
+            if horiz_dist < 0.15:
+                rospy.logerr(f"[PICK] Object too close to arm base ({horiz_dist:.3f} m) — aborting.")
+                return False
+            dx, dy = p.x / horiz_dist, p.y / horiz_dist
+            approach_yaw = math.atan2(p.y, p.x)
+
+            # Orientation: tool Z pointing horizontally toward the object.
+            # With sxyz extrinsic Euler, R = R_z(yaw)*R_y(pitch):
+            #   pitch=+π/2 → EE-Z maps to [cos(yaw), sin(yaw), 0]  (toward object) ✓
+            #   pitch=-π/2 → EE-Z maps to [-cos(yaw),-sin(yaw), 0] (away — wrong)
+            # Then rotate 90° around EE-Z (intrinsic) so EE-X becomes horizontal
+            # (fingers open left/right) instead of vertical (fingers would hit the table).
+            q_approach = quaternion_from_euler(0.0, math.pi / 2, approach_yaw)
+            q_roll90   = (0.0, 0.0, math.sin(math.pi / 4), math.cos(math.pi / 4))
+            q = quaternion_multiply(q_approach, q_roll90)
+
+            # base_pose is the cylinder CENTRE (get_3d_coordinates already shifted from
+            # near surface by the radius derived from bbox width).
+            # tool0 must sit FINGER_REACH behind the centre so the fingertips land there.
+            # 2F-140 is longer than the Hand-E: fingertip pad sits ~0.18 m ahead of
+            # ur5_tool0 when open. Tune empirically against the sim if grasps land short/long.
+            FINGER_REACH = 0.18   # 2F-140 fingertip distance from ur5_tool0, metres
+
+            grasp_pose = copy.deepcopy(base_pose)
+            grasp_pose.pose.position.x = p.x - dx * FINGER_REACH
+            grasp_pose.pose.position.y = p.y - dy * FINGER_REACH
+            grasp_pose.pose.orientation.x = q[0]
+            grasp_pose.pose.orientation.y = q[1]
+            grasp_pose.pose.orientation.z = q[2]
+            grasp_pose.pose.orientation.w = q[3]
+
+            pre_grasp = copy.deepcopy(base_pose)
+            pre_grasp.pose.position.x = p.x - dx * (FINGER_REACH + PRE_OFFSET)
+            pre_grasp.pose.position.y = p.y - dy * (FINGER_REACH + PRE_OFFSET)
+            # z unchanged — horizontal approach stays at object height
+            pre_grasp.pose.orientation.x = q[0]
+            pre_grasp.pose.orientation.y = q[1]
+            pre_grasp.pose.orientation.z = q[2]
+            pre_grasp.pose.orientation.w = q[3]
 
         rospy.loginfo(f"[PICK] pre_grasp : x={pre_grasp.pose.position.x:.3f} y={pre_grasp.pose.position.y:.3f} z={pre_grasp.pose.position.z:.3f}")
         rospy.loginfo(f"[PICK] grasp_pose: x={grasp_pose.pose.position.x:.3f} y={grasp_pose.pose.position.y:.3f} z={grasp_pose.pose.position.z:.3f}")
@@ -511,8 +714,10 @@ class MasterControl:
 
         # Refine grasp/pre-grasp poses with the re-detected position returned
         # from the scene update (re-detection happened right after the retreat
-        # while the camera view was still settled).
-        if fresh_pose is not base_pose:
+        # while the camera view was still settled). This heuristic recomputation
+        # (XY approach + FINGER_REACH) does not apply to a GPD 6-DOF grasp, so it
+        # is skipped on the GPD path — the octomap cloud above is still published.
+        if gpd is None and fresh_pose is not base_pose:
             fp = fresh_pose.pose.position
             rospy.loginfo(
                 f"[PICK] Pose refined: ({p.x:.3f},{p.y:.3f},{p.z:.3f}) → "
