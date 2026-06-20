@@ -1,0 +1,21 @@
+<launch>
+  <!-- GPD grasp detection for the Husky + UR5 + Robotiq 2F-140 sim.
+       Fed by master_control.py, which publishes a gpd_ros/CloudSamples message
+       (cropped cloud in ur5_base_link + camera view_point + target samples) on
+       /gpd_cloud and reads grasps back on /clustered_grasps. -->
+  <node name="detect_grasps" pkg="gpd_ros" type="detect_grasps" output="screen">
+
+    <!-- 0: PointCloud2, 1: CloudIndexed, 2: CloudSamples -->
+    <param name="cloud_type" value="2" />
+    <param name="cloud_topic" value="/gpd_cloud" />
+
+    <!-- optional separate samples topic (unused: samples ride in CloudSamples) -->
+    <param name="samples_topic" value="" />
+
+    <!-- Workspace-local config (built-in Eigen LeNet classifier) -->
+    <param name="config_file" value="$(find gpd_ros)/config/husky_ur5_gpd.cfg" />
+
+    <param name="rviz_topic" value="plot_grasps" />
+
+  </node>
+</launch>
