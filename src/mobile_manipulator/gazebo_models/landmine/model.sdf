@@ -1,0 +1,111 @@
+<?xml version="1.0" ?>
+<sdf version="1.6">
+  <!--
+    "Landmine" prop for UGV (UR5 + Robotiq 2F-140) grasping in Gazebo Classic.
+    Design:
+      - Disc body  : red cylinder, d=136mm, h=25mm  (reads as a mine, recognizable silhouette)
+      - Detonator  : yellow box,   40x40x60mm        (the intended grasp feature, flat parallel faces)
+    Max horizontal dimension = 136mm (<140mm), total height = 85mm.
+    Grasp the 40mm detonator block top-down: closes to 40mm, 100mm of 2F-140 stroke margin.
+    High friction (mu=1.0) so the gripper holds it. Single rigid link for clean contact physics.
+  -->
+  <model name="landmine">
+    <static>false</static>
+
+    <link name="body">
+      <!-- Inertial: combined mass ~0.3kg, approximated as a solid cylinder. COM lifted toward center. -->
+      <inertial>
+        <pose>0 0 0.03 0 0 0</pose>
+        <mass>0.30</mass>
+        <inertia>
+          <ixx>0.00039</ixx>
+          <iyy>0.00039</iyy>
+          <izz>0.00045</izz>
+          <ixy>0.0</ixy>
+          <ixz>0.0</ixz>
+          <iyz>0.0</iyz>
+        </inertia>
+      </inertial>
+
+      <!-- ===== Disc body (mine) ===== -->
+      <collision name="disc_collision">
+        <pose>0 0 0.0125 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.068</radius>
+            <length>0.025</length>
+          </cylinder>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>1.0</mu>
+              <mu2>1.0</mu2>
+            </ode>
+          </friction>
+          <contact>
+            <ode>
+              <kp>1e6</kp>
+              <kd>1.0</kd>
+              <max_vel>0.0</max_vel>
+              <min_depth>0.001</min_depth>
+            </ode>
+          </contact>
+        </surface>
+      </collision>
+      <visual name="disc_visual">
+        <pose>0 0 0.0125 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.068</radius>
+            <length>0.025</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.7 0.05 0.05 1</ambient>
+          <diffuse>0.85 0.1 0.1 1</diffuse>
+          <specular>0.1 0.1 0.1 1</specular>
+        </material>
+      </visual>
+
+      <!-- ===== Detonator block (grasp target) ===== -->
+      <collision name="detonator_collision">
+        <pose>0 0 0.055 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.04 0.04 0.06</size>
+          </box>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>1.2</mu>
+              <mu2>1.2</mu2>
+            </ode>
+          </friction>
+          <contact>
+            <ode>
+              <kp>1e6</kp>
+              <kd>1.0</kd>
+              <max_vel>0.0</max_vel>
+              <min_depth>0.001</min_depth>
+            </ode>
+          </contact>
+        </surface>
+      </collision>
+      <visual name="detonator_visual">
+        <pose>0 0 0.055 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.04 0.04 0.06</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>0.8 0.7 0.0 1</ambient>
+          <diffuse>0.95 0.85 0.0 1</diffuse>
+          <specular>0.2 0.2 0.1 1</specular>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>
