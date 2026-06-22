@@ -1,18 +1,21 @@
 DWAPlannerROS:
   # --- Velocity limits ---
-  max_vel_x:           1.0    # Husky max ~1.0 m/s; was 0.5
+  # 速度调快 + 解决"大幅度转弯卡死"：之前为防翻车把角速度/角加速降得太低(0.8/0.8)，
+  # 导致 DWA 每周期只能预览极小转角、大转弯时迟迟转不过去→触发振荡保护→卡住不动。
+  # 物理稳定性已由【压低质心(压舱)+轮摩擦】保证，这里把速度恢复到平台上限、转弯给足。
+  max_vel_x:           1.5    # 平地走快点(同步把底盘控制器上限提到1.5)
   min_vel_x:           0.0
   max_vel_y:           0.0
   min_vel_y:           0.0
-  max_vel_trans:       1.0    # was 0.5
+  max_vel_trans:       1.5
   min_vel_trans:       0.0
-  max_vel_theta:       1.2    # was 0.8
-  min_vel_theta:       0.1
+  max_vel_theta:       1.5    # 大转弯转得过去(was 0.8)
+  min_vel_theta:       0.2    # 原地转的最小角速度别太小，免得"磨"不动
 
   # --- Acceleration limits ---
-  acc_lim_x:     2.0          # was 0.8 — snappier acceleration
+  acc_lim_x:     1.5          # 加速够快又不至于猛冲(was 0.8)
   acc_lim_y:     0.0
-  acc_lim_theta: 1.5          # was 0.8
+  acc_lim_theta: 2.5          # 关键：角加速给足，大转弯能迅速转过去不卡(was 0.8)
 
   # --- Goal tolerance ---
   xy_goal_tolerance:  0.15

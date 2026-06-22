@@ -27,14 +27,17 @@
   <node name="robot_state_publisher" pkg="robot_state_publisher"
         type="robot_state_publisher" />
 
-  <!-- Spawn robot in outdoor terrain -->
+  <!-- Spawn robot in outdoor terrain.
+       行车姿态：UR5 折叠收回(肘部 elbow 折回、手腕内收)而非向前伸出，质心更居中、
+       不再把重量甩到前/上方，上坡时各轮受力更均匀、抓地更好、不易打滑/翻车。
+       抓取时 master_control 会从这个收起姿态再展开，不影响后续作业。 -->
   <node name="spawn_urdf" pkg="gazebo_ros" type="spawn_model"
         args="-param robot_description -urdf -model husky_ur5
               -x 0.0 -y 0.0 -z 0.5 -Y 0.0
               -J ur5_shoulder_pan_joint 0
               -J ur5_shoulder_lift_joint -1.57
-              -J ur5_elbow_joint 0.33
-              -J ur5_wrist_1_joint 2.2
+              -J ur5_elbow_joint 3.0
+              -J ur5_wrist_1_joint -1.0
               -J ur5_wrist_2_joint 1.57
               -J ur5_wrist_3_joint 0
               -unpause"
@@ -43,6 +46,9 @@
   <!-- Controllers -->
   <rosparam command="load" file="$(find husky_control)/config/control.yaml" />
   <rosparam command="load" file="$(find mobile_manipulator)/config/ur5_controllers.yaml" />
+  <!-- 平地走快点：把底盘控制器线速度上限从 1.0 提到 1.5 m/s(覆盖 husky control.yaml)。
+       DWA 那边 max_vel_x 也同步提到 1.5。在控制器 spawn 之前覆盖才生效。 -->
+  <param name="husky_velocity_controller/linear/x/max_velocity" value="1.5"/>
 
   <node name="base_controller_spawner" pkg="controller_manager" type="spawner"
         args="husky_joint_publisher husky_velocity_controller" output="screen" />
@@ -54,8 +60,14 @@
         args="ur5_arm_controller gripper_controller" output="screen" />
 
   <!-- Local EKF: wheel odom + IMU -> odom->base_link (smooth, continuous) -->
+  <!-- two_d_mode=false 覆盖：让 odom->base_link 带上 IMU 的俯仰/横滚。坡上车身是倾的，
+       2D 模式下激光按"水平"投影会把上坡地面误标成前方障碍墙 -> 局部代价图把车框死 ->
+       move_base 报 "None of the global plan points ... in the local costmap and free"、
+       卡住打滑。带上俯仰后激光投影正确，坡上地面不再被当障碍。(全局 EKF 也是3D，两者
+       都融 IMU 姿态 -> map->odom 里俯仰相互抵消，不会重复计) -->
   <node pkg="robot_localization" type="ekf_localization_node" name="ekf_localization">
     <rosparam command="load" file="$(find husky_control)/config/localization.yaml" />
+    <param name="two_d_mode" value="false"/>
   </node>
 
   <!-- Global EKF: wheel odom + IMU + GPS -> map->odom (GPS-anchored) -->

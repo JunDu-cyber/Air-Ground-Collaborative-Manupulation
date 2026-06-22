@@ -37,6 +37,7 @@ target_link_libraries(stuck_recovery_node
 )
 
 catkin_install_python(PROGRAMS
+  scripts/global_path_planner.py
   scripts/goal_elevator.py
   scripts/trajectory_logger.py
   scripts/analyze_trajectory.py

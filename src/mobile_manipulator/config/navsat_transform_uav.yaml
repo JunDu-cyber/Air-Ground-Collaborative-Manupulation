@@ -1,0 +1,40 @@
+# navsat_transform_node configuration — UAV side (air-ground alignment 方案①).
+#
+# Anchors the UAV's MAVROS GPS + local ENU odometry to the SAME datum as the UGV
+# so the UAV's "map" frame coincides with the UGV's "map" frame. The datum MUST
+# match the UGV side (== Husky hector GPS reference 49.9, 8.9 in simulation).
+#
+# Topic wiring (set via remaps in the launch file):
+#   gps/fix           <- /mavros/global_position/global
+#   imu/data          <- /mavros/imu/data
+#   odometry/filtered <- /mavros/local_position/odom   (PX4 local ENU)
+#   odometry/gps      -> UAV pose in the common map frame (optional)
+
+frequency: 30.0
+transform_timeout: 0.1
+
+# Wait for the PX4 EKF heading to settle before computing the GPS->map transform.
+delay: 3.0
+
+# Simulation has no magnetic declination and MAVROS local is already ENU.
+# >> 真机: set magnetic_declination_radians to the site value (same as UGV).
+magnetic_declination_radians: 0.0
+yaw_offset: 0.0
+
+# GPS altitude is noisy; keep the alignment planar.
+zero_altitude: true
+
+# Broadcast utm->map so GPS tracks show in RViz (matches the UGV side).
+broadcast_cartesian_transform: true
+publish_filtered_gps: true
+
+# The UAV has no independent robot_localization EKF, so take heading straight
+# from the MAVROS odometry (PX4 EKF) instead of a fused odometry/filtered yaw.
+use_odometry_yaw: true
+
+# === KEY: identical datum on both sides anchors both maps to the same UTM point.
+# [lat, lon, yaw]. 49.9 / 8.9 == Husky hector GPS reference (see
+# gazebo_husky_ur5.urdf). 真机: replace with the surveyed/agreed datum, same value
+# in navsat_transform.yaml (UGV) and here (UAV).
+wait_for_datum: true
+datum: [49.9, 8.9, 0.0]

@@ -136,11 +136,9 @@
     <arg name="start_map_recorder" value="true"/>
     <arg name="map_output_dir" value="$(env HOME)/pointcloud_maps"/>
     <arg name="map_name" value="uav_points_map"/>
-    <!-- min_observations=2 filters single-frame LiDAR ghosts and noise.
-         ground_filter_mode=none keeps ALL returns — the projector's large-
-         window ground-smoothing + per-cell obstacle detection handles the
-         rest.  voxel_leaf_size=0.10 balances density against file size. -->
-    <arg name="map_min_observations" value="2"/>
+    <!-- min_observations=1：单次飞过(单帧)的区域也记录下来，否则全局规划高效单程飞行时
+         很多地方只看一次会被丢 → "后面不记录"。噪点交给 clean_pcd + 投影器去处理。 -->
+    <arg name="map_min_observations" value="1"/>
     <arg name="map_voxel_leaf_size" value="0.10"/>
     <arg name="map_publish_rate" value="2.0"/>
     <arg name="map_drop_flat_ground" value="false"/>
@@ -148,6 +146,8 @@
          The projector (v4) handles ground-surface extraction with a
          large-window median filter — it needs raw point density, not
          decimated terrain samples. -->
+    <!-- 改回 none：保留地面点云，UGV 的代价图要靠地面高程算【坡度】来判可通行(上坡)。
+         地面不再是"无用clutter"，投影器用它算 DEM→坡度：缓坡=可走(能爬)、陡坡=障碍。 -->
     <arg name="map_ground_filter_mode" value="none"/>
     <arg name="map_keep_terrain_points" value="false"/>
     <arg name="map_terrain_cell_size" value="0.25"/>
@@ -178,7 +178,18 @@
        这个高度. 配合下面 ground_filter_margin=10, EGO 在巡航高度看不到任何障碍 →
        永远不会"目标在障碍里"、不会卡, 自由飞从上往下扫图.
        想压低/抬高: roslaunch ... flight_height:=10.0 (但别低于楼高+2m) -->
-  <arg name="flight_height" default="12.0"/>
+  <!-- low_altitude:=true 一键切"低空穿街"建图：压低高度 + 打开 EGO 避楼(depth) +
+       换成贯穿空地的航点(从地图算出、连线不穿楼)。默认 false=原 12m 俯扫，不受影响。 -->
+  <arg name="low_altitude" default="false"/>
+  <arg name="flight_height" default="$(eval 4.0 if arg('low_altitude')=='true' else 12.0)"/>
+  <!-- 飞行速度(m/s)。>1.5 点云录不全+拖影；低空建图取 1.2 稳。可被 one_key_takeoff 覆盖 -->
+  <arg name="max_vel" default="$(eval 1.2 if arg('low_altitude')=='true' else 1.5)"/>
+  <!-- EGO 地面过滤余量：低空=0.5(滤地面、看得见楼 → 能避障)，12m=10(地图空、不避)。
+       提为顶层 arg，让 one_key_takeoff 用 bash 算死并显式传，避免 eval 没生效 EGO 变瞎。 -->
+  <arg name="ground_filter_margin" default="$(eval 0.5 if arg('low_altitude')=='true' else 10.0)"/>
+  <!-- 全局规划前端：低空(楼间)时默认开——A* 在累积地图上搜绕楼大路，喂 EGO 子目标，
+       EGO 仍做局部避障。12m 俯扫飞楼顶上不需要(开了反而绕没必要的远路)，默认随 low_altitude。 -->
+  <arg name="use_global_planner" default="$(arg low_altitude)"/>
 
   <include file="$(find uav_truth_tracker)/launch/forest_param.xml">
     <arg name="map_size_x_" value="$(arg map_size_x)"/>
@@ -192,29 +203,35 @@
     <arg name="cy" value="180.0"/>
     <arg name="fx" value="343.158"/>
     <arg name="fy" value="343.158"/>
-    <arg name="max_vel" value="0.75"/>
-    <arg name="max_acc" value="1.0"/>
+    <!-- 速度: 太快(>~1.5)点云来不及录 + 拖影(LiDAR→world 的 TF 滞后)。低空建图要稳，取 1.2 -->
+    <arg name="max_vel" value="$(arg max_vel)"/>
+    <arg name="max_acc" value="1.5"/>
     <arg name="planning_horizon" value="8.0"/>
-    <!-- EGO 障碍地图忽略 z<=10m 的所有点 (楼全在此之下) → 巡航 12m 时地图为空,
-         不会卡在障碍/目标前. 低空避障需求请调回 ~0.1. -->
-    <arg name="ground_filter_margin" value="10.0"/>
+    <arg name="ground_filter_margin" value="$(arg ground_filter_margin)"/>
+    <!-- 低空避障：横向感知范围 8→15m(配合深度 15m)，让 EGO 提前把楼建进障碍图、
+         A* 有距离绕行。z 和规划池保持官方默认(2.5 / 200·80)——之前乱调 pool_z 把 A* 搞挂了。 -->
+    <arg name="local_update_range_xy" value="$(eval 15.0 if arg('low_altitude')=='true' else 8.0)"/>
+    <arg name="local_update_range_z"  value="2.5"/>
+    <arg name="pool_size_xy" value="200"/>
+    <arg name="pool_size_z"  value="80"/>
     <arg name="skip_pixel" value="2"/>
     <arg name="flight_type" value="1"/>
     <arg name="point_num" value="5"/>
-    <arg name="point0_x" value="0.0"/>
-    <arg name="point0_y" value="-15.0"/>
+    <!-- low_altitude 时换成贯穿空地的穿街航点(从地图算出, 相邻连线 0 穿楼)；否则原航点 -->
+    <arg name="point0_x" value="$(eval -11.9 if arg('low_altitude')=='true' else 0.0)"/>
+    <arg name="point0_y" value="$(eval 9.4 if arg('low_altitude')=='true' else -15.0)"/>
     <arg name="point0_z" value="$(arg flight_height)"/>
-    <arg name="point1_x" value="3.0"/>
-    <arg name="point1_y" value="0.0"/>
+    <arg name="point1_x" value="$(eval -4.9 if arg('low_altitude')=='true' else 3.0)"/>
+    <arg name="point1_y" value="$(eval 9.4 if arg('low_altitude')=='true' else 0.0)"/>
     <arg name="point1_z" value="$(arg flight_height)"/>
-    <arg name="point2_x" value="0.0"/>
-    <arg name="point2_y" value="10.0"/>
+    <arg name="point2_x" value="$(eval 2.1 if arg('low_altitude')=='true' else 0.0)"/>
+    <arg name="point2_y" value="$(eval 8.9 if arg('low_altitude')=='true' else 10.0)"/>
     <arg name="point2_z" value="$(arg flight_height)"/>
-    <arg name="point3_x" value="-3.0"/>
-    <arg name="point3_y" value="0.0"/>
+    <arg name="point3_x" value="$(eval 10.1 if arg('low_altitude')=='true' else -3.0)"/>
+    <arg name="point3_y" value="$(eval 5.9 if arg('low_altitude')=='true' else 0.0)"/>
     <arg name="point3_z" value="$(arg flight_height)"/>
-    <arg name="point4_x" value="0.0"/>
-    <arg name="point4_y" value="-15.0"/>
+    <arg name="point4_x" value="$(eval 23.1 if arg('low_altitude')=='true' else 0.0)"/>
+    <arg name="point4_y" value="$(eval 9.4 if arg('low_altitude')=='true' else -15.0)"/>
     <arg name="point4_z" value="$(arg flight_height)"/>
   </include>
 
@@ -231,8 +248,37 @@
     <remap from="~traj_start_trigger" to="/traj_start_trigger"/>
     <param name="waypoint_type" value="manual-lonely-waypoint"/>
   </node>
-  <node pkg="forest_avoidance_utils" name="goal_elevator" type="goal_elevator.py"
-        output="screen">
+  <!-- 全局路径规划前端：用户目标 -> A* 绕楼 -> 子目标(/global_subgoal) -->
+  <node if="$(arg use_global_planner)" pkg="forest_avoidance_utils"
+        name="global_path_planner" type="global_path_planner.py" output="screen">
+    <param name="cloud_topic"     value="/uav0/mapping/points_world"/>
+    <param name="odom_topic"      value="$(arg odom_topic)"/>
+    <param name="goal_topic"      value="/move_base_simple/goal"/>
+    <param name="output_topic"    value="/goal_elevated"/>   <!-- 直发 waypoint_generator，绕过 goal_elevator -->
+    <param name="goal_z"          value="$(arg flight_height)"/>
+    <param name="obstacle_height" value="1.5"/>     <!-- 高出【本地地面】>1.5m=突起(楼/树);缓坡山丘地面整体抬高、不算障碍→无人机飞越爬坡 -->
+    <!-- 既能绕楼、又能穿树林：只把占地>=此面积(m²)的大块(楼/墙)留给全局A*绕行，更小的(树)
+         滤掉、交给 EGO 局部避障穿过去。否则树林里 A* 被一堆"树墙"堵成无解、无人机原地不动。 -->
+    <param name="min_obstacle_area" value="10.0"/>
+    <param name="ground_window"   value="2.0"/>     <!-- 本地地面估计窗口(m)，判"相对突起" -->
+    <param name="inflate"         value="1.5"/>      <!-- 障碍膨胀(m)：建图要贴近,留1.5m够避碰又能近距扫楼;太大(3)绕太远漏建图 -->
+    <param name="resolution"      value="0.5"/>
+    <param name="half_extent"     value="100.0"/>    <!-- 全局图 ±100m -->
+    <param name="reach_radius"    value="1.5"/>      <!-- 沿路推进的判定半径 -->
+    <param name="lookahead"       value="7.0"/>      <!-- 纯追踪萝卜点前瞻(贴着全局路喂EGO一条无碰短直线) -->
+    <param name="min_replan_interval" value="0.5"/>  <!-- 重规划最小间隔，路稳定不乱变 -->
+    <!-- safe_dist 必须 << inflate(1.5)，否则正常贴路飞就一直触发退后→来回飞。
+         只在真危险(<0.8m, 比路的1.5m余量还近)才退后,且只退到刚好脱险,不大幅倒飞。 -->
+    <param name="safe_dist"       value="0.8"/>      <!-- 近于0.8m(已穿进路的余量内)才退后 -->
+    <param name="retreat_dist"    value="2.0"/>      <!-- 轻退2m脱险即可，别大幅倒飞 -->
+    <param name="min_subgoal_z"   value="2.0"/>      <!-- 子目标最低高度(m)：地面噪点拉低估计时不把无人机往地上压 -->
+    <param name="enable_retreat"  value="false"/>    <!-- 反应式贴楼退后默认关：局部避障交给 EGO，避免前进/后退来回振荡 -->
+  </node>
+
+  <!-- goal_elevator：仅在【不开全局规划】时用(直接把点击目标抬高发给 EGO)。
+       开全局规划时由 global_path_planner 直发 /goal_elevated，这里不启动，避免双发冲突。 -->
+  <node unless="$(arg use_global_planner)" pkg="forest_avoidance_utils"
+        name="goal_elevator" type="goal_elevator.py" output="screen">
     <param name="goal_z" value="$(arg flight_height)"/>
   </node>
   <node pkg="forest_avoidance_utils" name="trajectory_logger"
@@ -265,5 +311,12 @@
   <!-- ===== RViz ===== -->
   <node if="$(arg start_rviz)" pkg="rviz" type="rviz" name="rviz"
         args="-d $(arg rviz_config)" output="screen"/>
+
+  <!-- ===== GPS 锚定：建图时自动记录 UAV map 原点(UTM) 到 sidecar，
+       供 UGV 侧 pcd_to_occupancy_map 开机自动对齐，无需手填经纬度。 ===== -->
+  <node pkg="uav_truth_tracker" type="uav_map_origin_saver.py"
+        name="uav_map_origin_saver" output="screen">
+    <param name="origin_file" value="$(env HOME)/pointcloud_maps/uav_map_origin.yaml"/>
+  </node>
 
 </launch>

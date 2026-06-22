@@ -4,7 +4,7 @@
         <param name="depth_in_topic" value="/iris_depth_camera/camera/depth/image_raw"/>
         <param name="depth_out_topic" value="/depth/image_dilated"/>
         <param name="dilate_kernel_size" value="7"/>
-        <param name="depth_max" value="8.0"/>
+        <param name="depth_max" value="15.0"/>   <!-- 8→15: 让 EGO 提前 15m 看见楼，有距离绕行 -->
         <param name="depth_min" value="0.25"/>
         <param name="output_width" value="640"/>
         <param name="output_height" value="360"/>

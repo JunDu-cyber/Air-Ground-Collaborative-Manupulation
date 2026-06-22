@@ -18,12 +18,20 @@ sensor_timeout: 0.1
 # by a few ms.
 transform_timeout: 0.1
 
-# Ground robot: keep the estimate planar. GPS altitude is too noisy to fuse
-# usefully, and the local EKF already handles pitch/roll for the arm.
-two_d_mode: true
+# 3D 估计：让 map 系里的 base_link 跟随真实地形高度/俯仰，UGV 在 RViz 的坡上不再
+# 被埋到坡面下。z 由 Gazebo 真值(odom2 = /ground_truth/state)提供(GPS 高度太吵不用)，
+# roll/pitch 由 IMU 提供。x/y/yaw 仍由轮速+GPS+IMU 主导，2D 导航行为不变(代价图仍是
+# 2D)。local EKF 保持 2D 即可——RViz fixed frame=map，本滤波器的 map->odom 会带上 z。
+two_d_mode: false
 
 publish_tf: true
 predict_to_current_time: true
+
+# 给发布的 map->odom TF 盖一点提前量。否则 move_base 局部规划器按"当前时刻"查
+# map<->odom 时会落到"未来 0.02s"，抛 ExtrapolationException：
+#   "Could not transform the global plan to the frame of the controller"
+# 导致一规划就 Aborting、车不动。0.1s 足够盖住 30Hz EKF 的一两个周期延迟。
+transform_time_offset: 0.1
 
 map_frame: map
 odom_frame: odom
@@ -60,3 +68,15 @@ odom1_config: [true,  true,  false,
                false, false, false]
 odom1_differential: false
 odom1_queue_size: 10
+
+# --- Gazebo 地面真值(p3d, /ground_truth/state): 只取绝对高度 z ---
+# 让 base_link 在 map 系跟随真实地形高度(坡上抬升)。只融合 z(position 第3位)，
+# 不动 x/y/yaw —— 那些仍由 GPS/轮速/IMU 主导，导航行为不变。
+odom2: /ground_truth/state
+odom2_config: [false, false, true,
+               false, false, false,
+               false, false, false,
+               false, false, false,
+               false, false, false]
+odom2_differential: false
+odom2_queue_size: 10

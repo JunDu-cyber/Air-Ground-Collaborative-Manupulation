@@ -52,6 +52,19 @@ SPAWN_X=${SPAWN_X:-0.0}
 SPAWN_Y=${SPAWN_Y:--18.0}
 SPAWN_Z=${SPAWN_Z:-1.5}
 SPAWN_YAW=${SPAWN_YAW:-1.5707963}
+# 低空穿楼建图模式（LOW_ALT=true）：4m 固定低空、横向绕楼。
+# 飞行高度/速度在 bash 里算死并打印出来，避免 roslaunch 那边 eval 没生效你还不知道。
+LOW_ALT=${LOW_ALT:-false}
+if [ "$LOW_ALT" = "true" ]; then
+  FLIGHT_H=${FLIGHT_H:-4.0}; MAXV=${MAXV:-1.2}; GROUND_FILTER=${GROUND_FILTER:-0.5}
+else
+  FLIGHT_H=${FLIGHT_H:-12.0}; MAXV=${MAXV:-1.5}; GROUND_FILTER=${GROUND_FILTER:-10.0}
+fi
+echo "════════════════════════════════════════════"
+echo "🛩️  LOW_ALT=$LOW_ALT  飞行高度=${FLIGHT_H}m  速度=${MAXV}m/s  EGO地面过滤=${GROUND_FILTER}"
+echo "    EGO避障: ground_filter=${GROUND_FILTER}(0.5=看得见楼能避 / 10=看不见不避) 视距15m"
+echo "    (LOW_ALT=true → 4m穿楼避障 / false → 12m俯扫；FLIGHT_H= MAXV= GROUND_FILTER= 可覆盖)"
+echo "════════════════════════════════════════════"
 
 MAVROS_AVAILABLE=false
 if [[ -f "$MAVROS_PX4_LAUNCH" ]]; then
@@ -175,6 +188,10 @@ roslaunch uav_truth_tracker forest_uav_mapping.launch \
   ugv_ws:='$UGV_WS' \
   ugv_urdf:='$UGV_URDF' \
   forest_world_file:='$FOREST_WORLD' \
+  low_altitude:='$LOW_ALT' \
+  flight_height:='$FLIGHT_H' \
+  max_vel:='$MAXV' \
+  ground_filter_margin:='$GROUND_FILTER' \
   ; exec bash"
 
 echo "⏳ 等待 $ROS_WAIT 秒，让所有 ROS 节点启动就绪..."

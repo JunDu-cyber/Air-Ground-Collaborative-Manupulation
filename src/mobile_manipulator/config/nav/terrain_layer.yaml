@@ -1,0 +1,16 @@
+# Static terrain map layer override (air-ground 方案①).
+#
+# Points the global costmap's built-in costmap_2d::StaticLayer at the UAV-derived
+# static occupancy map (/terrain_map, from pcd_to_occupancy_map.py) instead of the
+# default /map. Loaded into the global_costmap namespace by ugv_terrain_nav.launch.
+static_layer:
+  map_topic: /terrain_map            # static global map projected from the UAV PCD
+  subscribe_to_updates: false
+  # UAV 俯视没覆盖到的地面格(unknown=-1)当作可走，靠局部 LiDAR costmap 兜底，
+  # 否则大片 unknown 会让全局规划拒绝通行、车不动。
+  track_unknown_space: false
+  # 关键：trinary=false 才能保留 /terrain_map 里 1..99 的【坡度分级代价】
+  # （平地0、缓坡按陡度给中间代价、陡坡/楼=100致命）。trinary=true 会把它压成
+  # 只剩"可走/致命"，缓坡信息全丢、且容易把缓坡也当障碍 -> 车走不了。
+  trinary_costmap: false
+  lethal_cost_threshold: 100

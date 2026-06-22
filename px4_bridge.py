@@ -34,6 +34,9 @@ DEPTH_BLOCK_ROWS = (0.25, 0.75)
 DEPTH_BLOCK_COLS = (0.32, 0.68)
 DEPTH_HARD_ROWS = (0.35, 0.65)
 DEPTH_HARD_COLS = (0.42, 0.58)
+# 是否让 bridge 用深度做反射式拦截/强制悬停。默认关：交给全局规划器+EGO 规划避障，
+# bridge 不再插手(否则它一看近障就强行悬停，跟规划器抢控制 → 乱飞/反复悬停)。
+ENABLE_DEPTH_INTERCEPT = False
 
 # 状态
 current_state = State()
@@ -97,7 +100,7 @@ def cmd_cb(msg):
     safe_y = msg.position.y
     safe_z = max(msg.position.z, MIN_CMD_Z)
 
-    if current_pos is not None:
+    if ENABLE_DEPTH_INTERCEPT and current_pos is not None:
         dx = safe_x - current_pos.x
         dy = safe_y - current_pos.y
 
@@ -210,6 +213,9 @@ def main():
     depth_topic = rospy.get_param("~depth_topic", DEPTH_TOPIC)
     require_depth = rospy.get_param("~require_depth_before_takeoff", REQUIRE_DEPTH_BEFORE_TAKEOFF)
     depth_wait_timeout = rospy.get_param("~depth_wait_timeout", DEPTH_WAIT_TIMEOUT)
+    global ENABLE_DEPTH_INTERCEPT
+    ENABLE_DEPTH_INTERCEPT = bool(rospy.get_param("~enable_depth_intercept", ENABLE_DEPTH_INTERCEPT))
+    rospy.loginfo("[Bridge] 深度反射拦截=%s (False=不插手，全交给全局+EGO 规划器)", ENABLE_DEPTH_INTERCEPT)
     rospy.Subscriber(depth_topic, Image, depth_cb)
 
     pub = rospy.Publisher("/mavros/setpoint_position/local", PoseStamped, queue_size=1)
