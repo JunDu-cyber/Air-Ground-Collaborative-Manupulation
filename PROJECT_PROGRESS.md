@@ -215,4 +215,23 @@ roslaunch mobile_manipulator pcd_to_elevation.launch \
 
 ---
 
-*生成日期：2026-06-19；§10 于 2026-06-21 增补（地形可通行性建图 + UGV 地形导航闭环）。对应仓库提交 `0b36fb7`（`origin/main`）。*
+## 11. 工程化 / 可移植性 + UGV 上坡与收臂最终修复（2026-06-22）
+
+### 11.1 可移植性（队友 clone 后跑不起来的根因）
+- **依赖不在仓库**：`src/ego-planner/` 与 PX4 被 `.gitignore`，由 `setup_uav.sh` 现场 clone/安装。**必须先 `bash setup_uav.sh` 再 `catkin_make`**，否则缺 ego-planner 包必然编译失败。已在 README 置顶写明。
+- **去掉写死的绝对路径**：5 个 UAV marker/bridge 脚本的 iris 网格 `/home/lnwuu/PX4-Autopilot/...` → 经 `px4_paths.py`（`PX4_AUTOPILOT_PATH` 或 `~/PX4-Autopilot`）；`mobile_manipulator` 里 `/home/jun/learning_ws/...`（前一开发者）→ 包内相对路径；两个 `.sh` 的 `WS_DIR` → 从脚本位置推算 catkin 根。与队友独立提交的 `px4_paths` 方案合并（保留队友版）。删除指向他人机器的失效软链接 `etc`/`test_data`。
+
+### 11.2 UGV 上坡打滑根因 = 地形没有摩擦
+轮子 `mu` 调到再高也打滑下滑——因为 Gazebo 接触摩擦由**两个面共同决定**，而坡所在的 `vrc_heightmap_1` 高程地形**碰撞面根本没定义摩擦**（用默认值，被地面端拖住）。修复：给地形碰撞面显式 `mu=2.0` + `kp/kd`，草地 `mu 0.5→1.5`，轮 `mu 3→4`/`kd 1→10`，DWA `acc_lim_x→1.0`（上坡不空转）。
+
+### 11.3 其它
+- **UR5 收成行车姿态**：用 URDF 正运动学求出真正平铺贴车顶、夹爪不入车身的姿态（`shoulder_lift=-2.9, elbow=2.9, wrist_1=-1.2, wrist_2=0`），峰高从 +0.51m 降到 +0.25m，降重心。
+- **录图持续性**：放宽 relay 的转弯门槛（`0.8→1.5 rad/s`）与 odom 时效（`0.3→1.0s`），飞行中不再整片丢帧。
+- **崩溃修复**：`global_path_planner._shortcut` 在目标落在 ±half 栅格外时 `line_clear` 越界（IndexError/负索引）→ 出界则不抽稀。
+
+### 11.4 样例地形图（队友无需飞图即可跑 UGV）
+仓库自带 `mobile_manipulator/maps/uav_terrain_sample.pcd`（33k 点，世界系原点附近）。`ugv_terrain_nav.launch use_sample_map:=true` 即用它（偏移 0、自动对齐），默认仍读你自己的 `~/pointcloud_maps` 最新图（工作流不变）。
+
+---
+
+*生成日期：2026-06-19；§10 于 2026-06-21、§11 于 2026-06-22 增补。当前分支 `main`（已合并 air-ground-terrain-nav）。*

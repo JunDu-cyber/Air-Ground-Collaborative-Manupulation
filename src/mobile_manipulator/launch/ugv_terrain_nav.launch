@@ -13,7 +13,12 @@
          roslaunch mobile_manipulator ugv_terrain_nav.launch localization:=false  # 终端2
        ==================================================================== -->
 
-  <arg name="pcd_file" default="$(env HOME)/pointcloud_maps/uav_points_map_latest.pcd"/>
+  <!-- use_sample_map:=true 用仓库自带的样例点云图(maps/uav_terrain_sample.pcd)开箱即跑，
+       无需自己飞 UAV 建图——队友只想跑 UGV 时用这个。默认 false 仍读你自己 ~/pointcloud_maps 的最新图。 -->
+  <arg name="use_sample_map" default="false"/>
+  <arg name="pcd_file" default="$(eval find('mobile_manipulator') + '/maps/uav_terrain_sample.pcd' if use_sample_map else env('HOME') + '/pointcloud_maps/uav_points_map_latest.pcd')"/>
+  <!-- 样例图坐标在世界系原点附近(偏移0即对齐)，故 use_sample_map 时不读 GPS sidecar(置空)。 -->
+  <arg name="origin_file" default="$(eval '' if use_sample_map else env('HOME') + '/pointcloud_maps/uav_map_origin.yaml')"/>
   <arg name="datum_lat" default="49.9"/>          <!-- = Husky hector GPS 参考，UAV/UGV 一致 -->
   <arg name="datum_lon" default="8.9"/>
   <!-- GPS 锚定：UAV 建图时 map 原点(=PX4本地原点=出生点)的 GPS。
@@ -90,7 +95,7 @@
          origin_file 由建图时的 uav_map_origin_saver 自动写好 -> 这里开机自动读、自动对齐。 -->
     <param name="datum_lat"           value="$(arg datum_lat)"/>
     <param name="datum_lon"           value="$(arg datum_lon)"/>
-    <param name="origin_file"         value="$(env HOME)/pointcloud_maps/uav_map_origin.yaml"/>
+    <param name="origin_file"         value="$(arg origin_file)"/>
     <param name="uav_origin_lat"      value="$(arg uav_origin_lat)"/>
     <param name="uav_origin_lon"      value="$(arg uav_origin_lon)"/>
     <param name="frame_id"            value="map"/>

@@ -19,6 +19,17 @@ source devel/setup.bash
 
 No machine-specific paths are hardcoded: the iris mesh and workspace are resolved from `$PX4_DIR` (default `~/PX4-Autopilot`) and the package location, so a fresh clone works on any machine.
 
+### Run the UGV without flying the UAV first
+
+A sample UAV-derived terrain map is bundled (`src/mobile_manipulator/maps/uav_terrain_sample.pcd`), so you can run the ground-vehicle terrain navigation **without** building a fresh map. Pass `use_sample_map:=true`:
+
+```bash
+roslaunch mobile_manipulator spawn_outdoor_city.launch                 # terminal 1: world + Husky + localization
+roslaunch mobile_manipulator ugv_terrain_nav.launch localization:=false use_sample_map:=true   # terminal 2
+```
+
+Without the flag it reads your own freshly-flown map from `~/pointcloud_maps/`.
+
 ---
 
 ## System Overview
