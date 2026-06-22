@@ -103,12 +103,14 @@
          Gazebo LiDAR and MAVROS odom can be slightly offset in time; stamping
          with the odom used by the relay reduces map smearing while the UAV moves. -->
     <arg name="stamp_with_odom" value="true"/>
-    <!-- Drop fast-turn / high-speed scans; they are the main source of smeared maps. -->
+    <!-- Drop fast-turn / high-speed scans; they are the main source of smeared maps.
+         放宽以"持续记录"：转弯门槛 0.8->1.5 rad/s(只有很快的自旋才丢，普通转弯照记)，
+         odom 时效 0.30->1.0s(odom 偶尔抖动/滞后时也不再整片丢帧导致"建着建着不记了")。 -->
     <arg name="max_linear_velocity" value="2.0"/>
     <arg name="max_angular_velocity" value="0.0"/>
-    <arg name="max_odom_angular_velocity" value="0.8"/>
+    <arg name="max_odom_angular_velocity" value="1.5"/>
     <arg name="max_imu_age" value="999.0"/>
-    <arg name="max_odom_age" value="0.30"/>
+    <arg name="max_odom_age" value="1.0"/>
     <!-- Range filter: this lightweight LiDAR is 16m max. Keep a margin so max-range
          no-hit returns do not become a fake boundary shell in the map. -->
     <arg name="min_range" value="0.35"/>

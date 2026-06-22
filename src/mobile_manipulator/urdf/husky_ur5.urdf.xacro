@@ -191,14 +191,15 @@
        stock husky_description/wheel.urdf.xacro 设 mu1=mu2=1.0，仿真里在坡面上
        轮子打滑 -> 上不去/往下滑（轮关节是 continuous 且无 effort 限制，所以瓶颈
        是【摩擦】不是扭矩）。这里按轮 link 名再写一遍 <gazebo reference> 覆盖，
-       SDF 取后出现的值 -> mu 提到 3.0，沿滚动方向(fdir1=x)抓地更牢，上坡少打滑。
-       kp/kd 沿用 husky 默认接触刚度。配合压低质心(压舱)+收臂行车姿态一起防打滑/翻车。 -->
+       SDF 取后出现的值 -> mu 提到 4.0，沿滚动方向(fdir1=x)抓地更牢，上坡少打滑；
+       kd 1->10 增大接触阻尼，减小轮子在坡上弹跳/打颤丢失接触。配合压低质心(压舱+收臂)
+       和缓加速(DWA acc_lim_x) 一起：上坡靠抓地+不猛冲轮子来防打滑下滑。 -->
   <xacro:macro name="wheel_friction" params="link">
     <gazebo reference="${link}">
-      <mu1 value="3.0"/>
-      <mu2 value="3.0"/>
+      <mu1 value="4.0"/>
+      <mu2 value="4.0"/>
       <kp value="10000000.0"/>
-      <kd value="1.0"/>
+      <kd value="10.0"/>
       <fdir1 value="1 0 0"/>
       <minDepth>0.005</minDepth>
     </gazebo>

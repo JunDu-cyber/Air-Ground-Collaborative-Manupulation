@@ -11,6 +11,25 @@
             <pos>0 0 -15</pos>
           </heightmap>
         </geometry>
+        <!-- 地形原本没有任何摩擦面 -> 用 Gazebo 默认(很低)，轮子 mu 再高也被接触面拖住，
+             UGV 一上坡就打滑下滑。这里给地形显式高摩擦：接触摩擦取两面组合，地面这端
+             也得够大轮子才抓得住。mu=2 -> 即使取 min(轮4,地2) 也能爬 atan(2)=63°。
+             kp/kd 给足接触刚度+阻尼，轮子不陷不弹。 -->
+        <surface>
+          <friction>
+            <ode>
+              <mu>2.0</mu>
+              <mu2>2.0</mu2>
+            </ode>
+          </friction>
+          <contact>
+            <ode>
+              <kp>10000000.0</kp>
+              <kd>10.0</kd>
+              <min_depth>0.005</min_depth>
+            </ode>
+          </contact>
+        </surface>
       </collision>
 
       <visual name="visual">

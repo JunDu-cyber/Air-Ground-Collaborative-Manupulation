@@ -216,11 +216,16 @@ class GlobalPlanner(object):
         这里把相邻【可直连(无碰)】的点抽稀成几段长直线，只留转折点 -> EGO 轨迹更直更顺。"""
         if len(pts) <= 2:
             return pts
+        # 任一点出界(目标可能在 ±half 外)就不抽稀、直接用原路 —— 否则 w2c 越界、
+        # line_clear 里 grid[r,c] 会 IndexError(正越界)或负索引回绕(取错格)。
+        cells = [self.w2c(*p) for p in pts]
+        if not all(self.in_grid(c) for c in cells):
+            return pts
         out = [pts[0]]
         i, n = 0, len(pts)
         while i < n - 1:
             j = n - 1
-            while j > i + 1 and not line_clear(grid, self.w2c(*pts[i]), self.w2c(*pts[j])):
+            while j > i + 1 and not line_clear(grid, cells[i], cells[j]):
                 j -= 1
             out.append(pts[j])
             i = j
