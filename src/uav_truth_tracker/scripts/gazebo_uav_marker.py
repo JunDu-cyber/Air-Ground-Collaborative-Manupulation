@@ -6,6 +6,8 @@ actual pose in Gazebo, and publishes Marker messages so RViz can show
 the 3D mesh at the correct live position.
 """
 
+import os
+
 import rospy
 from gazebo_msgs.msg import ModelStates
 from visualization_msgs.msg import Marker
@@ -20,10 +22,12 @@ class GazeboUavMarker:
         self.uav_model_name = rospy.get_param(
             "~uav_model_name", "iris_depth_camera"
         )
+        # 默认网格用 $PX4_DIR(或 ~/PX4-Autopilot)，不写死本机绝对路径
+        _px4 = os.environ.get("PX4_DIR", os.path.expanduser("~/PX4-Autopilot"))
         self.uav_mesh = rospy.get_param(
             "~uav_mesh_resource",
-            "file:///home/lnwuu/PX4-Autopilot/Tools/simulation/gazebo-classic/"
-            "sitl_gazebo-classic/models/iris/meshes/iris.stl",
+            "file://" + os.path.join(_px4, "Tools/simulation/gazebo-classic/"
+                                     "sitl_gazebo-classic/models/iris/meshes/iris.stl"),
         )
         self.uav_ns = rospy.get_param("~uav_ns", "drone")
         self.uav_marker_topic = rospy.get_param(

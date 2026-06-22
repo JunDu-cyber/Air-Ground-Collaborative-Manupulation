@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Subscribe to MAVROS local_position/pose and publish TF + drone visual marker"""
 
+import os
+
 import rospy
 import tf2_ros
 from geometry_msgs.msg import PoseStamped, TransformStamped
@@ -31,10 +33,12 @@ class MavrosTFBridge:
             self.sub = rospy.Subscriber(self.pose_topic, PoseStamped, self.pose_cb, queue_size=20)
             rospy.logwarn("[MavrosTFBridge] publishing TF from pose %s", self.pose_topic)
 
+        # 默认网格用 $PX4_DIR(或 ~/PX4-Autopilot)，不写死本机绝对路径——换台机器/队友 clone 也能用
+        _px4 = os.environ.get("PX4_DIR", os.path.expanduser("~/PX4-Autopilot"))
         self.mesh_path = (
             "file://" + rospy.get_param("~mesh_path",
-            "/home/lnwuu/PX4-Autopilot/Tools/simulation/gazebo-classic/"
-            "sitl_gazebo-classic/models/iris/meshes/iris.stl")
+            os.path.join(_px4, "Tools/simulation/gazebo-classic/"
+                         "sitl_gazebo-classic/models/iris/meshes/iris.stl"))
         )
 
     def odom_cb(self, msg: Odometry):

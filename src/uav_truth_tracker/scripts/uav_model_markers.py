@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import copy
+import os
 
 import rospy
 from nav_msgs.msg import Odometry
@@ -10,10 +11,11 @@ from visualization_msgs.msg import Marker, MarkerArray
 class UavModelMarkers:
     def __init__(self):
         self.frame_id = rospy.get_param("~frame_id", "map")
+        _px4 = os.environ.get("PX4_DIR", os.path.expanduser("~/PX4-Autopilot"))
         self.mesh_resource = rospy.get_param(
             "~mesh_resource",
-            "file:///home/lnwuu/PX4-Autopilot/Tools/simulation/gazebo-classic/"
-            "sitl_gazebo-classic/models/iris/meshes/iris.stl",
+            "file://" + os.path.join(_px4, "Tools/simulation/gazebo-classic/"
+                                     "sitl_gazebo-classic/models/iris/meshes/iris.stl"),
         )
         self.scale = rospy.get_param("~scale", 1.0)
         self.publish_rate = rospy.get_param("~publish_rate", 10.0)

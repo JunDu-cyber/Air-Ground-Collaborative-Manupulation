@@ -17,6 +17,7 @@ all work WITHOUT installing ros-noetic-mavros.
 
 import copy
 import math
+import os
 
 import rospy
 import tf2_ros
@@ -42,10 +43,12 @@ class GazeboOdomBridge:
         self.publish_rate = rospy.get_param("~publish_rate", 30.0)
 
         # --- Marker mesh ---
+        # 默认网格用 $PX4_DIR(或 ~/PX4-Autopilot)，不写死本机绝对路径
+        _px4 = os.environ.get("PX4_DIR", os.path.expanduser("~/PX4-Autopilot"))
         self.mesh_resource = rospy.get_param(
             "~mesh_resource",
-            "file:///home/lnwuu/PX4-Autopilot/Tools/simulation/gazebo-classic/"
-            "sitl_gazebo-classic/models/iris/meshes/iris.stl",
+            "file://" + os.path.join(_px4, "Tools/simulation/gazebo-classic/"
+                                     "sitl_gazebo-classic/models/iris/meshes/iris.stl"),
         )
 
         # --- State ---

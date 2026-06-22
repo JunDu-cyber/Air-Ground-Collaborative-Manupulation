@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
+import os
 import rospy
 import yaml
 import math
 from gazebo_msgs.srv import GetModelState
 import tf.transformations as tf_trans
+
+# 包内相对路径，不写死某台机器的绝对路径（脚本在 scripts/，maps/config 在 ../）
+_PKG_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # All semantic furniture from small_house.world
 # (walls, floors, windows, doors, lights, portraits, robot excluded)
 MODELS = [
@@ -62,7 +66,7 @@ MODELS = [
     ('Ball_01_003',             'ball_bedroom'),
 ]
 
-MAP_YAML = '/home/jun/learning_ws/src/mobile_manipulator/maps/small_house_map.yaml'
+MAP_YAML = os.path.join(_PKG_DIR, 'maps', 'small_house_map.yaml')
 
 # Nav goal offset from furniture center (meters)
 # Robot needs to stand NEXT to furniture, not on top of it
@@ -212,7 +216,7 @@ def main():
 
     # write yaml
     output = {'regions': regions}
-    output_path = '/home/jun/learning_ws/src/mobile_manipulator/config/semantic_map.yaml'
+    output_path = os.path.join(_PKG_DIR, 'config', 'semantic_map.yaml')
     with open(output_path, 'w') as f:
         yaml.dump(output, f, default_flow_style=False, sort_keys=False)
 

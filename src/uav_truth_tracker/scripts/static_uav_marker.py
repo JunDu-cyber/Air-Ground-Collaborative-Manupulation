@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import os
+
 import rospy
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
@@ -14,10 +16,11 @@ def main():
     marker_ns = rospy.get_param("~ns", "drone")
     marker_topic = rospy.get_param("~marker_topic", "/drone_visual")
     path_topic = rospy.get_param("~path_topic", "/drone_path")
+    _px4 = os.environ.get("PX4_DIR", os.path.expanduser("~/PX4-Autopilot"))
     mesh_resource = rospy.get_param(
         "~mesh_resource",
-        "file:///home/lnwuu/PX4-Autopilot/Tools/simulation/gazebo-classic/"
-        "sitl_gazebo-classic/models/iris/meshes/iris.stl",
+        "file://" + os.path.join(_px4, "Tools/simulation/gazebo-classic/"
+                                 "sitl_gazebo-classic/models/iris/meshes/iris.stl"),
     )
     if "://" not in mesh_resource:
         mesh_resource = "file://" + mesh_resource

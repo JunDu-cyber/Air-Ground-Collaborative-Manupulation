@@ -6,6 +6,21 @@ The UGV half of an **air-ground collaborative autonomous system**: a Clearpath H
 
 ---
 
+## ⚠️ Build first (clone ≠ buildable)
+
+The UAV stack's **EGO-Planner and PX4 are NOT in this repo** (git-ignored) — they are cloned/installed by the setup script. **Run it before `catkin_make`, or the build fails with a missing `ego-planner` package:**
+
+```bash
+git clone <repo> && cd <repo>
+bash setup_uav.sh        # installs PX4 + clones ego-planner + applies patches/ (first run only)
+catkin_make
+source devel/setup.bash
+```
+
+No machine-specific paths are hardcoded: the iris mesh and workspace are resolved from `$PX4_DIR` (default `~/PX4-Autopilot`) and the package location, so a fresh clone works on any machine.
+
+---
+
 ## System Overview
 
 ```
