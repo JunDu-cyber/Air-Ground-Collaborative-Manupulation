@@ -18,6 +18,11 @@
   <arg name="planning_horizon"/>
   <arg name="ground_filter_margin" default="0.08"/>
   <arg name="skip_pixel" default="2"/>
+  <!-- EGO 感知范围 + A* 规划池(默认=官方; 低空绕楼时由上层调大) -->
+  <arg name="local_update_range_xy" default="8.0"/>
+  <arg name="local_update_range_z" default="2.5"/>
+  <arg name="pool_size_xy" default="200"/>
+  <arg name="pool_size_z" default="80"/>
 
   <arg name="point_num"/>
   <arg name="point0_x"/>
@@ -77,9 +82,9 @@
     <param name="grid_map/map_size_x"   value="$(arg map_size_x_)" />
     <param name="grid_map/map_size_y"   value="$(arg map_size_y_)" />
     <param name="grid_map/map_size_z"   value="$(arg map_size_z_)" />
-    <param name="grid_map/local_update_range_x"  value="8.0" />
-    <param name="grid_map/local_update_range_y"  value="8.0" />
-    <param name="grid_map/local_update_range_z"  value="2.5" />
+    <param name="grid_map/local_update_range_x"  value="$(arg local_update_range_xy)" />
+    <param name="grid_map/local_update_range_y"  value="$(arg local_update_range_xy)" />
+    <param name="grid_map/local_update_range_z"  value="$(arg local_update_range_z)" />
     <param name="grid_map/obstacles_inflation"     value="0.24" />
     <param name="grid_map/local_map_margin" value="8"/>
     <param name="grid_map/ground_height"        value="0.0"/>
@@ -93,7 +98,7 @@
     <!-- depth filter -->
     <param name="grid_map/use_depth_filter" value="true"/>
     <param name="grid_map/depth_filter_tolerance" value="0.12"/>
-    <param name="grid_map/depth_filter_maxdist"   value="8.0"/>
+    <param name="grid_map/depth_filter_maxdist"   value="15.0"/>  <!-- 8→15: 远距就把楼建进障碍图 -->
     <param name="grid_map/depth_filter_mindist"   value="0.25"/>
     <param name="grid_map/depth_filter_margin"    value="1"/>
     <param name="grid_map/k_depth_scaling_factor" value="1000.0"/>
@@ -105,7 +110,7 @@
     <param name="grid_map/p_max"  value="0.90"/>
     <param name="grid_map/p_occ"  value="0.80"/>
     <param name="grid_map/min_ray_length" value="0.1"/>
-    <param name="grid_map/max_ray_length" value="8.0"/>
+    <param name="grid_map/max_ray_length" value="15.0"/>  <!-- 8→15: 配合深度 15m 远距建障碍 -->
 
     <param name="grid_map/virtual_ceil_height"   value="-1.0"/>
     <param name="grid_map/visualization_truncate_height"   value="6.0"/>
@@ -113,10 +118,10 @@
     <param name="grid_map/pose_type"     value="2"/>
     <param name="grid_map/frame_id"      value="map"/>  <!-- TF 坐标系 -->
 
-  <!-- a star search pool size: 200x200x80 = 20x20x8m at 0.1 step -->
-    <param name="a_star/pool_size_x" value="200" type="int"/>
-    <param name="a_star/pool_size_y" value="200" type="int"/>
-    <param name="a_star/pool_size_z" value="80" type="int"/>
+  <!-- a star 规划池(越大越能绕过大障碍, 低空绕楼时调大) -->
+    <param name="a_star/pool_size_x" value="$(arg pool_size_xy)" type="int"/>
+    <param name="a_star/pool_size_y" value="$(arg pool_size_xy)" type="int"/>
+    <param name="a_star/pool_size_z" value="$(arg pool_size_z)" type="int"/>
 
   <!-- planner manager -->
     <param name="manager/max_vel" value="$(arg max_vel)" type="double"/>

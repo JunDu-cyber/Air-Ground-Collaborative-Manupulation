@@ -116,7 +116,7 @@ class BtTo2DMap(object):
             f.write(("P5\n%d %d\n255\n" % (width, height)).encode('ascii'))
             for row in range(height - 1, -1, -1):
                 f.write(bytes(pixels[row * width:(row + 1) * width]))
-
+        #jpg
         # PNG
         png_path = os.path.join(self.output_dir, base + ".png")
         self._write_png(png_path, pixels, width, height)
@@ -127,6 +127,7 @@ class BtTo2DMap(object):
         yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y),
                          1.0 - 2.0 * (q.y * q.y + q.z * q.z))
         with open(yaml_path, 'w') as f:
+    
             f.write("image: %s\n" % (base + ".pgm"))
             f.write("resolution: %.6f\n" % resolution)
             f.write("origin: [%.6f, %.6f, %.6f]\n" % (origin.position.x, origin.position.y, yaw))

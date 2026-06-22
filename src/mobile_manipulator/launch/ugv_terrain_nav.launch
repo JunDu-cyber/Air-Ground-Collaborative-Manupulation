@@ -1,0 +1,141 @@
+<launch>
+  <!-- ====================================================================
+       UGV 在 UAV 建好的地图上地形导航（方案①：GPS/UTM 对齐 + UAV 静态地图）。
+
+       前置：先用 spawn_outdoor_city.launch 起好世界+Husky+定位（终端1），
+             本 launch（终端2）加 localization:=false 复用其定位。
+       地图来源：把整张 UAV PCD 一次性投影成【静态全局】占据图 /terrain_map，
+                 move_base 用原生 static_layer 吃它。不用 elevation_mapping
+                 （那是机器人为中心的滚动局部图，不适合全局规划）。
+
+       用法：
+         roslaunch mobile_manipulator spawn_outdoor_city.launch            # 终端1
+         roslaunch mobile_manipulator ugv_terrain_nav.launch localization:=false  # 终端2
+       ==================================================================== -->
+
+  <arg name="pcd_file" default="$(env HOME)/pointcloud_maps/uav_points_map_latest.pcd"/>
+  <arg name="datum_lat" default="49.9"/>          <!-- = Husky hector GPS 参考，UAV/UGV 一致 -->
+  <arg name="datum_lon" default="8.9"/>
+  <!-- GPS 锚定：UAV 建图时 map 原点(=PX4本地原点=出生点)的 GPS。
+       默认 = datum -> offset 0（保持现状）。真机/UAV不在原点建图时填实际值，
+       node 自动算 offset = UTM(uav_origin) - UTM(datum) 把 PCD 平移到公共 datum 帧。 -->
+  <arg name="uav_origin_lat" default="49.9"/>
+  <arg name="uav_origin_lon" default="8.9"/>
+  <arg name="ugv_gps_topic" default="navsat/fix"/>
+  <arg name="resolution" default="0.25"/>          <!-- 占据图分辨率(m) -->
+  <arg name="obstacle_height" default="0.4"/>      <!-- 高出地面多少算障碍(m)。0.3=连矮障碍也标，UGV 不被绊 -->
+  <!-- 坡度【不再判障碍】：所有地面都可走，让车直接上坡；能不能上/稳不稳靠车本身
+       (压低质心+轮摩擦+缓速DWA)解决，不靠把坡标死(否则大片地被标成走不了、车没路走)。
+       下面两个 + slope_cost_max 只影响【着色/可选软代价】，不阻断通行。 -->
+  <arg name="slope_free_deg" default="12.0"/>      <!-- 软代价起点(仅 slope_cost_max>0 时生效) -->
+  <arg name="slope_max_deg" default="30.0"/>       <!-- 坡度着色/软代价归一化的参考上限 -->
+  <arg name="slope_cost_max" default="0.0"/>       <!-- 0=坡完全免代价(直接上)；>0=轻微偏好平地的软代价上限(<<100，永不阻断) -->
+  <arg name="ground_window" default="2.0"/>        <!-- 地面估计窗口(m) -->
+  <!-- 在 UAV 已建图区域外再留一圈"自由边界"(米)，未建图处=可走，靠局部 LiDAR 兜底。
+       太大会让地图大半是空白(看着像没建图)。默认 15；点更远的目标再调大，如 free_border:=60。 -->
+  <arg name="free_border" default="15.0"/>
+  <arg name="rviz" default="true"/>
+  <!-- spawn_outdoor_city 已起双 EKF+navsat：终端2 必须 localization:=false 避免重名冲突 -->
+  <arg name="localization" default="true"/>
+
+  <!-- robot_description：RViz 的 RobotModel 显示需要它。spawn_outdoor_city 已设过，
+       这里再设一遍（同一 xacro，幂等）保证即使 RViz 抢先启动也不报
+       "Parameter [robot_description] does not exist"。不另起 robot_state_publisher
+       （TF 由终端1 提供）。 -->
+  <param name="robot_description"
+         command="$(find xacro)/xacro '$(find mobile_manipulator)/urdf/husky_ur5.urdf.xacro'"/>
+
+  <group if="$(arg localization)">
+    <node pkg="robot_localization" type="ekf_localization_node" name="ekf_localization"
+          clear_params="true">
+      <rosparam command="load" file="$(find husky_control)/config/localization.yaml"/>
+    </node>
+    <node pkg="robot_localization" type="ekf_localization_node" name="ekf_global"
+          clear_params="true">
+      <rosparam command="load" file="$(find mobile_manipulator)/config/ekf_global.yaml"/>
+      <remap from="odometry/filtered" to="odometry/filtered_map"/>
+    </node>
+    <node pkg="robot_localization" type="navsat_transform_node" name="navsat_transform"
+          output="screen" clear_params="true">
+      <rosparam command="load" file="$(find mobile_manipulator)/config/navsat_transform.yaml"/>
+      <param name="wait_for_datum" value="true"/>
+      <rosparam param="datum" subst_value="true">[$(arg datum_lat), $(arg datum_lon), 0.0]</rosparam>
+      <remap from="imu/data"          to="imu/data"/>
+      <remap from="gps/fix"           to="$(arg ugv_gps_topic)"/>
+      <remap from="odometry/filtered" to="odometry/filtered_map"/>
+    </node>
+  </group>
+
+  <!-- ── 滤掉机械臂/车体自反的激光点（局部 costmap 障碍源）── -->
+  <node pkg="laser_filters" type="scan_to_scan_filter_chain" name="laser_filter"
+        output="screen">
+    <rosparam command="load" file="$(find mobile_manipulator)/config/laser_filter_arm.yaml"/>
+    <remap from="scan"          to="/front/scan"/>
+    <remap from="scan_filtered" to="/front/scan_filtered"/>
+  </node>
+
+  <!-- ── UAV PCD -> 静态全局占据图 /terrain_map ── -->
+  <node pkg="mobile_manipulator" type="pcd_to_occupancy_map.py"
+        name="pcd_to_occupancy_map" output="screen">
+    <param name="pcd_file"            value="$(arg pcd_file)"/>
+    <param name="resolution"          value="$(arg resolution)"/>
+    <param name="slope_free_deg"      value="$(arg slope_free_deg)"/> <!-- 软代价起点 -->
+    <param name="slope_max_deg"       value="$(arg slope_max_deg)"/>  <!-- 着色/软代价归一化参考 -->
+    <param name="slope_cost_max"      value="$(arg slope_cost_max)"/> <!-- 0=坡免代价直接上 -->
+    <param name="obstacle_height"     value="$(arg obstacle_height)"/>
+    <param name="ground_window"       value="$(arg ground_window)"/>
+    <param name="margin"              value="$(arg free_border)"/>  <!-- 建图区外的自由边界，远目标可达 -->
+    <param name="min_obstacle_points" value="3"/>   <!-- 抗重叠/噪点：cell 需≥3个高点才算楼 -->
+    <!-- GPS 锚定：把 PCD 平移到公共 datum 帧。
+         origin_file 由建图时的 uav_map_origin_saver 自动写好 -> 这里开机自动读、自动对齐。 -->
+    <param name="datum_lat"           value="$(arg datum_lat)"/>
+    <param name="datum_lon"           value="$(arg datum_lon)"/>
+    <param name="origin_file"         value="$(env HOME)/pointcloud_maps/uav_map_origin.yaml"/>
+    <param name="uav_origin_lat"      value="$(arg uav_origin_lat)"/>
+    <param name="uav_origin_lon"      value="$(arg uav_origin_lon)"/>
+    <param name="frame_id"            value="map"/>
+    <param name="topic"               value="/terrain_map"/>
+    <param name="slope_topic"         value="/terrain_slope"/>
+    <param name="cloud_topic"         value="/terrain_cloud"/>
+  </node>
+
+  <!-- ── move_base（配置对齐已验证可用的 navigation.launch）──
+       注意：不 remap cmd_vel。move_base 发 /cmd_vel -> twist_mux(external) ->
+       husky_velocity_controller/cmd_vel。spawn_outdoor_city 已起 twist_mux。 -->
+  <node pkg="move_base" type="move_base" name="move_base" output="screen">
+    <rosparam file="$(find mobile_manipulator)/config/nav/costmap_common.yaml"  command="load" ns="global_costmap"/>
+    <rosparam file="$(find mobile_manipulator)/config/nav/costmap_common.yaml"  command="load" ns="local_costmap"/>
+    <rosparam file="$(find mobile_manipulator)/config/nav/global_costmap.yaml"  command="load"/>
+    <rosparam file="$(find mobile_manipulator)/config/nav/local_costmap.yaml"   command="load"/>
+    <!-- 让 global static_layer 指向 UAV 地图 /terrain_map（覆盖默认 /map）-->
+    <rosparam file="$(find mobile_manipulator)/config/nav/terrain_layer.yaml" command="load" ns="global_costmap"/>
+    <rosparam ns="global_costmap">static_map: false</rosparam>
+    <!-- 仿真 TF 抖动兜底：放宽两个 costmap 的 transform_tolerance（主修在 ekf_global
+         的 transform_time_offset）。 -->
+    <rosparam ns="global_costmap">transform_tolerance: 1.0</rosparam>
+    <rosparam ns="local_costmap">transform_tolerance: 1.0</rosparam>
+
+    <param name="base_global_planner" value="navfn/NavfnROS"/>
+    <param name="base_local_planner"  value="dwa_local_planner/DWAPlannerROS"/>
+    <rosparam file="$(find mobile_manipulator)/config/nav/dwa_local_planner.yaml" command="load"/>
+
+    <param name="planner_frequency"         value="1.0"/>
+    <param name="controller_frequency"      value="10.0"/>
+    <param name="recovery_behavior_enabled" value="true"/>
+    <param name="clearing_rotation_allowed" value="true"/>
+    <param name="conservative_reset_dist"   value="3.0"/>
+  </node>
+
+  <!-- ── 坐标对齐校验（UAV 关着时 NO_FIX 属正常）── -->
+  <node pkg="uav_truth_tracker" type="coordinate_align_checker.py"
+        name="coordinate_align_checker" output="screen">
+    <param name="uav_gps_topic" value="/mavros/global_position/global"/>
+    <param name="ugv_gps_topic" value="$(arg ugv_gps_topic)"/>
+    <param name="align_threshold" value="0.5"/>
+    <param name="warn_threshold"  value="2.0"/>
+    <param name="baseline_offset" value="0.0"/>
+  </node>
+
+  <node if="$(arg rviz)" name="terrain_nav_rviz" pkg="rviz" type="rviz"
+        args="-d $(find mobile_manipulator)/rviz/terrain_nav.rviz"/>
+</launch>

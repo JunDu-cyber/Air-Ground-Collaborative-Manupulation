@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WS_DIR="${WS_DIR:-/home/lnwuu/ego_ws}"
+# 默认取本脚本所在工作区(scripts/../../.. = catkin 根)，不写死某台机器的路径
+WS_DIR="${WS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 LOG_DIR="${LOG_DIR:-$HOME/uav_intercept_logs}"
 TEST_DURATION="${TEST_DURATION:-60}"
 TARGET_MODE="${TARGET_MODE:-circle_z_sine}"

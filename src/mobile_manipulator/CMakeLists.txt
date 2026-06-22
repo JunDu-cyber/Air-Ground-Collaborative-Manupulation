@@ -189,6 +189,8 @@ catkin_install_python(PROGRAMS
   scripts/visualize_semantic_map.py
   scripts/test_yolo_client.py
   scripts/agent.py
+  scripts/terrain_costmap_bridge.py
+  scripts/pcd_to_occupancy_map.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

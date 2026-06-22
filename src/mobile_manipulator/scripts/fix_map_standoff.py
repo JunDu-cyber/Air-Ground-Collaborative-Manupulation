@@ -1,5 +1,9 @@
+import os
 import yaml
 import math
+
+# 包内相对路径，不写死某台机器的绝对路径（脚本在 scripts/，config 在 ../config/）
+_PKG_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def calculate_center(polygon):
     if not polygon:
@@ -31,4 +35,4 @@ def process_map(path):
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
 if __name__ == "__main__":
-    process_map('/home/jun/learning_ws/src/mobile_manipulator/config/semantic_map.yaml')
+    process_map(os.path.join(_PKG_DIR, 'config', 'semantic_map.yaml'))

@@ -18,6 +18,9 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package()
 
 catkin_install_python(PROGRAMS
+  scripts/coordinate_align_checker.py
+  scripts/uav_map_origin_saver.py
+  scripts/clean_pcd.py
   scripts/analyze_prediction_log.py
   scripts/capture_decision_node.py
   scripts/camera_tf_broadcaster.py

@@ -41,5 +41,9 @@ publish_filtered_gps: true
 # heading at rest).
 use_odometry_yaw: false
 
-# Take the first valid fix as the datum instead of requiring a manual one.
-wait_for_datum: false
+# GPS 锚定（方案①）：用固定 datum，把 UGV 的 map 原点钉死在一个 UTM 点，
+# 而不是"取首帧 GPS"。这样 UGV 的 map 帧与 UAV 建图用的 datum 物理重合，
+# 且与"车在哪出生"无关。datum = Husky hector GPS 参考(49.9, 8.9)。
+# 真机：换成与 UAV 约定的同一 datum。
+wait_for_datum: true
+datum: [49.9, 8.9, 0.0]   # [lat, lon, yaw]

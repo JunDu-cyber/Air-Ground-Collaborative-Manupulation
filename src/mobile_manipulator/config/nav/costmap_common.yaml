@@ -3,13 +3,31 @@
 # which blocked every corridor narrower than 1.1 m in this house map.
 footprint: [[-0.50, 0.34], [0.50, 0.34], [0.50, -0.34], [-0.50, -0.34]]
 footprint_padding: 0.01
-inflation_radius: 0.8
 # Gazebo sim TF stamps lag 1-3 s behind the clock; raise tolerance to match
 transform_tolerance: 0.5
-observation_sources: laser
-laser:
-  sensor_frame: base_laser
-  data_type: LaserScan
-  topic: /front/scan_filtered
-  marking: true
-  clearing: true
+
+# 离障碍物远一点：膨胀半径 0.8->1.2，且 cost_scaling_factor 调小到 2.5。
+#   cost_scaling_factor 越小 -> 代价从障碍往外衰减越【缓】-> 整段膨胀区都保持较高代价
+#   -> 全局规划(navfn)主动走中间、远离障碍。默认 10 时代价贴着车体外就掉到≈0，
+#   规划器会贴着障碍走，所以老被矮障碍物蹭到。室外空地够宽，1.2m 不堵窄道。
+# 注意：膨胀参数必须放在 inflation_layer 命名空间下，放在 costmap 顶层会被忽略（用默认 0.55）。
+inflation_layer:
+  inflation_radius: 1.2
+  cost_scaling_factor: 2.5
+
+# 实时 LiDAR 障碍标记。关键修复：observation_sources / laser 必须嵌在 obstacle_layer
+# 命名空间下（对齐已验证可用的 auto_mapping.launch）。之前写在 costmap 顶层 ->
+# obstacle_layer 根本没拿到激光源 -> 不做实时标记 -> UAV 静态图没扫到的矮障碍全看不见
+# -> UGV 直接撞上去/被卡。max_obstacle_height 放宽吃下成片回波，min 设 0 连贴地矮障碍也标。
+obstacle_layer:
+  observation_sources: laser
+  laser:
+    sensor_frame: base_laser
+    data_type: LaserScan
+    topic: /front/scan_filtered
+    marking: true
+    clearing: true
+    obstacle_range: 5.0
+    raytrace_range: 5.5
+    min_obstacle_height: 0.0
+    max_obstacle_height: 2.0

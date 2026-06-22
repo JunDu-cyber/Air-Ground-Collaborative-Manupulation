@@ -34,15 +34,18 @@
   <!-- Virtual ballast: simulates the Husky's rear battery bank.
        The stock inertial_link iyy (1.74 kg⋅m²) is less than half the
        theoretical value for the chassis dimensions, leaving the base on the
-       edge of tipping when the arm is extended.  30 kg placed 0.15 m behind
-       and 0.08 m below base_link shifts the CoM rearward and raises iyy
-       enough to keep the robot stable through the full grasp motion. -->
+       edge of tipping when the arm is extended.  The mass is placed behind and
+       BELOW base_link to shift the CoM rearward and DOWN.
+       上坡稳定性加强：UR5 装在顶板上抬高了整车质心，在斜坡上(尤其转弯/进坡)容易
+       翻车。把压舱质量从 30→45 kg、并从 -0.08 下沉到 -0.20 m(到接触面附近)，显著
+       压低质心 -> 抗倾覆角变大、坡上不易翻。配合 slope_max 限到 ~22° 不去爬超过
+       翻车角的坡，以及 DWA 减速/缓转。 -->
   <link name="base_ballast">
     <inertial>
-      <mass value="30.0" />
-      <origin xyz="-0.15 0.0 -0.08" rpy="0 0 0" />
-      <inertia ixx="1.5" ixy="0" ixz="0"
-               iyy="3.0" iyz="0" izz="3.0" />
+      <mass value="45.0" />
+      <origin xyz="-0.15 0.0 -0.20" rpy="0 0 0" />
+      <inertia ixx="2.5" ixy="0" ixz="0"
+               iyy="4.0" iyz="0" izz="4.0" />
     </inertial>
   </link>
   <joint name="base_ballast_joint" type="fixed">
@@ -165,5 +168,45 @@
       </plugin>
     </sensor>
   </gazebo>
+
+  <!-- ===== 地面真值位姿(含真实高度 z)：让 UGV 在 RViz 里跟着地形爬高 =====
+       2D 模式的 EKF 把机器人 z 锁成 0，在真实高程的坡上 UGV 就被埋到坡面下。
+       这个 p3d 插件直接从 Gazebo 取 base_link 的真值位姿(含 z/俯仰)，发到
+       /ground_truth/state，由 global EKF 只融合其中的 z(见 ekf_global.yaml)。
+       frameName=map：本工程 map 原点 == Gazebo 世界原点(GPS 锚定)，故真值世界 z
+       即 map 系 z。只喂 z、不动 x/y(仍由轮速+GPS主导)，对 2D 导航几乎无影响。 -->
+  <gazebo>
+    <plugin name="ground_truth_p3d" filename="libgazebo_ros_p3d.so">
+      <bodyName>base_link</bodyName>
+      <topicName>/ground_truth/state</topicName>
+      <frameName>map</frameName>
+      <updateRate>50.0</updateRate>
+      <gaussianNoise>0.0</gaussianNoise>
+      <xyzOffset>0 0 0</xyzOffset>
+      <rpyOffset>0 0 0</rpyOffset>
+    </plugin>
+  </gazebo>
+
+  <!-- ===== 上坡力度：加大 4 个驱动轮的接触摩擦 =====
+       stock husky_description/wheel.urdf.xacro 设 mu1=mu2=1.0，仿真里在坡面上
+       轮子打滑 -> 上不去/往下滑（轮关节是 continuous 且无 effort 限制，所以瓶颈
+       是【摩擦】不是扭矩）。这里按轮 link 名再写一遍 <gazebo reference> 覆盖，
+       SDF 取后出现的值 -> mu 提到 4.0，沿滚动方向(fdir1=x)抓地更牢，上坡少打滑；
+       kd 1->10 增大接触阻尼，减小轮子在坡上弹跳/打颤丢失接触。配合压低质心(压舱+收臂)
+       和缓加速(DWA acc_lim_x) 一起：上坡靠抓地+不猛冲轮子来防打滑下滑。 -->
+  <xacro:macro name="wheel_friction" params="link">
+    <gazebo reference="${link}">
+      <mu1 value="4.0"/>
+      <mu2 value="4.0"/>
+      <kp value="10000000.0"/>
+      <kd value="10.0"/>
+      <fdir1 value="1 0 0"/>
+      <minDepth>0.005</minDepth>
+    </gazebo>
+  </xacro:macro>
+  <xacro:wheel_friction link="front_left_wheel_link"/>
+  <xacro:wheel_friction link="front_right_wheel_link"/>
+  <xacro:wheel_friction link="rear_left_wheel_link"/>
+  <xacro:wheel_friction link="rear_right_wheel_link"/>
 
 </robot>
