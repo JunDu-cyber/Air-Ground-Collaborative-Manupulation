@@ -58,7 +58,7 @@ SPAWN_Z=${SPAWN_Z:-1.5}
 SPAWN_YAW=${SPAWN_YAW:-1.5707963}
 # 低空穿楼建图模式（LOW_ALT=true）：4m 固定低空、横向绕楼。
 # 飞行高度/速度在 bash 里算死并打印出来，避免 roslaunch 那边 eval 没生效你还不知道。
-LOW_ALT=${LOW_ALT:-false}
+LOW_ALT=${LOW_ALT:-true}    # 默认低空穿街(4m, 开全局规划绕楼); LOW_ALT=false 切 12m 俯扫
 if [ "$LOW_ALT" = "true" ]; then
   FLIGHT_H=${FLIGHT_H:-4.0}; MAXV=${MAXV:-1.2}; GROUND_FILTER=${GROUND_FILTER:-0.5}
 else

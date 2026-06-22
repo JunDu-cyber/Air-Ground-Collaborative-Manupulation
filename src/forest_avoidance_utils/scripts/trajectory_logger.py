@@ -33,6 +33,12 @@ class TrajectoryLogger(object):
         self.last_cmd_time = None
         self.rows_written = 0
         self.t0 = None
+        # 跟踪误差累计（退出时打一行 RMSE 摘要，不用另跑脚本也能立刻看到）
+        self.err_n = 0
+        self.err_sq3 = 0.0
+        self.err_sqxy = 0.0
+        self.err_absz = 0.0
+        self.err_max3 = 0.0
 
         self.csv_file = open(self.csv_path, "w")
         self.writer = csv.writer(self.csv_file)
@@ -91,6 +97,12 @@ class TrajectoryLogger(object):
                 ez = p.z - dp.z
                 e_xy = math.hypot(ex, ey)
                 e_3d = math.sqrt(ex * ex + ey * ey + ez * ez)
+                self.err_n += 1
+                self.err_sq3 += e_3d * e_3d
+                self.err_sqxy += e_xy * e_xy
+                self.err_absz += abs(ez)
+                if e_3d > self.err_max3:
+                    self.err_max3 = e_3d
                 row += [
                     "%.6f" % dp.x, "%.6f" % dp.y, "%.6f" % dp.z,
                     "%.6f" % dv.x, "%.6f" % dv.y, "%.6f" % dv.z,
@@ -112,6 +124,13 @@ class TrajectoryLogger(object):
             self.csv_file.flush()
             self.csv_file.close()
             rospy.logwarn("[TrajectoryLogger] saved %d rows -> %s", self.rows_written, self.csv_path)
+            if self.err_n > 0:
+                rospy.logwarn(
+                    "[TrajectoryLogger] 跟踪误差: 3D RMSE=%.3fm  XY RMSE=%.3fm  Z MAE=%.3fm  "
+                    "Max=%.3fm (%d 样本)。画图/详细: python3 trajectory_analysis.py",
+                    math.sqrt(self.err_sq3 / self.err_n),
+                    math.sqrt(self.err_sqxy / self.err_n),
+                    self.err_absz / self.err_n, self.err_max3, self.err_n)
         except Exception:
             pass
 
