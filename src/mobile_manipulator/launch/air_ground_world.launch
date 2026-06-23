@@ -46,6 +46,9 @@
        让 gazebo 保持 paused、UGV 控制器先抓住折叠臂姿态，等 PX4 接上后由脚本统一 unpause，
        避免机械臂在控制器就位前垮下去穿模。单 launch 一把梭(默认 true)则 spawn 即 unpause。 -->
   <arg name="unpause_on_spawn" default="true"/>
+  <!-- $(eval) 只能当【整个属性值】用，不能嵌在 args 串里(否则 roslaunch 报 Unknown
+       substitution command [eval ...])。所以先把它整体求值成一个 arg，再在 args 里 $(arg). -->
+  <arg name="unpause_flag" default="$(eval '-unpause' if unpause_on_spawn else '')"/>
 
   <env name="HUSKY_LMS1XX_ENABLED" value="1"/>
   <!-- 同时覆盖 UGV + UAV 的模型路径（对齐 one_key_takeoff.sh 里验证可用的那串）：
@@ -78,7 +81,7 @@
               -J ur5_shoulder_pan_joint 0  -J ur5_shoulder_lift_joint -2.9
               -J ur5_elbow_joint 2.9  -J ur5_wrist_1_joint -1.2
               -J ur5_wrist_2_joint 0.0  -J ur5_wrist_3_joint 0
-              $(eval '-unpause' if unpause_on_spawn else '')"
+              $(arg unpause_flag)"
         output="screen"/>
 
   <rosparam command="load" file="$(find husky_control)/config/control.yaml"/>
