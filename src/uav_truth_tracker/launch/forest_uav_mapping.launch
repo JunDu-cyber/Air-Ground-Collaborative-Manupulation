@@ -33,10 +33,16 @@
         args="0 0 0.06 0 0 0 base_link uav0/velodyne_link"/>
 
   <!-- ===== 位姿 → TF + RViz marker ===== -->
+  <!-- 空地合并到一个世界时可覆盖：UAV 的 TF 子帧(默认 base_link，合并时传 uav_base_link
+       避免和 UGV base_link 撞) + 全局规划目标话题(默认 /move_base_simple/goal，合并时传
+       /uav/goal 避免和 UGV move_base 撞)。默认值保持原行为，单独跑/one_key 不受影响。 -->
+  <arg name="uav_child_frame" default="base_link"/>
+  <arg name="uav_goal_topic"  default="/move_base_simple/goal"/>
   <node if="$(arg use_mavros)" pkg="uav_truth_tracker" type="mavros_tf_bridge.py"
         name="mavros_tf_bridge" output="screen">
     <param name="odom_topic" value="/mavros/local_position/odom"/>
     <param name="frame_id" value="map"/>
+    <param name="child_frame_id" value="$(arg uav_child_frame)"/>
     <param name="publish_marker" value="true"/>
   </node>
   <node unless="$(arg use_mavros)" pkg="uav_truth_tracker"
@@ -255,7 +261,7 @@
         name="global_path_planner" type="global_path_planner.py" output="screen">
     <param name="cloud_topic"     value="/uav0/mapping/points_world"/>
     <param name="odom_topic"      value="$(arg odom_topic)"/>
-    <param name="goal_topic"      value="/move_base_simple/goal"/>
+    <param name="goal_topic"      value="$(arg uav_goal_topic)"/>
     <param name="output_topic"    value="/goal_elevated"/>   <!-- 直发 waypoint_generator，绕过 goal_elevator -->
     <param name="goal_z"          value="$(arg flight_height)"/>
     <param name="obstacle_height" value="1.5"/>     <!-- 高出【本地地面】>1.5m=突起(楼/树);缓坡山丘地面整体抬高、不算障碍→无人机飞越爬坡 -->

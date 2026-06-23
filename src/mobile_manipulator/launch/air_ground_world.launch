@@ -44,10 +44,13 @@
   <arg name="start_ugv_nav"    default="false"/>  <!-- move_base + 地形代价图 -->
 
   <env name="HUSKY_LMS1XX_ENABLED" value="1"/>
+  <!-- 同时覆盖 UGV + UAV 的模型路径（对齐 one_key_takeoff.sh 里验证可用的那串）：
+       $(find mobile_manipulator)/../../models = 仓库根 models（iris_depth_camera / depth_camera 在这里，
+       少了它无人机的深度相机就是个白方块）；再加 uav_truth_tracker/models + PX4 sitl 模型。 -->
   <env name="GAZEBO_MODEL_PATH"
-       value="$(find gazebo_models_worlds_collection)/models:$(find mobile_manipulator)/gazebo_models:$(find mobile_manipulator)/models:$(env HOME)/.gazebo/models:$(optenv GAZEBO_MODEL_PATH)"/>
+       value="$(find mobile_manipulator)/../../models:$(find uav_truth_tracker)/models:$(find gazebo_models_worlds_collection)/models:$(find mobile_manipulator)/gazebo_models:$(find mobile_manipulator)/models:$(env HOME)/PX4-Autopilot/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models:$(env HOME)/.gazebo/gazebo_models:$(env HOME)/.gazebo/models:$(optenv GAZEBO_MODEL_PATH)"/>
   <env name="GAZEBO_RESOURCE_PATH"
-       value="$(find mobile_manipulator)/worlds:$(optenv GAZEBO_RESOURCE_PATH)"/>
+       value="$(find mobile_manipulator)/../../worlds:$(find mobile_manipulator)/worlds:$(optenv GAZEBO_RESOURCE_PATH)"/>
 
   <!-- ============ A) 唯一的一个 Gazebo 世界 ============ -->
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
@@ -112,22 +115,23 @@
   </group>
 
   <!-- ============ D) UAV 飞行栈（Phase3，默认关）============
-       打开后：MAVROS + TF桥(map→uav_base_link) + EGO + 全局规划 + 建图。
-       ★关键: 全局规划器 goal_topic 要 remap 到 $(arg uav_goal_topic)，别用
-       /move_base_simple/goal（那是 UGV move_base 的，会两台一起动）。 -->
+       MAVROS + forest_uav_mapping(自带 TF桥 + EGO + 全局规划 + 点云建图)。
+       forest_uav_mapping 不自起 gazebo/PX4(本 launch 的 A/C 已起)，可直接 include。
+       传 uav_child_frame / uav_goal_topic 做命名空间隔离；flight_height 等显式给(和
+       one_key 一致，绕开 forest 里 eval(arg('low_altitude')) 拿不到覆盖值的老坑)。 -->
   <group if="$(arg start_uav_flight)">
-    <!-- MAVROS（PX4 SITL 的 fcu_url） -->
     <include file="$(find mavros)/launch/px4.launch">
       <arg name="fcu_url" value="udp://:14540@127.0.0.1:14580"/>
     </include>
-    <!-- UAV 位姿 TF：用独立子帧，避免和 UGV base_link 撞 -->
-    <node pkg="uav_truth_tracker" type="mavros_tf_bridge.py" name="mavros_tf_bridge" output="screen">
-      <param name="frame_id"       value="map"/>
-      <param name="child_frame_id" value="$(arg uav_base_frame)"/>
-    </node>
-    <!-- TODO(Phase3): 起 EGO + global_path_planner(goal_topic:=$(arg uav_goal_topic))
-         + 点云建图。可从 forest_uav_mapping.launch 里抽核心节点过来，去掉它自带的
-         empty_world/px4 spawn（世界和 UAV 这里已经起了）。 -->
+    <include file="$(find uav_truth_tracker)/launch/forest_uav_mapping.launch">
+      <arg name="low_altitude"         value="true"/>
+      <arg name="flight_height"        value="4.0"/>
+      <arg name="max_vel"              value="1.2"/>
+      <arg name="ground_filter_margin" value="0.5"/>
+      <arg name="uav_child_frame"      value="$(arg uav_base_frame)"/>  <!-- map→uav_base_link，不撞 UGV -->
+      <arg name="uav_goal_topic"       value="$(arg uav_goal_topic)"/>  <!-- /uav/goal，不撞 UGV move_base -->
+      <arg name="start_rviz"           value="false"/>                  <!-- 合并世界用一个总 RViz -->
+    </include>
   </group>
 
   <!-- ============ E) UGV 导航栈（Phase3，默认关）============ -->
