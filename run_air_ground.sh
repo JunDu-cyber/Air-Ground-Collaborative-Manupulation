@@ -118,7 +118,7 @@ gnome-terminal --tab --title="5_Takeoff" -- bash -c "source /opt/ros/noetic/setu
 if [ "$START_RVIZ" = "true" ]; then
 gnome-terminal --tab --title="6_RViz" -- bash -c "
 source /opt/ros/noetic/setup.bash && source '$WS/devel/setup.bash' && \
-rosrun rviz rviz -d '$WS/src/mobile_manipulator/rviz/air_ground.rviz'; exec bash"
+rviz -d '$WS/src/mobile_manipulator/rviz/air_ground.rviz'; exec bash"
 fi
 
 echo "════════════════════════════════════════════"
