@@ -1,0 +1,82 @@
+# elevation_mapping config for the LIVE air-ground co-sim (airground_egocentric.launch).
+#
+# EGOCENTRIC, fed by the REAL UAV. Same egocentric core as elevation_mapping.yaml
+# (grid in the UGV's drift-free `odom`, centered on the UGV via track_point), but
+# the inputs are the real UAV: the live LiDAR cloud and the real MAVROS pose
+# covariance (propagated to the UGV centre by scripts/uav_pose_cov_publisher.py
+# in cov_source=mavros_odom mode). The variance lever-arm pivots at the UAV body
+# (robot_base_frame_id = uav0/base_link). See the air-ground overhaul plan.
+
+# --- Frames ---
+map_frame_id:                     "odom"               # UGV drift-free egocentric frame
+robot_base_frame_id:              "uav0/base_link"     # variance lever-arm pivots at the real UAV body
+track_point_frame_id:             "base_link"          # map stays centred on the UGV
+track_point_x:                    0.0
+track_point_y:                    0.0
+track_point_z:                    0.0
+robot_pose_with_covariance_topic: "/uav/pose_cov"      # Sigma_{odom->uav} from real MAVROS covariance
+robot_pose_cache_size:            200
+
+# --- Post-processing output ---
+output_topic: "elevation_map_postprocessed"
+postprocessor_pipeline_name: "postprocessor_pipeline"
+
+# --- Input: real UAV LiDAR, FILTERED + altitude-GATED, in the sensor frame ---
+# /uav0/mapping/velodyne_points_sensor (self-filtered, frame uav0/velodyne_link)
+# is altitude-gated by uav_cloud_altitude_gate.py -> velodyne_points_gated: the
+# cloud is only forwarded while the UAV is airborne, so the degenerate on-ground
+# ring/bowl scan never enters the map. (Raw is /uav0/velodyne_points_raw.)
+input_sources:
+  uav:
+    type: pointcloud
+    topic: /uav0/mapping/velodyne_points_gated
+    queue_size: 1
+    publish_on_update: true
+    sensor_processor:
+      type: perfect          # pose-error focus; LiDAR range-noise (laser) is a future refinement
+
+# --- Update / timing ---
+min_update_rate:                  1.0
+time_tolerance:                   1.0
+time_offset_for_point_cloud:      0.0
+fused_map_publishing_rate:        1.0
+scanning_duration:                1.0
+
+enable_visibility_cleanup:        false
+visibility_cleanup_rate:          1.0
+
+# --- Map geometry (UGV-centred, sized to cover the whole scannable world) ---
+# 200 x 200 m (+/-100 m around the static UGV) matches the EGO planning area
+# (forest_uav_mapping map_size 200) -- i.e. everywhere the UAV can actually fly,
+# so the whole map can be built in one flight. NOTE: this turns the map from a
+# local +/-25 m egocentric patch into a UGV-centred GLOBAL map. Cost scales with
+# cell count: at 0.5 m that's 400x400 = 160k cells (~4x the old 50 m/0.25 m map);
+# the fuse() + inpaint/normals/slope postprocessor run over every cell each cycle.
+# If you need finer terrain detail set resolution back toward 0.25 (= 640k cells,
+# heavier); if it lags, coarsen to 0.75-1.0 or drop fused_map_publishing_rate.
+length_in_x:                      200.0
+length_in_y:                      200.0
+position_x:                       0.0
+position_y:                       0.0
+resolution:                       0.5
+surface_normal_positive_axis:     z
+
+# --- Fusion noise model ---
+# max_variance: VarianceClampOperator maps variance ABOVE this to +inf. Keep
+# generous (8.0) so real pose-error variance is never clamped to inf. At ~12 m
+# flight height the attitude lever arm is small (sigma_h ~ range*sigma_att), so
+# typical variance is far below the 130 m mock; max_variance just needs headroom.
+min_variance:                     0.0001
+max_variance:                     8.0
+mahalanobis_distance_threshold:   2.5
+multi_height_noise:               0.001
+
+# Horizontal (GPS) uncertainty floor for the fuse() slope-coupling. The real
+# MAVROS xy covariance is small; keep a modest floor. Raise toward the MAVROS
+# horizontal sigma^2 if slope-coupled height uncertainty should be stronger.
+min_horizontal_variance:          0.04
+max_horizontal_variance:          0.5
+
+# --- Init submap ---
+initialize_elevation_map:         false
+initialization_method:            0

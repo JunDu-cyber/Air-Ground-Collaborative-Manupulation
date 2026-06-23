@@ -2,19 +2,24 @@
 # topics. Publishes the terrain as a colored point cloud plus the map outline.
 grid_map_visualizations:
 
-  # Terrain surface as a point cloud at the in-painted elevation height.
-  # (Subscribes to the postprocessed map, which carries elevation_inpainted.)
+  # Terrain surface as a point cloud at the OBSERVED elevation height. Use the raw
+  # `elevation` layer, NOT `elevation_inpainted`: the OpenCV inpaint extrapolates the
+  # observed terrain into every unobserved (NaN) cell of the 50x50 map, so visualizing
+  # it paints a strange-shaped surface over areas the UAV never scanned. The inpainted
+  # layer is still produced (the slope/normals/costmap pipeline needs a hole-free map),
+  # it just isn't shown here.
   - name: elevation_cloud
     type: point_cloud
     params:
-      layer: elevation_inpainted
+      layer: elevation
 
-  # Surface-normal vectors, handy for eyeballing slope direction in RViz.
+  # Surface-normal vectors, handy for eyeballing slope direction in RViz. Positioned
+  # on the raw `elevation` so vectors only show over OBSERVED cells (NaN elsewhere).
   - name: normals
     type: vectors
     params:
       layer_prefix: normal_vectors_
-      position_layer: elevation_inpainted
+      position_layer: elevation
       scale: 0.3
       line_width: 0.005
       color: 15600153

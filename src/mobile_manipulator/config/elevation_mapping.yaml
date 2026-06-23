@@ -1,23 +1,32 @@
 # elevation_mapping (ANYbotics/ETH) configuration for the air-ground system.
 #
-# A robot-centric elevation grid_map is built from the UAV's aerial point cloud
-# (/uav/points, down-sampled to /uav/points_downsampled). The map is anchored in
-# the GPS-anchored "map" frame and tracks the Husky's base_link, so it scrolls
-# with the robot while accumulating the terrain the UAV has seen.
+# EGOCENTRIC (UGV-centric) terrain map. The grid lives in the UGV's drift-free
+# "odom" frame and tracks the Husky's base_link, so it is centred on the robot
+# and is the natural frame for the UGV's downstream localization / navigation.
+# The terrain is sensed from above by the (stand-in) UAV's aerial point cloud
+# (/uav/points -> /uav/points_downsampled), while the UGV stays static at its
+# initial pose during scanning.
 #
-# Pose source: TF only. robot_pose_with_covariance_topic is intentionally left
-# empty so the node takes the robot pose from the map->odom->base_link TF chain
-# published by the dual-EKF (robot_localization). This avoids needing to convert
-# the EKF's nav_msgs/Odometry into a geometry_msgs/PoseWithCovarianceStamped.
+# UAV pose-error propagation: the UAV's localization error is expressed at the
+# UGV centre as Sigma_{odom->uav} and published on /uav/pose_cov by
+# scripts/uav_pose_cov_publisher.py. Three channels feed the repo's own
+# uncertainty machinery:
+#   * attitude  -> per-point height variance (range-amplified lever arm). Driven
+#                  by robot_base_frame_id = uav_camera_link so the lever arm
+#                  pivots at the UAV, the real sensor platform.
+#   * horiz GPS -> height-on-slope, via min_horizontal_variance below + the
+#                  built-in ElevationMap::fuse() error-ellipse integration.
+#   * altitude  -> direct height variance (small additive patch to
+#                  PerfectSensorProcessor; see patches/).
 
 # --- Frames ---
-map_frame_id:                     "map"          # GPS-anchored global frame (== Gazebo world origin)
-robot_base_frame_id:              "base_link"
-track_point_frame_id:             "base_link"    # map stays centred on the robot
+map_frame_id:                     "odom"               # UGV drift-free egocentric frame
+robot_base_frame_id:              "uav_camera_link"    # variance lever-arm pivots at the UAV (sensor platform)
+track_point_frame_id:             "base_link"          # map stays centred on the UGV
 track_point_x:                    0.0
 track_point_y:                    0.0
 track_point_z:                    0.0
-robot_pose_with_covariance_topic: ""             # empty => pose from TF only
+robot_pose_with_covariance_topic: "/uav/pose_cov"      # Sigma_{odom->uav} from uav_pose_cov_publisher.py
 robot_pose_cache_size:            200
 
 # --- Post-processing output ---
@@ -62,9 +71,17 @@ surface_normal_positive_axis:     z
 
 # --- Fusion noise model ---
 min_variance:                     0.0001
-max_variance:                     0.05
+max_variance:                     8.0
 mahalanobis_distance_threshold:   2.5
 multi_height_noise:               0.001
+
+# UAV horizontal (GPS) position uncertainty channel. add() resets every cell's
+# horizontal variance to this floor, then ElevationMap::fuse() integrates an
+# error ellipse of this size over local height differences -> on a slope the
+# fused height variance grows by ~ (slope * sigma_xy)^2. Keep this equal to the
+# publisher's gps_xy_sigma^2 (default 0.5 m -> 0.25).
+min_horizontal_variance:          0.25
+max_horizontal_variance:          0.5
 
 # --- Init submap (start with an empty map) ---
 initialize_elevation_map:         false

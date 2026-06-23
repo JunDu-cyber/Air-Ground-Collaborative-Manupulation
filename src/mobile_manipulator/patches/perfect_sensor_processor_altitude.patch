@@ -1,0 +1,18 @@
+diff --git a/elevation_mapping/src/sensor_processors/PerfectSensorProcessor.cpp b/elevation_mapping/src/sensor_processors/PerfectSensorProcessor.cpp
+index f9c1c41..2ed0682 100644
+--- a/elevation_mapping/src/sensor_processors/PerfectSensorProcessor.cpp
++++ b/elevation_mapping/src/sensor_processors/PerfectSensorProcessor.cpp
+@@ -76,6 +76,13 @@ bool PerfectSensorProcessor::computeVariances(const PointCloudType::ConstPtr poi
+     heightVariance = rotationJacobian * rotationVariance * rotationJacobian.transpose();
+     heightVariance += sensorJacobian * sensorVariance * sensorJacobian.transpose();
+ 
++    // Air-ground extension (mobile_manipulator): UAV vertical-position (altitude)
++    // uncertainty adds directly to height variance. The map-frame z element of the
++    // robot-pose translation covariance. Horizontal x,y translation is deliberately
++    // routed through min_horizontal_variance + ElevationMap::fuse() (slope coupling)
++    // to avoid double-counting, so only the z (2,2) element is taken here.
++    heightVariance += static_cast<float>(robotPoseCovariance(2, 2));
++
+     // Copy to list.
+     variances(i) = heightVariance;
+   }

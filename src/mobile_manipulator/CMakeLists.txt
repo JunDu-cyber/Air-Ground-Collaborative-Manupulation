@@ -191,6 +191,8 @@ catkin_install_python(PROGRAMS
   scripts/agent.py
   scripts/terrain_costmap_bridge.py
   scripts/pcd_to_occupancy_map.py
+  scripts/uav_pose_cov_publisher.py
+  scripts/uav_cloud_altitude_gate.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

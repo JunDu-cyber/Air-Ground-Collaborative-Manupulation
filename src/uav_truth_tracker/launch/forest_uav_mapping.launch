@@ -24,19 +24,55 @@
   <arg name="forest_world_file" default="$(find mobile_manipulator)/worlds/outdoor_city.world"/>
   <arg name="gazebo_uav_model_name" default="iris_depth_camera"/>
 
+  <!-- UAV frame names. Defaults keep the STANDALONE stack unchanged
+       (parent=map, body=base_link). The air-ground co-sim overrides these to
+       uav_map_frame:=uav0/map_local + uav_body_frame:=uav0/base_link so the UAV
+       body frame does not collide with the UGV's base_link, and the UAV subtree
+       hangs under a spawn-offset uav0/map_local that the co-sim launch mounts
+       under the shared world `map`. -->
+  <arg name="uav_map_frame"  default="map"/>
+  <arg name="uav_body_frame" default="base_link"/>
+
+  <!-- Time base for the UAV TF + cloud feeding elevation_mapping. MAVROS stamps
+       odom with the FCU/PX4 clock, NOT ROS sim time, so in the air-ground co-sim
+       the UAV TF must be re-stamped with sim time to share a time base with the
+       velodyne cloud + UGV EKF (else elevation_mapping cannot resolve
+       odom->uav0/velodyne_link). The co-sim sets uav_tf_use_ros_time:=true and
+       relay_stamp_with_odom:=false so the bridge TF uses sim time and the relay
+       keeps the velodyne's own sim stamp. Defaults keep the standalone stack
+       (FCU-time-consistent) unchanged. -->
+  <arg name="uav_tf_use_ros_time"  default="false"/>
+  <arg name="relay_stamp_with_odom" default="true"/>
+
+  <!-- Frame to re-project RViz 2D Nav Goals into before handing them to EGO (which
+       reads goal x,y numerically in its MAVROS-local frame). Empty = pass-through
+       (standalone: UAV map == world map). The air-ground co-sim sets uav0/map_local
+       so a goal clicked in the shared world map lands where clicked. -->
+  <arg name="goal_target_frame" default=""/>
+
+  <!-- Max age (s) between the LiDAR cloud stamp and the MAVROS odom stamp before the
+       relay drops the frame as 'old_odom'. <=0 DISABLES the check. The cloud is on
+       Gazebo SIM time but MAVROS stamps odom with the FCU/wall clock; in the
+       non-lockstep co-sim those clocks differ by ~6e8 s, so any positive value drops
+       100% of frames (map stops updating mid-flight). The co-sim sets 0.0; the
+       standalone (lockstep) keeps 1.0. -->
+  <arg name="relay_max_odom_age" default="1.0"/>
+
   <!-- ===== TF 静态变换 ===== -->
   <node pkg="tf2_ros" type="static_transform_publisher" name="tf_map_world"
         args="0 0 0 0 0 0 map world"/>
   <node pkg="tf2_ros" type="static_transform_publisher" name="tf_camera"
-        args="0.1 0 0 -1.5707963 0 -1.5707963 base_link camera_link"/>
+        args="0.1 0 0 -1.5707963 0 -1.5707963 $(arg uav_body_frame) camera_link"/>
   <node pkg="tf2_ros" type="static_transform_publisher" name="tf_lidar"
-        args="0 0 0.06 0 0 0 base_link uav0/velodyne_link"/>
+        args="0 0 0.06 0 0 0 $(arg uav_body_frame) uav0/velodyne_link"/>
 
   <!-- ===== 位姿 → TF + RViz marker ===== -->
   <node if="$(arg use_mavros)" pkg="uav_truth_tracker" type="mavros_tf_bridge.py"
         name="mavros_tf_bridge" output="screen">
     <param name="odom_topic" value="/mavros/local_position/odom"/>
-    <param name="frame_id" value="map"/>
+    <param name="frame_id" value="$(arg uav_map_frame)"/>
+    <param name="body_frame" value="$(arg uav_body_frame)"/>
+    <param name="use_ros_time" value="$(arg uav_tf_use_ros_time)"/>
     <param name="publish_marker" value="true"/>
   </node>
   <node unless="$(arg use_mavros)" pkg="uav_truth_tracker"
@@ -102,7 +138,7 @@
     <!-- Use the odometry stamp for the filtered LiDAR cloud before TF projection.
          Gazebo LiDAR and MAVROS odom can be slightly offset in time; stamping
          with the odom used by the relay reduces map smearing while the UAV moves. -->
-    <arg name="stamp_with_odom" value="true"/>
+    <arg name="stamp_with_odom" value="$(arg relay_stamp_with_odom)"/>
     <!-- Drop fast-turn / high-speed scans; they are the main source of smeared maps.
          放宽以"持续记录"：转弯门槛 0.8->1.5 rad/s(只有很快的自旋才丢，普通转弯照记)，
          odom 时效 0.30->1.0s(odom 偶尔抖动/滞后时也不再整片丢帧导致"建着建着不记了")。 -->
@@ -110,7 +146,7 @@
     <arg name="max_angular_velocity" value="0.0"/>
     <arg name="max_odom_angular_velocity" value="1.5"/>
     <arg name="max_imu_age" value="999.0"/>
-    <arg name="max_odom_age" value="1.0"/>
+    <arg name="max_odom_age" value="$(arg relay_max_odom_age)"/>
     <!-- Range filter: this lightweight LiDAR is 16m max. Keep a margin so max-range
          no-hit returns do not become a fake boundary shell in the map. -->
     <arg name="min_range" value="0.35"/>
@@ -282,6 +318,9 @@
   <node unless="$(arg use_global_planner)" pkg="forest_avoidance_utils"
         name="goal_elevator" type="goal_elevator.py" output="screen">
     <param name="goal_z" value="$(arg flight_height)"/>
+    <!-- Re-frame RViz 2D Nav Goals into the UAV's MAVROS-local frame so clicking
+         in the world map works. Empty = pass-through (standalone). -->
+    <param name="target_frame" value="$(arg goal_target_frame)"/>
   </node>
   <node pkg="forest_avoidance_utils" name="trajectory_logger"
         type="trajectory_logger.py" output="screen">

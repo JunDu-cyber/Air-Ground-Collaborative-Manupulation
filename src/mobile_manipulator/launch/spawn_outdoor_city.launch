@@ -1,6 +1,11 @@
 <launch>
   <!-- Outdoor City World - houses, gas station, lamp posts, terrain -->
   <arg name="gui" default="true"/>
+  <!-- start_gazebo:=false reuses this file's UGV bringup (description, spawn,
+       controllers, dual-EKF, navsat, twist_mux) WITHOUT starting a second
+       Gazebo, e.g. in the air-ground co-sim where the UAV side already brought
+       Gazebo up. Default true keeps standalone behavior unchanged. -->
+  <arg name="start_gazebo" default="true"/>
   <env name="HUSKY_LMS1XX_ENABLED" value="1"/>
 
   <!-- Model paths: collection + local Gazebo models + custom -->
@@ -12,7 +17,7 @@
 
   <!-- Launch Gazebo paused so -J joint positions are held until controllers
        start. spawn_model -unpause resumes physics after model is loaded. -->
-  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+  <include if="$(arg start_gazebo)" file="$(find gazebo_ros)/launch/empty_world.launch">
     <arg name="world_name"
          value="$(find mobile_manipulator)/worlds/outdoor_city.world"/>
     <arg name="paused" value="true"/>
@@ -30,7 +35,15 @@
   <!-- Spawn robot in outdoor terrain.
        行车姿态：UR5 折叠收回(肘部 elbow 折回、手腕内收)而非向前伸出，质心更居中、
        不再把重量甩到前/上方，上坡时各轮受力更均匀、抓地更好、不易打滑/翻车。
-       抓取时 master_control 会从这个收起姿态再展开，不影响后续作业。 -->
+       抓取时 master_control 会从这个收起姿态再展开，不影响后续作业。
+
+       spawn_unpause:=false drops the spawn_model -unpause flag so the caller
+       controls the single unpause. The co-sim spawns the UGV while Gazebo is
+       still paused (so the -J arm-stow pose is HELD until controllers start),
+       then unpauses both the UGV and the PX4 UAV together. Default true keeps
+       standalone behavior (spawn paused, immediately unpause). -->
+  <arg name="spawn_unpause" default="true"/>
+  <arg name="spawn_unpause_flag" default="$(eval '-unpause' if spawn_unpause else '')"/>
   <node name="spawn_urdf" pkg="gazebo_ros" type="spawn_model"
         args="-param robot_description -urdf -model husky_ur5
               -x 0.0 -y 0.0 -z 0.5 -Y 0.0
@@ -40,7 +53,7 @@
               -J ur5_wrist_1_joint -1.2
               -J ur5_wrist_2_joint 0.0
               -J ur5_wrist_3_joint 0
-              -unpause"
+              $(arg spawn_unpause_flag)"
         output="screen" />
 
   <!-- Controllers -->

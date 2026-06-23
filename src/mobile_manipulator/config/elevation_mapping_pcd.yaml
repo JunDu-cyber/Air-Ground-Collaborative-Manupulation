@@ -1,0 +1,61 @@
+# elevation_mapping config for the OFFLINE PCD path (pcd_to_elevation.launch).
+#
+# This is the pre-egocentric, robot-centric-in-`map` config. The shared
+# elevation_mapping.yaml was made egocentric (map_frame=odom, UAV pose-error
+# propagation via /uav/pose_cov, robot_base_frame_id=a UAV sensor frame), which
+# only makes sense for an ONLINE per-sensor cloud. A pre-accumulated PCD has no
+# per-sensor range / live UAV pose, so it uses this simpler config: the map is
+# anchored in `map`, the pose comes from the static map->base_link TF that
+# pcd_to_elevation.launch publishes, and there is no pose-covariance channel.
+
+# --- Frames ---
+map_frame_id:                     "map"
+robot_base_frame_id:              "base_link"
+track_point_frame_id:             "base_link"
+track_point_x:                    0.0
+track_point_y:                    0.0
+track_point_z:                    0.0
+robot_pose_with_covariance_topic: ""             # pose from TF only
+robot_pose_cache_size:            200
+
+# --- Post-processing output ---
+output_topic: "elevation_map_postprocessed"
+postprocessor_pipeline_name: "postprocessor_pipeline"
+
+# --- Input: UAV aerial point cloud (PCD replay -> voxel) ---
+input_sources:
+  uav:
+    type: pointcloud
+    topic: /uav/points_downsampled
+    queue_size: 1
+    publish_on_update: true
+    sensor_processor:
+      type: perfect
+
+# --- Update / timing ---
+min_update_rate:                  1.0
+time_tolerance:                   1.0
+time_offset_for_point_cloud:      0.0
+fused_map_publishing_rate:        1.0
+scanning_duration:                1.0
+
+enable_visibility_cleanup:        false
+visibility_cleanup_rate:          1.0
+
+# --- Map geometry ---
+length_in_x:                      50.0
+length_in_y:                      50.0
+position_x:                       0.0
+position_y:                       0.0
+resolution:                       0.25
+surface_normal_positive_axis:     z
+
+# --- Fusion noise model (noise-free perfect sensor: tight variances) ---
+min_variance:                     0.0001
+max_variance:                     0.05
+mahalanobis_distance_threshold:   2.5
+multi_height_noise:               0.001
+
+# --- Init submap ---
+initialize_elevation_map:         false
+initialization_method:            0

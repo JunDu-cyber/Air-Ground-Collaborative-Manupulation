@@ -49,11 +49,14 @@
     </rosparam>
   </node>
 
-  <!-- 3. 高程建图（仓库原有 elevation_mapping） -->
+  <!-- 3. 高程建图（仓库原有 elevation_mapping）。
+       用专用的 PCD（非以车为中心）配置：共享的 elevation_mapping.yaml 现在是
+       在线/以车为中心(egocentric)的，会让离线 PCD 路径失效(没有 odom 帧、没有
+       /uav/pose_cov、没有 UAV 传感器帧)。 -->
   <node pkg="elevation_mapping" type="elevation_mapping"
         name="elevation_mapping" output="screen">
     <rosparam command="load"
-        file="$(find mobile_manipulator)/config/elevation_mapping.yaml"/>
+        file="$(find mobile_manipulator)/config/elevation_mapping_pcd.yaml"/>
     <rosparam command="load"
         file="$(find mobile_manipulator)/config/elevation_postprocessor.yaml"/>
   </node>

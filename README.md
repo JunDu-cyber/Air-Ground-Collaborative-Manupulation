@@ -109,7 +109,10 @@ pip install openai flask pydantic numpy pillow
 ```bash
 cd ~/Air-Ground-Collaborative-Manupulation
 vcs import src < src/elevation_mapping.repos
+# Re-apply our patches to the vendored deps (lost on every re-import):
+cd src/elevation_mapping && git apply ../mobile_manipulator/patches/perfect_sensor_processor_altitude.patch && cd ../..
 ```
+> See `src/mobile_manipulator/patches/README.md` for what the patches do.
 4. **(可选) 安装 UAV 仿真环境**
 ```bash
 bash setup_uav.sh

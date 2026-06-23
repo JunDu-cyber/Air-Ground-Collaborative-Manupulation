@@ -25,6 +25,17 @@ class MavrosTFBridge:
         )
         self.path = Path()
         self.frame_id = rospy.get_param("~frame_id", "map")
+        # Child (UAV body) frame. Default "base_link" keeps the standalone UAV
+        # stack unchanged; the air-ground co-sim sets "uav0/base_link" so the
+        # UAV body frame does not collide with the UGV's base_link.
+        self.body_frame = rospy.get_param("~body_frame", "base_link")
+        # MAVROS stamps odom with the FCU/PX4 clock, NOT ROS sim time. In the
+        # air-ground co-sim the UAV TF must share the Gazebo SIM time base with
+        # the velodyne cloud + UGV EKF, else elevation_mapping cannot resolve
+        # odom->uav0/velodyne_link. use_ros_time:=true stamps the TF (and marker)
+        # with rospy.Time.now() (= sim time) instead of the FCU stamp. Default
+        # false keeps the standalone stack (FCU-time-consistent) unchanged.
+        self.use_ros_time = rospy.get_param("~use_ros_time", False)
         self.max_path_points = rospy.get_param("~max_path_points", 2000)
         self.publish_marker = rospy.get_param("~publish_marker", True)
         self.odom_topic = rospy.get_param("~odom_topic", "/mavros/local_position/odom")
@@ -57,12 +68,16 @@ class MavrosTFBridge:
 
     def publish_pose(self, msg: PoseStamped):
         frame_id = self.frame_id
+        # In the air-ground co-sim use_ros_time:=true re-stamps with sim time so
+        # the UAV TF shares the Gazebo time base with the velodyne cloud + UGV
+        # EKF; otherwise keep the FCU stamp (standalone stack unchanged).
+        stamp = rospy.Time.now() if self.use_ros_time else msg.header.stamp
 
         # TF
         t = TransformStamped()
-        t.header.stamp = msg.header.stamp
+        t.header.stamp = stamp
         t.header.frame_id = frame_id
-        t.child_frame_id = "base_link"
+        t.child_frame_id = self.body_frame
         t.transform.translation.x = msg.pose.position.x
         t.transform.translation.y = msg.pose.position.y
         t.transform.translation.z = msg.pose.position.z
@@ -70,25 +85,25 @@ class MavrosTFBridge:
         self.br.sendTransform(t)
 
         if self.publish_marker:
-            self.marker_pub.publish(self.make_mesh_marker(msg, frame_id))
-            self.marker_pub.publish(self.make_delete_marker(1, msg.header.stamp, frame_id))
-            self.marker_pub.publish(self.make_delete_marker(2, msg.header.stamp, frame_id))
+            self.marker_pub.publish(self.make_mesh_marker(msg, frame_id, stamp))
+            self.marker_pub.publish(self.make_delete_marker(1, stamp, frame_id))
+            self.marker_pub.publish(self.make_delete_marker(2, stamp, frame_id))
 
             # Flight trace for RViz.
             pose = PoseStamped()
-            pose.header.stamp = msg.header.stamp
+            pose.header.stamp = stamp
             pose.header.frame_id = frame_id
             pose.pose = msg.pose
-            self.path.header.stamp = msg.header.stamp
+            self.path.header.stamp = stamp
             self.path.header.frame_id = frame_id
             self.path.poses.append(pose)
             if len(self.path.poses) > self.max_path_points:
                 self.path.poses = self.path.poses[-self.max_path_points:]
             self.path_pub.publish(self.path)
 
-    def make_mesh_marker(self, msg: PoseStamped, frame_id: str):
+    def make_mesh_marker(self, msg: PoseStamped, frame_id: str, stamp: rospy.Time):
         marker = Marker()
-        marker.header.stamp = msg.header.stamp
+        marker.header.stamp = stamp
         marker.header.frame_id = frame_id
         marker.ns = "drone"
         marker.id = 0

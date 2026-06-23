@@ -17,6 +17,15 @@
   <arg name="uav_z" default="130.0"/>
   <arg name="rviz"  default="true"/>
 
+  <!-- Injected UAV localization sigmas (egocentric pose-error propagation).
+       The sim UAV is a perfect static model, so these stand in for the error a
+       real GPS+IMU-localized UAV would have. gps_xy_sigma must match
+       min_horizontal_variance in elevation_mapping.yaml (= gps_xy_sigma^2). -->
+  <arg name="gps_xy_sigma"     default="0.5"/>
+  <arg name="alt_sigma"        default="0.3"/>
+  <arg name="att_rp_sigma_deg" default="0.5"/>
+  <arg name="att_yaw_sigma_deg" default="1.0"/>
+
   <!-- 1. Spawn the static downward depth-camera "UAV". Pitched +90 deg so the
           camera's +X optical axis points straight down at the terrain. -->
   <node name="spawn_uav_mapper" pkg="gazebo_ros" type="spawn_model"
@@ -50,7 +59,22 @@
     </rosparam>
   </node>
 
-  <!-- 4. Elevation mapping node. -->
+  <!-- 4a. Publish the UAV pose-with-covariance at the UGV centre (odom frame).
+           Feeds elevation_mapping's robot_pose_with_covariance_topic so the
+           UAV localization error is propagated into the egocentric map. -->
+  <node pkg="mobile_manipulator" type="uav_pose_cov_publisher.py"
+        name="uav_pose_cov_publisher" output="screen">
+    <param name="map_frame"        value="odom"/>
+    <param name="base_frame"       value="uav_camera_link"/>
+    <param name="world_frame"      value="map"/>
+    <param name="rate"             value="10.0"/>
+    <param name="gps_xy_sigma"     value="$(arg gps_xy_sigma)"/>
+    <param name="alt_sigma"        value="$(arg alt_sigma)"/>
+    <param name="att_rp_sigma_deg" value="$(arg att_rp_sigma_deg)"/>
+    <param name="att_yaw_sigma_deg" value="$(arg att_yaw_sigma_deg)"/>
+  </node>
+
+  <!-- 4b. Elevation mapping node. -->
   <node pkg="elevation_mapping" type="elevation_mapping" name="elevation_mapping" output="screen">
     <rosparam command="load" file="$(find mobile_manipulator)/config/elevation_mapping.yaml"/>
     <rosparam command="load" file="$(find mobile_manipulator)/config/elevation_postprocessor.yaml"/>

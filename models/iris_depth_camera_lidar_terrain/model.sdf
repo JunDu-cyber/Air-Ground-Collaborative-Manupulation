@@ -1,0 +1,115 @@
+<?xml version="1.0" ?>
+<!-- Co-sim TERRAIN-mapping UAV: same as iris_depth_camera_lidar_mapping_light but
+     the velodyne vertical FOV is widened DOWNWARD to -90deg (straight down) so it
+     can see the GROUND directly below from altitude. The stock +/-30deg FOV cannot
+     reach flat ground above ~8 m (a beam needs >=48.6deg down-angle to hit ground
+     within the 16 m range), so flying at 12 m left holes over open areas. With the
+     nadir beams the UAV maps a continuous ground disc (radius ~sqrt(16^2-h^2))
+     straight below it -> no nadir hole. samples 16->32 keeps the upper (obstacle)
+     ring density while adding the downward (terrain) rings. Range unchanged: at
+     12 m the nadir beam hits ground at 12 m < 16 m. Standalone forest keeps the
+     original ..._mapping_light SDF (horizontal FOV for tree avoidance). -->
+<sdf version="1.5">
+  <model name="iris_depth_camera_lidar_terrain">
+    <include>
+      <uri>model://iris</uri>
+    </include>
+
+    <include>
+      <uri>model://depth_camera</uri>
+      <pose>0.1 0 0 0 0 0</pose>
+    </include>
+    <joint name="depth_camera_joint" type="revolute">
+      <child>depth_camera::link</child>
+      <parent>iris::base_link</parent>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <upper>0</upper>
+          <lower>0</lower>
+        </limit>
+      </axis>
+    </joint>
+
+    <link name="velodyne_link">
+      <pose>0 0 0.06 0 0 0</pose>
+      <inertial>
+        <mass>0.10</mass>
+        <inertia>
+          <ixx>0.00008</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.00008</iyy>
+          <iyz>0</iyz>
+          <izz>0.00008</izz>
+        </inertia>
+      </inertial>
+      <visual name="vlp32_visual">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.025</radius>
+            <length>0.030</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.05 0.05 0.05 1</ambient>
+          <diffuse>0.05 0.05 0.05 1</diffuse>
+        </material>
+      </visual>
+      <sensor name="velodyne_vlp16_mapping" type="ray">
+        <pose>0 0 0 0 0 0</pose>
+        <visualize>false</visualize>
+        <update_rate>3</update_rate>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>360</samples>
+              <resolution>1</resolution>
+              <min_angle>-3.14159265359</min_angle>
+              <max_angle>3.14159265359</max_angle>
+            </horizontal>
+            <vertical>
+              <!-- 32 beams over [-90deg, +30deg]: lower half scans the ground
+                   straight below (terrain), upper half keeps obstacle sensing. -->
+              <samples>32</samples>
+              <resolution>1</resolution>
+              <min_angle>-1.5707963268</min_angle>
+              <max_angle>0.523598776</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>0.3</min>
+            <max>16.0</max>
+            <resolution>0.01</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.0</stddev>
+          </noise>
+        </ray>
+        <plugin name="uav0_vlp16_mapping_block_laser" filename="libgazebo_ros_block_laser.so">
+          <robotNamespace>/uav0</robotNamespace>
+          <alwaysOn>true</alwaysOn>
+          <updateRate>3</updateRate>
+          <topicName>/uav0/velodyne_points_raw</topicName>
+          <frameName>uav0/velodyne_link</frameName>
+          <gaussianNoise>0.0</gaussianNoise>
+        </plugin>
+      </sensor>
+    </link>
+
+    <joint name="velodyne_joint" type="revolute">
+      <child>velodyne_link</child>
+      <parent>iris::base_link</parent>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <upper>0</upper>
+          <lower>0</lower>
+        </limit>
+      </axis>
+    </joint>
+  </model>
+</sdf>
