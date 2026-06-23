@@ -25,6 +25,8 @@ class MavrosTFBridge:
         )
         self.path = Path()
         self.frame_id = rospy.get_param("~frame_id", "map")
+        # 子帧可配：空地合并到一个世界时给 UAV 用 uav_base_link，避免和 UGV 的 base_link 撞。
+        self.child_frame_id = rospy.get_param("~child_frame_id", "base_link")
         self.max_path_points = rospy.get_param("~max_path_points", 2000)
         self.publish_marker = rospy.get_param("~publish_marker", True)
         self.odom_topic = rospy.get_param("~odom_topic", "/mavros/local_position/odom")
@@ -62,7 +64,7 @@ class MavrosTFBridge:
         t = TransformStamped()
         t.header.stamp = msg.header.stamp
         t.header.frame_id = frame_id
-        t.child_frame_id = "base_link"
+        t.child_frame_id = self.child_frame_id
         t.transform.translation.x = msg.pose.position.x
         t.transform.translation.y = msg.pose.position.y
         t.transform.translation.z = msg.pose.position.z

@@ -1,0 +1,142 @@
+<launch>
+  <!-- ======================================================================
+       空地协同 — UAV + UGV 同一个 Gazebo 世界（骨架 / Phase 1-2）
+
+       目标分阶段（见 docs，明天从 Phase1+2 啃起）：
+         Phase1  一个 gazebo 同时 spawn 两台，物理在跑、不打架   ← 本骨架默认就做这个
+         Phase2  解 TF/话题冲突：UAV 用 uav_base_link + /uav/goal，UGV 保留 base_link
+         Phase3  两套导航栈并行（start_uav_flight / start_ugv_nav 打开）
+         Phase4  在线点云直传（UAV→UGV 代价图实时更新）
+         Phase5  任务级协同
+
+       起动顺序（必须先 UGV 后 UAV，PX4 要世界先就绪）：
+         gazebo(world) → UGV(spawn+控制器+双EKF) → UAV(px4_spawn_existing)
+
+       用法：
+         roslaunch mobile_manipulator air_ground_world.launch                 # 只验证两台共存
+         roslaunch mobile_manipulator air_ground_world.launch start_ugv_nav:=true start_uav_flight:=true
+
+       注意：本骨架在 air-ground-merged-world 分支，不动现有两套独立 launch。
+       ====================================================================== -->
+
+  <!-- ===== 总参数 ===== -->
+  <arg name="gui"   default="true"/>
+  <!-- outdoor_city.world 已是 250Hz/step0.004（PX4 锁步兼容）+ 含地形heightmap+楼 -->
+  <arg name="world" default="$(find mobile_manipulator)/worlds/outdoor_city.world"/>
+
+  <!-- UGV 出生点 -->
+  <arg name="ugv_x" default="0.0"/>
+  <arg name="ugv_y" default="0.0"/>
+  <arg name="ugv_Y" default="0.0"/>
+  <!-- UAV 出生点（和 UGV 错开，沿用现有的 (0,-18)） -->
+  <arg name="uav_x" default="0.0"/>
+  <arg name="uav_y" default="-18.0"/>
+  <arg name="uav_z" default="1.5"/>
+  <arg name="uav_Y" default="1.5707963"/>
+
+  <!-- ★Phase2 命名空间隔离的两个关键开关：UAV 独立 base 帧 + 独立目标话题 -->
+  <arg name="uav_base_frame" default="uav_base_link"/>   <!-- UGV 仍用 base_link -->
+  <arg name="uav_goal_topic" default="/uav/goal"/>       <!-- UGV 仍用 /move_base_simple/goal -->
+
+  <!-- Phase3 开关（骨架默认关，先只验证两台共存） -->
+  <arg name="spawn_uav"        default="true"/>   <!-- 是否把 UAV(PX4+iris) 注入世界 -->
+  <arg name="start_uav_flight" default="false"/>  <!-- MAVROS + TF桥 + EGO + 建图 -->
+  <arg name="start_ugv_nav"    default="false"/>  <!-- move_base + 地形代价图 -->
+
+  <env name="HUSKY_LMS1XX_ENABLED" value="1"/>
+  <env name="GAZEBO_MODEL_PATH"
+       value="$(find gazebo_models_worlds_collection)/models:$(find mobile_manipulator)/gazebo_models:$(find mobile_manipulator)/models:$(env HOME)/.gazebo/models:$(optenv GAZEBO_MODEL_PATH)"/>
+  <env name="GAZEBO_RESOURCE_PATH"
+       value="$(find mobile_manipulator)/worlds:$(optenv GAZEBO_RESOURCE_PATH)"/>
+
+  <!-- ============ A) 唯一的一个 Gazebo 世界 ============ -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name"   value="$(arg world)"/>
+    <arg name="paused"       value="true"/>     <!-- spawn 后 -unpause -->
+    <arg name="use_sim_time" value="true"/>
+    <arg name="gui"          value="$(arg gui)"/>
+  </include>
+  <!-- TODO(Phase1 调试): 重 world 下 gzserver 可能跑不到 250Hz，PX4 锁步会等超时。
+       若 PX4 起不来，参考 one_key_takeoff.sh 里 gazebo 起来后 rosservice call
+       /gazebo/set_physics_properties 把 max_update_rate 显式压到 250 的做法。 -->
+
+  <!-- ============ B) UGV：husky_ur5 + 控制器 + 双EKF + twist_mux（沿用 spawn_outdoor_city） ============ -->
+  <param name="robot_description"
+         command="$(find xacro)/xacro '$(find mobile_manipulator)/urdf/husky_ur5.urdf.xacro'"/>
+  <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher"/>
+
+  <node name="spawn_urdf" pkg="gazebo_ros" type="spawn_model"
+        args="-param robot_description -urdf -model husky_ur5
+              -x $(arg ugv_x) -y $(arg ugv_y) -z 0.5 -Y $(arg ugv_Y)
+              -J ur5_shoulder_pan_joint 0  -J ur5_shoulder_lift_joint -2.9
+              -J ur5_elbow_joint 2.9  -J ur5_wrist_1_joint -1.2
+              -J ur5_wrist_2_joint 0.0  -J ur5_wrist_3_joint 0  -unpause"
+        output="screen"/>
+
+  <rosparam command="load" file="$(find husky_control)/config/control.yaml"/>
+  <rosparam command="load" file="$(find mobile_manipulator)/config/ur5_controllers.yaml"/>
+  <param name="husky_velocity_controller/linear/x/max_velocity" value="1.5"/>
+  <node name="base_controller_spawner" pkg="controller_manager" type="spawner"
+        args="husky_joint_publisher husky_velocity_controller" output="screen"/>
+  <rosparam param="wheel_radius_multiplier" ns="husky_velocity_controller" subst_value="true">$(optenv HUSKY_WHEEL_MULTIPLIER 1.0)</rosparam>
+  <node name="arm_controller_spawner" pkg="controller_manager" type="spawner"
+        args="ur5_arm_controller gripper_controller" output="screen"/>
+
+  <node pkg="robot_localization" type="ekf_localization_node" name="ekf_localization">
+    <rosparam command="load" file="$(find husky_control)/config/localization.yaml"/>
+    <param name="two_d_mode" value="false"/>
+  </node>
+  <node pkg="robot_localization" type="ekf_localization_node" name="ekf_global">
+    <rosparam command="load" file="$(find mobile_manipulator)/config/ekf_global.yaml"/>
+    <remap from="odometry/filtered" to="odometry/filtered_map"/>
+  </node>
+  <node pkg="robot_localization" type="navsat_transform_node" name="navsat_transform" output="screen">
+    <rosparam command="load" file="$(find mobile_manipulator)/config/navsat_transform.yaml"/>
+    <remap from="imu/data"          to="imu/data"/>
+    <remap from="gps/fix"           to="navsat/fix"/>
+    <remap from="odometry/filtered" to="odometry/filtered_map"/>
+  </node>
+  <node pkg="twist_mux" type="twist_mux" name="twist_mux">
+    <rosparam command="load" file="$(find husky_control)/config/twist_mux.yaml"/>
+    <remap from="cmd_vel_out" to="husky_velocity_controller/cmd_vel"/>
+  </node>
+
+  <!-- ============ C) UAV：把 iris + PX4 SITL 注入同一个 gazebo ============ -->
+  <group if="$(arg spawn_uav)">
+    <include file="$(find uav_truth_tracker)/launch/px4_spawn_existing_gazebo.launch">
+      <arg name="x" value="$(arg uav_x)"/>
+      <arg name="y" value="$(arg uav_y)"/>
+      <arg name="z" value="$(arg uav_z)"/>
+      <arg name="Y" value="$(arg uav_Y)"/>
+    </include>
+  </group>
+
+  <!-- ============ D) UAV 飞行栈（Phase3，默认关）============
+       打开后：MAVROS + TF桥(map→uav_base_link) + EGO + 全局规划 + 建图。
+       ★关键: 全局规划器 goal_topic 要 remap 到 $(arg uav_goal_topic)，别用
+       /move_base_simple/goal（那是 UGV move_base 的，会两台一起动）。 -->
+  <group if="$(arg start_uav_flight)">
+    <!-- MAVROS（PX4 SITL 的 fcu_url） -->
+    <include file="$(find mavros)/launch/px4.launch">
+      <arg name="fcu_url" value="udp://:14540@127.0.0.1:14580"/>
+    </include>
+    <!-- UAV 位姿 TF：用独立子帧，避免和 UGV base_link 撞 -->
+    <node pkg="uav_truth_tracker" type="mavros_tf_bridge.py" name="mavros_tf_bridge" output="screen">
+      <param name="frame_id"       value="map"/>
+      <param name="child_frame_id" value="$(arg uav_base_frame)"/>
+    </node>
+    <!-- TODO(Phase3): 起 EGO + global_path_planner(goal_topic:=$(arg uav_goal_topic))
+         + 点云建图。可从 forest_uav_mapping.launch 里抽核心节点过来，去掉它自带的
+         empty_world/px4 spawn（世界和 UAV 这里已经起了）。 -->
+  </group>
+
+  <!-- ============ E) UGV 导航栈（Phase3，默认关）============ -->
+  <group if="$(arg start_ugv_nav)">
+    <include file="$(find mobile_manipulator)/launch/ugv_terrain_nav.launch">
+      <arg name="localization"   value="false"/>   <!-- 复用本 launch 的双EKF -->
+      <arg name="use_sample_map" value="true"/>     <!-- Phase4 改成订阅在线点云 -->
+      <arg name="rviz"           value="false"/>    <!-- 合并世界用一个总 RViz -->
+    </include>
+  </group>
+
+</launch>
