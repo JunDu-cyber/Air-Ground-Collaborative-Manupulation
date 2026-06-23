@@ -37,6 +37,11 @@ UAV_X=${UAV_X:-0.0}; UAV_Y=${UAV_Y:--18.0}; UAV_Z=${UAV_Z:-1.5}; UAV_YAW=${UAV_Y
 # 命名空间隔离
 UAV_BASE_FRAME=${UAV_BASE_FRAME:-uav_base_link}
 UAV_GOAL_TOPIC=${UAV_GOAL_TOPIC:-/uav/goal}
+# ★坐标统一：三处 GPS 锚点必须同一个 datum，否则 UAV(PX4默认苏黎世47.4) 和 UGV(49.9)
+#   差 ~280km、align 报 MISALIGNED、UAV 建的图落不到 UGV 的 map 系里。
+#   ① UGV navsat datum(config 里固定49.9,8.9) ② UGV Husky hector GPS(GAZEBO_WORLD_LAT/LON)
+#   ③ UAV PX4 home(PX4_HOME_LAT/LON) ←之前漏了, 这里补上, 三者都钉到 DATUM。
+DATUM_LAT=${DATUM_LAT:-49.9}; DATUM_LON=${DATUM_LON:-8.9}; DATUM_ALT=${DATUM_ALT:-0}
 
 # 低空/高空（同 one_key）
 LOW_ALT=${LOW_ALT:-true}
@@ -58,6 +63,7 @@ gnome-terminal --tab --title="1_Gazebo+UGV" -- bash -c "
 source /opt/ros/noetic/setup.bash && source '$WS/devel/setup.bash' && source /usr/share/gazebo/setup.sh && \
 export GAZEBO_PLUGIN_PATH=\"$GPLUGIN:\$GAZEBO_PLUGIN_PATH\" && export GAZEBO_MODEL_DATABASE_URI='' && \
 export PX4_SIM_SPEED_FACTOR='$PX4_SIM_SPEED_FACTOR' && \
+export GAZEBO_WORLD_LAT='$DATUM_LAT' && export GAZEBO_WORLD_LON='$DATUM_LON' && \
 roslaunch mobile_manipulator air_ground_world.launch spawn_uav:=false unpause_on_spawn:=false gui:='$GUI' world:='$WORLD' 2>&1 | grep -v parser.cc; exec bash"
 echo "⏳ Gazebo+UGV 加载 ${GAZEBO_LOAD_WAIT}s（机械臂在 paused 下被控制器抓住折叠）..."
 sleep "$GAZEBO_LOAD_WAIT"
@@ -75,6 +81,7 @@ source /opt/ros/noetic/setup.bash && source '$WS/devel/setup.bash' && cd '$PX4_D
 export GAZEBO_MODEL_DATABASE_URI='' && source Tools/simulation/gazebo-classic/setup_gazebo.bash \$(pwd) \$(pwd)/build/px4_sitl_default && \
 export ROS_PACKAGE_PATH=\$ROS_PACKAGE_PATH:\$(pwd):\$(pwd)/Tools/simulation/gazebo-classic/sitl_gazebo-classic && \
 export PX4_SIM_SPEED_FACTOR='$PX4_SIM_SPEED_FACTOR' && \
+export PX4_HOME_LAT='$DATUM_LAT' && export PX4_HOME_LON='$DATUM_LON' && export PX4_HOME_ALT='$DATUM_ALT' && \
 roslaunch uav_truth_tracker px4_spawn_existing_gazebo.launch vehicle:=iris_depth_camera sdf:='$LIDAR_SDF' x:='$UAV_X' y:='$UAV_Y' z:='$UAV_Z' Y:='$UAV_YAW' sim_speed_factor:='$PX4_SIM_SPEED_FACTOR' 2>&1 | grep -v parser.cc; exec bash"
 echo "⏳ PX4 启动 + 与 Gazebo 插件握手 ${PX4_WAIT}s..."
 sleep "$PX4_WAIT"
