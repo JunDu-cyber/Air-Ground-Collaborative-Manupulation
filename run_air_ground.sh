@@ -95,24 +95,38 @@ gnome-terminal --tab --title="2_MAVROS" -- bash -c "source /opt/ros/noetic/setup
 echo "⏳ MAVROS 连飞控 ${MAVROS_WAIT}s..."; sleep "$MAVROS_WAIT"
 
 # ── 终端3: UAV 飞行栈(EGO + 全局规划绕楼 + 建图; 命名空间隔离) ──
+#    start_rviz:=false —— 不用 forest 那个(只显示 UGV 底盘 marker、没机械臂)；
+#    改用下面终端6 的合并版 RViz(带臂 UGV RobotModel + UAV + 两个目标工具)。
 gnome-terminal --tab --title="3_UAV_Stack" -- bash -c "
 source /opt/ros/noetic/setup.bash && source '$WS/devel/setup.bash' && \
-roslaunch uav_truth_tracker forest_uav_mapping.launch use_mavros:=true start_rviz:='$START_RVIZ' \
+roslaunch uav_truth_tracker forest_uav_mapping.launch use_mavros:=true start_rviz:=false \
   low_altitude:='$LOW_ALT' flight_height:='$FLIGHT_H' max_vel:='$MAXV' ground_filter_margin:='$GROUND_FILTER' \
   uav_child_frame:='$UAV_BASE_FRAME' uav_goal_topic:='$UAV_GOAL_TOPIC'; exec bash"
 echo "⏳ UAV 节点起 ${ROS_WAIT}s..."; sleep "$ROS_WAIT"
 
-# ── 终端4: UGV 导航(复用终端1的双EKF; 先用自带样例地形图) ──
+# ── 终端4: UGV 导航(复用终端1的双EKF; 样例地形图; align 阈值放大不误刷) ──
+#    align_warn_threshold:=500 —— 两台相距几十~上百米是正常物理间距, 只有 datum
+#    真不一致(~km级)才该报警。(坐标统一靠脚本开头三处 GPS 锚点都钉到 DATUM。)
 gnome-terminal --tab --title="4_UGV_Nav" -- bash -c "
 source /opt/ros/noetic/setup.bash && source '$WS/devel/setup.bash' && \
-roslaunch mobile_manipulator ugv_terrain_nav.launch localization:=false use_sample_map:=true rviz:=false; exec bash"
+roslaunch mobile_manipulator ugv_terrain_nav.launch localization:=false use_sample_map:=true rviz:=false align_warn_threshold:=500; exec bash"
 
 # ── 终端5: 起飞 bridge(MAVROS OFFBOARD 解锁) ──
 gnome-terminal --tab --title="5_Takeoff" -- bash -c "source /opt/ros/noetic/setup.bash && source '$WS/devel/setup.bash' && python3 -u '$WS/px4_bridge.py' _require_depth_before_takeoff:=false; exec bash"
 
+# ── 终端6: 合并版 RViz(带臂 UGV + UAV mesh/点云/路径 + 两个 2D Nav Goal) ──
+if [ "$START_RVIZ" = "true" ]; then
+gnome-terminal --tab --title="6_RViz" -- bash -c "
+source /opt/ros/noetic/setup.bash && source '$WS/devel/setup.bash' && \
+rosrun rviz rviz -d '$WS/src/mobile_manipulator/rviz/air_ground.rviz'; exec bash"
+fi
+
 echo "════════════════════════════════════════════"
-echo "✅ 空地协同分终端启动完毕（终端 1 / 1.5 / 2 / 3 / 4 / 5）"
-echo "  • UAV：RViz 点 $UAV_GOAL_TOPIC 飞；UGV：点 /move_base_simple/goal 走"
-echo "  • TF 应为：map→$UAV_BASE_FRAME (UAV) 和 map→odom→base_link (UGV)，无双 base_link"
-echo "  • 卡顿建议：先只看 UAV 调通，UGV 导航(终端4)可后开/不开"
+echo "✅ 空地协同分终端启动完毕（终端 1 / 1.5 / 2 / 3 / 4 / 5 / 6_RViz）"
+echo "  • RViz 工具栏有【两个 2D Nav Goal】: 第1个发 UGV(/move_base_simple/goal),"
+echo "    第2个发 UAV($UAV_GOAL_TOPIC)。悬停看话题区分。"
+echo "  • UGV 应显示带 UR5 机械臂的完整模型(RobotModel), 不是光底盘。"
+echo "  • 坐标统一自检: rostopic echo -n1 /mavros/global_position/global 的 lat 应≈$DATUM_LAT(不是47.4);"
+echo "    align 偏差应从~280000m 掉到几十米(真实间距)。"
+echo "  • TF 应为 map→$UAV_BASE_FRAME(UAV) 和 map→odom→base_link(UGV), 无双 base_link。"
 echo "════════════════════════════════════════════"

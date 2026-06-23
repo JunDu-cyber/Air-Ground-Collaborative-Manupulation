@@ -131,13 +131,17 @@
     <param name="conservative_reset_dist"   value="3.0"/>
   </node>
 
-  <!-- ── 坐标对齐校验（UAV 关着时 NO_FIX 属正常）── -->
+  <!-- ── 坐标对齐校验（UAV 关着时 NO_FIX 属正常）──
+       align_warn_threshold：偏差超过此值才喊 MISALIGNED。单独跑 UGV 时 2m 合理；
+       空地合并(UAV+UGV 在一个世界、相距几十~上百米)时 run_air_ground.sh 传大值(如500)，
+       这样只有真正的 datum 不一致(~km级)才报警，正常的物理间距不再误刷。 -->
+  <arg name="align_warn_threshold" default="2.0"/>
   <node pkg="uav_truth_tracker" type="coordinate_align_checker.py"
         name="coordinate_align_checker" output="screen">
     <param name="uav_gps_topic" value="/mavros/global_position/global"/>
     <param name="ugv_gps_topic" value="$(arg ugv_gps_topic)"/>
     <param name="align_threshold" value="0.5"/>
-    <param name="warn_threshold"  value="2.0"/>
+    <param name="warn_threshold"  value="$(arg align_warn_threshold)"/>
     <param name="baseline_offset" value="0.0"/>
   </node>
 
