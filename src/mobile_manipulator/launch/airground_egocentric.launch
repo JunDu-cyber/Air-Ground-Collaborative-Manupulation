@@ -19,6 +19,13 @@
        ==================================================================== -->
 
   <arg name="rviz" default="true"/>
+  <!-- egocentric:=true ties the UAV map to the UGV's DLIO `odom` via a
+       capture-once-then-latch anchor (airground_anchor_latch.py) instead of the
+       static map->uav0/map_local TF, and expresses the UAV pose covariance in
+       odom. Requires the UGV to be running the egocentric nav stack (DLIO ->
+       /state_estimation). Default false keeps the legacy GPS-anchored `map`
+       behavior. -->
+  <arg name="egocentric" default="false"/>
 
   <!-- Static offset map -> uav0/map_local = where PX4's MAVROS-local origin sits in
        the shared world. X/Y = the UAV spawn XY (MAVROS local xy starts at 0 there).
@@ -55,8 +62,25 @@
        pose is held). It is NOT spawned here. -->
 
   <!-- ===== 1. UAV map alignment: shared world map -> UAV MAVROS-local origin ===== -->
-  <node pkg="tf2_ros" type="static_transform_publisher" name="tf_map_uav_local"
+  <!-- Legacy: static map->uav0/map_local (GPS-anchored world). -->
+  <node unless="$(arg egocentric)"
+        pkg="tf2_ros" type="static_transform_publisher" name="tf_map_uav_local"
         args="$(arg uav_spawn_x) $(arg uav_spawn_y) $(arg uav_spawn_z) 0 0 0 map uav0/map_local"/>
+  <!-- Egocentric: capture-once-then-latch odom->uav0/map_local from a one-shot
+       ground-truth snapshot of the UGV (full pose -> yaw observable), then drop
+       GPS/GT and drive on LIO odometry only. -->
+  <node if="$(arg egocentric)"
+        pkg="mobile_manipulator" type="airground_anchor_latch.py"
+        name="airground_anchor_latch" output="screen">
+    <param name="odom_frame"      value="odom"/>
+    <param name="uav_map_frame"   value="uav0/map_local"/>
+    <param name="ugv_truth_topic" value="/ground_truth/state"/>
+    <param name="ugv_odom_topic"  value="/state_estimation"/>
+    <param name="uav_spawn_x"     value="$(arg uav_spawn_x)"/>
+    <param name="uav_spawn_y"     value="$(arg uav_spawn_y)"/>
+    <param name="uav_spawn_z"     value="$(arg uav_spawn_z)"/>
+    <param name="num_samples"     value="30"/>
+  </node>
 
   <!-- ===== 2. UAV ROS layer (prefixed; no fake UGV marker / RViz / octomap) ===== -->
   <include file="$(find uav_truth_tracker)/launch/forest_uav_mapping.launch">
@@ -110,7 +134,8 @@
         name="uav_pose_cov_publisher" output="screen">
     <param name="map_frame"   value="odom"/>
     <param name="base_frame"  value="uav0/base_link"/>
-    <param name="world_frame" value="map"/>
+    <!-- egocentric: express the UAV pose covariance in odom (no map frame) -->
+    <param name="world_frame" value="$(eval 'odom' if arg('egocentric') else 'map')"/>
     <param name="rate"        value="10.0"/>
     <param name="cov_source"  value="mavros_odom"/>
     <param name="odom_topic"  value="/mavros/local_position/odom"/>

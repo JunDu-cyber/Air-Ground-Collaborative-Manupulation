@@ -1,0 +1,54 @@
+<launch>
+  <!-- ====================================================================
+       TOP-LEVEL egocentric navigation bring-up (STEP 1).
+
+       Husky+UR5 in outdoor_city, navigating egocentrically: odom is the single
+       authoritative frame (no map, no GPS in the live chain), DLIO owns
+       odom->base_link, and the CMU local_planner closes the geometric-nav loop.
+
+         roslaunch mobile_manipulator egocentric_nav.launch \
+             nav:=cmu odom_source:=dlio cost_source:=terrain_analysis
+
+       Then publish an odom-frame goal (RViz "2D Nav Goal", fixed frame = odom)
+       and the Husky drives to it, avoiding terrain.
+
+       Switches:
+         nav         : off | cmu                     (planner on/off)
+         odom_source : dlio | fastlio                (LIO backend, drop-in)
+         cost_source : terrain_analysis | elevation  (Phase A bootstrap / Phase B)
+       ==================================================================== -->
+
+  <arg name="start_gazebo" default="true"/>
+  <arg name="gui"          default="true"/>
+  <arg name="nav"          default="cmu"/>
+  <arg name="odom_source"  default="dlio"/>
+  <arg name="cost_source"  default="terrain_analysis"/>
+  <arg name="self_filter"  default="true"/>
+  <arg name="maxSpeed"     default="1.5"/>
+  <arg name="rviz"         default="false"/>
+
+  <!-- ===== 1. World + Husky+UR5 (egocentric: no EKF/GPS in live chain) ===== -->
+  <include file="$(find mobile_manipulator)/launch/spawn_outdoor_city.launch">
+    <arg name="start_gazebo" value="$(arg start_gazebo)"/>
+    <arg name="gui"          value="$(arg gui)"/>
+    <arg name="egocentric"   value="true"/>
+  </include>
+
+  <!-- ===== 2. LiDAR-inertial odometry frontend (owns odom->base_link) ===== -->
+  <include file="$(find mobile_manipulator)/launch/lidar_odometry.launch">
+    <arg name="odom_source" value="$(arg odom_source)"/>
+    <arg name="self_filter" value="$(arg self_filter)"/>
+  </include>
+
+  <!-- ===== 3. CMU local_planner navigation loop ===== -->
+  <include if="$(eval arg('nav')=='cmu')"
+           file="$(find mobile_manipulator)/launch/cmu_planner.launch">
+    <arg name="cost_source" value="$(arg cost_source)"/>
+    <arg name="maxSpeed"    value="$(arg maxSpeed)"/>
+  </include>
+
+  <!-- ===== 4. RViz (optional) ===== -->
+  <node if="$(arg rviz)" name="egocentric_rviz" pkg="rviz" type="rviz"
+        args="-d $(find mobile_manipulator)/rviz/egocentric_nav.rviz"/>
+
+</launch>

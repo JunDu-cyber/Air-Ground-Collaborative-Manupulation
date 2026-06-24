@@ -1,0 +1,98 @@
+<launch>
+  <!-- ====================================================================
+       Egocentric LiDAR-inertial odometry frontend (STEP 1b/1c).
+
+       Pipeline:
+         /velodyne_points (raw, velodyne frame)
+           -> [self-filter] robot_body_filter  -> /velodyne_points_filtered
+           -> [LIO] DLIO (or FAST-LIO)          -> odom + deskewed cloud (odom)
+           -> [adapter] loam_interface          -> /state_estimation (odom/base_link)
+                                                   /registered_scan   (odom)
+
+       The LIO backend is the SINGLE owner of the odom->base_link TF. Downstream
+       (CMU planner, elevation_mapping) is odom-source-agnostic: switch backends
+       with odom_source:=dlio|fastlio, no downstream launch changes.
+
+       DLIO runs in the GLOBAL namespace so its frames stay exactly
+       odom/base_link/velodyne/imu_lidar_link (see ns-prefix guard in odom.cc).
+       ==================================================================== -->
+
+  <arg name="odom_source"      default="dlio"/>            <!-- dlio | fastlio -->
+  <arg name="raw_cloud_topic"  default="/velodyne_points"/>
+  <arg name="imu_topic"        default="/lidar/imu"/>
+  <arg name="self_filter"      default="true"/>
+  <!-- cloud actually fed to the LIO backend: filtered when self_filter is on -->
+  <arg name="lio_cloud_topic"
+       value="$(eval '/velodyne_points_filtered' if arg('self_filter') else arg('raw_cloud_topic'))"/>
+
+  <!-- LIO outputs that loam_interface consumes (top-level so they're visible
+       outside the backend <group> blocks below) -->
+  <arg name="lio_odom_topic"
+       value="$(eval '/dlio/odom_node/odom' if arg('odom_source')=='dlio' else '/Odometry')"/>
+  <arg name="lio_cloud_out"
+       value="$(eval '/dlio/odom_node/pointcloud/deskewed' if arg('odom_source')=='dlio' else '/cloud_registered')"/>
+
+  <!-- ===== 1. Self-filter: clip the UR5 arm out of the raw cloud ===== -->
+  <node if="$(arg self_filter)"
+        name="lidar_self_filter" pkg="sensor_filters" type="pointcloud2_filter_chain"
+        output="screen">
+    <rosparam command="load" file="$(find mobile_manipulator)/config/robot_body_filter.yaml"/>
+    <remap from="~input"  to="$(arg raw_cloud_topic)"/>
+    <remap from="~output" to="/velodyne_points_filtered"/>
+  </node>
+
+  <!-- ===== 2a. DLIO (primary backend) ===== -->
+  <group if="$(eval arg('odom_source') == 'dlio')">
+    <node name="dlio_odom" pkg="direct_lidar_inertial_odometry" type="dlio_odom_node"
+          output="screen" clear_params="true">
+      <rosparam file="$(find direct_lidar_inertial_odometry)/cfg/params.yaml" command="load"/>
+      <rosparam file="$(find direct_lidar_inertial_odometry)/cfg/dlio.yaml"   command="load"/>
+      <!-- egocentric frames + Husky extrinsics (loaded last -> wins) -->
+      <rosparam file="$(find mobile_manipulator)/config/dlio_ugv.yaml"        command="load"/>
+      <remap from="~pointcloud" to="$(arg lio_cloud_topic)"/>
+      <remap from="~imu"        to="$(arg imu_topic)"/>
+      <remap from="~odom"       to="/dlio/odom_node/odom"/>
+      <remap from="~pose"       to="/dlio/odom_node/pose"/>
+      <remap from="~path"       to="/dlio/odom_node/path"/>
+      <remap from="~kf_pose"    to="/dlio/odom_node/keyframes"/>
+      <remap from="~kf_cloud"   to="/dlio/odom_node/pointcloud/keyframe"/>
+      <remap from="~deskewed"   to="/dlio/odom_node/pointcloud/deskewed"/>
+    </node>
+  </group>
+
+  <!-- ===== 2b. FAST-LIO (optional A/B baseline — deferred to STEP 2) =====
+       Built separately (needs livox_ros_driver msgs). When enabled it must
+       publish odom in the odom frame + a registered cloud; loam_interface then
+       normalizes frames identically. Placeholder kept so the switch exists. -->
+  <group if="$(eval arg('odom_source') == 'fastlio')">
+    <rosparam file="$(find mobile_manipulator)/config/ugv_velodyne.yaml" command="load"/>
+    <param name="feature_extract_enable" type="bool" value="0"/>
+    <param name="point_filter_num" type="int" value="4"/>
+    <param name="max_iteration" type="int" value="3"/>
+    <param name="filter_size_surf" type="double" value="0.5"/>
+    <param name="filter_size_map" type="double" value="0.5"/>
+    <param name="cube_side_length" type="double" value="1000"/>
+    <param name="runtime_pos_log_enable" type="bool" value="0"/>
+    <!-- publishes /Odometry (camera_init/body) + /cloud_registered; loam_interface
+         below normalizes them to /state_estimation + /registered_scan (frame odom).
+         NOTE: FAST-LIO broadcasts camera_init->body, not odom->base_link, so for a
+         full nav backend the odom->base_link TF still needs a bridge; the A/B drift
+         eval uses the raw /Odometry directly. -->
+    <node pkg="fast_lio" type="fastlio_mapping" name="laserMapping" output="screen"/>
+  </group>
+
+  <!-- ===== 3. loam_interface: unify topics/frames for the CMU planner =====
+       flip=false (DLIO/FAST-LIO already emit ROS-convention odom in the odom
+       frame). sendTF=false: the LIO backend already broadcasts odom->base_link;
+       loam_interface only republishes /state_estimation + /registered_scan. -->
+  <node pkg="loam_interface" type="loamInterface" name="loamInterface"
+        output="screen" required="true">
+    <param name="stateEstimationTopic" value="$(arg lio_odom_topic)"/>
+    <param name="registeredScanTopic"  value="$(arg lio_cloud_out)"/>
+    <param name="flipStateEstimation"  value="false"/>
+    <param name="flipRegisteredScan"   value="false"/>
+    <param name="sendTF"               value="false"/>
+    <param name="reverseTF"            value="false"/>
+  </node>
+
+</launch>

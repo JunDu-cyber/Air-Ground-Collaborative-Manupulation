@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>terrain_cost_adapter</name>
+  <version>0.1.0</version>
+  <description>
+    Adapter that converts an elevation_mapping grid_map into the CMU
+    local_planner's /terrain_map (PointXYZI cost cloud), so elevation_mapping can
+    be the single terrain-cost source for egocentric navigation (Phase B).
+  </description>
+  <maintainer email="dujun173@gmail.com">Jun Du</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>roscpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>grid_map_core</depend>
+  <depend>grid_map_ros</depend>
+  <depend>grid_map_msgs</depend>
+  <depend>pcl_ros</depend>
+  <depend>pcl_conversions</depend>
+</package>

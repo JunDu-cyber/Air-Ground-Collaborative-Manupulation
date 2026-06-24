@@ -1,0 +1,72 @@
+# elevation_mapping config for EGOCENTRIC UGV self-sensing navigation (Phase B).
+#
+# Unlike elevation_mapping.yaml / _uav_live.yaml (UGV static, terrain sensed from
+# the UAV above), here the Husky's OWN Velodyne builds the map as it drives. The
+# grid lives in the drift-free `odom` frame and tracks base_link. It is consumed
+# by terrain_cost_adapter (gridmap_to_terrainmap) -> /terrain_map for the CMU
+# local_planner, making elevation_mapping the single terrain-cost source.
+#
+# In the air-ground co-sim the UAV aerial prior can be fused in as an additional
+# input source so the planner sees terrain beyond the UGV LiDAR horizon; here we
+# wire only the UGV LiDAR.
+
+# --- Frames ---
+map_frame_id:                     "odom"            # UGV drift-free egocentric frame
+robot_base_frame_id:              "base_link"       # the UGV carries the sensor now
+track_point_frame_id:             "base_link"       # map stays centred on the UGV
+track_point_x:                    0.0
+track_point_y:                    0.0
+track_point_z:                    0.0
+# Empty -> elevation_mapping uses TF only (odom->base_link from DLIO) and ignores
+# robot-motion covariance updates. Drift-aware pose covariance is a STEP 2 (§2.4)
+# refinement (publish /ugv/pose_cov from the DLIO odometry and set it here).
+robot_pose_with_covariance_topic: ""
+robot_pose_cache_size:            200
+
+# --- Post-processing output (inpaint + normals + slope, see elevation_postprocessor.yaml) ---
+output_topic: "elevation_map_postprocessed"
+postprocessor_pipeline_name: "postprocessor_pipeline"
+
+# --- Input: the UGV's self-filtered Velodyne cloud, in the sensor frame ---
+input_sources:
+  lidar:
+    type: pointcloud
+    topic: /velodyne_points_filtered        # arm-removed VLP-16 cloud, frame velodyne
+    queue_size: 1
+    publish_on_update: true
+    sensor_processor:
+      type: laser                            # range-based height variance for a LiDAR
+      apply_voxelgrid_filter: true
+      voxelgrid_filter_size: 0.05
+
+# --- Update / timing (responsive enough for local navigation) ---
+min_update_rate:                  2.0
+time_tolerance:                   1.0
+time_offset_for_point_cloud:      0.0
+fused_map_publishing_rate:        4.0
+scanning_duration:                0.5
+
+# Onboard moving LiDAR -> visibility cleanup is appropriate (erase stale cells
+# that should now be visible, e.g. dynamic obstacles or odometry-corrected ghosts).
+enable_visibility_cleanup:        true
+visibility_cleanup_rate:          1.0
+
+# --- Map geometry (robot-centric local patch sized for local planning) ---
+length_in_x:                      40.0
+length_in_y:                      40.0
+position_x:                       0.0
+position_y:                       0.0
+resolution:                       0.25
+surface_normal_positive_axis:     z
+
+# --- Fusion noise model ---
+min_variance:                     0.0001
+max_variance:                     0.05
+mahalanobis_distance_threshold:   2.5
+multi_height_noise:               0.001
+min_horizontal_variance:          0.01
+max_horizontal_variance:          0.5
+
+# --- Init submap (start empty) ---
+initialize_elevation_map:         false
+initialization_method:            0

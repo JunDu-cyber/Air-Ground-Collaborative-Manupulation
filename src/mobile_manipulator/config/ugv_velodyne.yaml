@@ -1,0 +1,35 @@
+# FAST-LIO config for the Husky+UR5 UGV (optional A/B baseline vs DLIO).
+# VLP-16 + the dedicated gravity IMU. Extrinsic = LiDAR pose in the IMU frame:
+# the IMU (imu_lidar_link) sits at the base_link origin, so this equals
+# base_link->velodyne = [-0.4188, 0, 0.6827], R = I (matches dlio_ugv.yaml).
+common:
+    lid_topic:  "/velodyne_points_filtered"   # arm-removed VLP-16 cloud
+    imu_topic:  "/lidar/imu"                   # gravity-included IMU
+    time_sync_en: false
+    time_offset_lidar_to_imu: 0.0
+preprocess:
+    lidar_type: 2                # 2 = Velodyne
+    scan_line: 16
+    scan_rate: 10
+    timestamp_unit: 2            # per-point time unit (Gazebo time field is 0 -> no deskew, like DLIO)
+    blind: 0.5
+mapping:
+    acc_cov: 0.1
+    gyr_cov: 0.1
+    b_acc_cov: 0.0001
+    b_gyr_cov: 0.0001
+    fov_degree:    180
+    det_range:     100.0
+    extrinsic_est_en:  false
+    extrinsic_T: [ -0.4188, 0.0, 0.6827 ]   # rear-mast Velodyne in the base/IMU frame
+    extrinsic_R: [ 1, 0, 0,
+                   0, 1, 0,
+                   0, 0, 1]
+publish:
+    path_en:  false
+    scan_publish_en:  true
+    dense_publish_en: true
+    scan_bodyframe_pub_en: true
+pcd_save:
+    pcd_save_en: false
+    interval: -1

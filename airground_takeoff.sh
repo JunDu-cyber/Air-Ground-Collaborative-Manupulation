@@ -1,13 +1,20 @@
 #!/bin/bash
 # ============================================================================
 # airground_takeoff.sh - ONE Gazebo with BOTH the real PX4+EGO UAV (flying &
-# scanning) and the UGV (static at init), feeding an EGOCENTRIC online elevation
-# map centered on the UGV's odom (live UAV LiDAR + real MAVROS pose covariance).
+# scanning) and the UGV (at init), feeding an EGOCENTRIC online elevation map
+# centered on the UGV's odom (live UAV LiDAR + real MAVROS pose covariance).
+#
+# FULL-EGOCENTRIC framework: the UGV runs DLIO LiDAR-inertial odometry (no GPS /
+# no global EKF / no `map` frame); `odom` is the sole authoritative frame. The UAV
+# map is tied to the UGV via a capture-once-then-latch anchor (odom->uav0/map_local
+# from a one-shot ground-truth snapshot) instead of a static map->uav0/map_local
+# TF, and the UAV pose covariance is expressed in odom.
 #
 # Sequence (single unpause for BOTH robots):
 #   Gazebo paused -> set physics 0.005/200Hz -> spawn PX4 (paused) -> wait for
-#   PX4 link -> spawn UGV (paused, so the -J arm-stow pose is HELD) -> unpause
-#   -> MAVROS -> airground_egocentric.launch (UAV mapping + egocentric map).
+#   PX4 link -> spawn UGV egocentric (paused, -J arm-stow HELD) -> unpause ->
+#   UGV DLIO -> MAVROS -> airground_egocentric.launch egocentric:=true (UAV
+#   mapping + anchor + egocentric map).
 # Standalone one_key_takeoff.sh is left untouched.
 # ============================================================================
 
@@ -16,6 +23,9 @@ killall -9 gzserver gzclient rosmaster roscore px4 mavros 2>/dev/null
 pkill -9 -f "mavros_node" 2>/dev/null || true
 pkill -9 -f "px4_bridge.py" 2>/dev/null || true
 pkill -9 -f "roslaunch .*airground_egocentric.launch" 2>/dev/null || true
+pkill -9 -f "roslaunch .*lidar_odometry.launch" 2>/dev/null || true
+pkill -9 -f "dlio_odom_node" 2>/dev/null || true
+pkill -9 -f "airground_anchor_latch" 2>/dev/null || true
 pkill -9 -f "roslaunch .*spawn_outdoor_city.launch" 2>/dev/null || true
 pkill -9 -f "roslaunch .*forest_uav_mapping.launch" 2>/dev/null || true
 pkill -9 -f "roslaunch .*px4_spawn_existing_gazebo.launch" 2>/dev/null || true
@@ -134,13 +144,14 @@ sleep "$PX4_WAIT"
 # 1.6 Spawn the UGV WHILE STILL PAUSED so the -J arm-stow pose is held (mirrors
 #     outdoor_mapping.launch). spawn_unpause:=false defers the unpause to step 2
 #     so both the UGV controllers and the PX4 lockstep handshake resume together.
-echo "[airground] spawning static UGV (paused, arm-stow held) ..."
+#     egocentric:=true drops the GPS/global-EKF chain (DLIO owns odom->base_link).
+echo "[airground] spawning egocentric UGV (paused, arm-stow held) ..."
 gnome-terminal --tab --title="3_UGV" -- bash -c "
 source /opt/ros/noetic/setup.bash && \
 source '$EGO_WS/devel/setup.bash' && \
 export ROS_PACKAGE_PATH='$UGV_ROS_PACKAGE_PATH':\$ROS_PACKAGE_PATH && \
 export GAZEBO_MODEL_PATH=\"$GZ_MODEL_PATH:\$GAZEBO_MODEL_PATH\" && \
-roslaunch mobile_manipulator spawn_outdoor_city.launch start_gazebo:=false spawn_unpause:=false; exec bash"
+roslaunch mobile_manipulator spawn_outdoor_city.launch start_gazebo:=false spawn_unpause:=false egocentric:=true; exec bash"
 
 echo "[airground] waiting ${UGV_SPAWN_WAIT}s for the UGV model to load ..."
 sleep "$UGV_SPAWN_WAIT"
@@ -151,6 +162,19 @@ echo "[airground] unpausing Gazebo (UGV controllers + PX4 handshake) ..."
   rosservice call --wait /gazebo/unpause_physics "{}" ) 2>/dev/null \
   && echo "[airground] unpaused" || echo "[airground] unpause failed: run rosservice call /gazebo/unpause_physics"
 sleep 2
+
+# 2.5 UGV LiDAR-inertial odometry (DLIO). Owns odom->base_link and publishes
+#     /state_estimation, which the egocentric anchor (odom->uav0/map_local) and the
+#     elevation map (tracks base_link) both need. Needs the UGV Velodyne, so it
+#     runs after unpause; the GPU Velodyne sensor needs a GL context (GUI/DISPLAY).
+echo "[airground] starting UGV DLIO odometry ..."
+gnome-terminal --tab --title="3b_UGV_LIO" -- bash -c "
+source /opt/ros/noetic/setup.bash && \
+source '$EGO_WS/devel/setup.bash' && \
+export ROS_PACKAGE_PATH='$UGV_ROS_PACKAGE_PATH':\$ROS_PACKAGE_PATH && \
+roslaunch mobile_manipulator lidar_odometry.launch odom_source:=dlio self_filter:=true; exec bash"
+echo "[airground] waiting 8s for DLIO to initialize (odom->base_link) ..."
+sleep 8
 
 # 3. MAVROS.
 gnome-terminal --tab --title="4_MAVROS" -- bash -c "source /opt/ros/noetic/setup.bash && roslaunch '$MAVROS_PX4_LAUNCH' fcu_url:=\"udp://:14540@127.0.0.1:14580\"; exec bash"
@@ -165,6 +189,7 @@ source '$EGO_WS/devel/setup.bash' && \
 export ROS_PACKAGE_PATH='$UGV_ROS_PACKAGE_PATH':\$ROS_PACKAGE_PATH && \
 export PYTHONPATH='$EGO_WS':\$PYTHONPATH && \
 roslaunch mobile_manipulator airground_egocentric.launch \
+  egocentric:=true \
   rviz:='$START_RVIZ' \
   uav_spawn_x:='$SPAWN_X' uav_spawn_y:='$SPAWN_Y' uav_spawn_z:='$MAP_LOCAL_Z' \
   flight_height:='$FLIGHT_H' \
@@ -176,8 +201,11 @@ sleep "$ROS_WAIT"
 # 5. Takeoff bridge - arm + OFFBOARD so EGO can fly the UAV.
 gnome-terminal --tab --title="6_Takeoff" -- bash -c "source /opt/ros/noetic/setup.bash && source '$EGO_WS/devel/setup.bash' && python3 -u '$EGO_WS/px4_bridge.py' _require_depth_before_takeoff:=false; exec bash"
 
-echo "[airground] startup sequence done."
-echo "  UAV spawn=($SPAWN_X,$SPAWN_Y,$SPAWN_Z) flight_height=${FLIGHT_H}m ; UGV static spawn=(0,0,0.5)"
+echo "[airground] startup sequence done (EGOCENTRIC framework)."
+echo "  UAV spawn=($SPAWN_X,$SPAWN_Y,$SPAWN_Z) flight_height=${FLIGHT_H}m ; UGV egocentric (DLIO odom)"
+echo "  egocentric: NO map frame; DLIO owns odom->base_link; anchor latches odom->uav0/map_local"
 echo "  elevation map: /elevation_mapping/elevation_map_postprocessed (frame=odom)"
-echo "  UAV pose error: /uav/pose_cov (real MAVROS covariance -> Sigma_{odom->uav})"
+echo "  UAV pose error: /uav/pose_cov (real MAVROS covariance -> Sigma_{odom->uav}, world_frame=odom)"
 echo "  checks: rostopic echo -n1 /mavros/state ; rosrun rqt_tf_tree rqt_tf_tree"
+echo "          rosrun tf2_ros tf2_echo odom uav0/map_local   # anchor latched"
+echo "          rosrun tf2_ros tf2_echo odom base_link        # DLIO (no map frame in tree)"

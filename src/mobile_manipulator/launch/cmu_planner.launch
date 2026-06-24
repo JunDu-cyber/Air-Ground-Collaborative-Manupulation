@@ -1,0 +1,160 @@
+<launch>
+  <!-- ====================================================================
+       CMU local_planner egocentric navigation loop (STEP 1d / Phase A+B).
+
+       Consumes the egocentric contract (all in odom):
+         /state_estimation (odom/base_link)  <- loam_interface
+         /registered_scan  (odom)            <- loam_interface
+         /terrain_map      (odom, PointXYZI) <- terrain_analysis (Phase A)
+                                                OR gridmap adapter (Phase B)
+         /way_point        (odom)            <- goal_to_waypoint
+       Produces:
+         /cmd_vel_stamped  (TwistStamped, vehicle) -> twiststamped_to_twist
+                                                    -> /cmd_vel (Twist) -> twist_mux
+
+       The planner uses NO tf listener (pose-driven); the CMU frame strings are
+       just labels. We keep ONE odom->base_link owner (the LIO backend) and add a
+       static identity base_link->vehicle so the vehicle-frame path renders in
+       RViz under odom (no map frame anywhere).
+       ==================================================================== -->
+
+  <!-- terrain_analysis (Phase A bootstrap) | elevation (Phase B grid_map) -->
+  <arg name="cost_source" default="terrain_analysis"/>
+
+  <!-- Husky geometry / speed -->
+  <arg name="vehicleLength" default="0.99"/>
+  <arg name="vehicleWidth"  default="0.67"/>
+  <arg name="sensorOffsetX" default="0.0"/>   <!-- DLIO emits base_link pose already -->
+  <arg name="sensorOffsetY" default="0.0"/>
+  <arg name="maxSpeed"      default="1.5"/>
+  <arg name="twoWayDrive"   default="true"/>
+  <arg name="autonomyMode"  default="true"/>
+
+  <!-- adapter tuning (Phase B): local-ground window + cost clamp -->
+  <arg name="ground_radius"  default="0.75"/>
+  <arg name="vehicle_height" default="1.0"/>
+
+  <!-- ===== Terrain cost source A: terrain_analysis (bootstrap) ===== -->
+  <include if="$(eval arg('cost_source')=='terrain_analysis')"
+           file="$(find terrain_analysis)/launch/terrain_analysis.launch"/>
+
+  <!-- ===== Terrain cost source B: elevation_mapping -> /terrain_map adapter =====
+       elevation_mapping builds an egocentric height map from the UGV's
+       self-filtered Velodyne (and, in the co-sim, the fused UAV aerial prior);
+       gridmap_to_terrainmap turns it into the planner's PointXYZI cost cloud.
+       terrain_analysis is NOT started in this mode (single cost source). -->
+  <group if="$(eval arg('cost_source')=='elevation')">
+    <node pkg="elevation_mapping" type="elevation_mapping" name="elevation_mapping" output="screen">
+      <rosparam command="load" file="$(find mobile_manipulator)/config/elevation_mapping_ugv.yaml"/>
+      <rosparam command="load" file="$(find mobile_manipulator)/config/elevation_postprocessor.yaml"/>
+    </node>
+    <node pkg="terrain_cost_adapter" type="gridmap_to_terrainmap"
+          name="gridmap_to_terrainmap" output="screen">
+      <param name="grid_map_topic"    value="/elevation_mapping/elevation_map_postprocessed"/>
+      <param name="terrain_map_topic" value="/terrain_map"/>
+      <param name="height_layer"      value="elevation_inpainted"/>
+      <param name="ground_radius"     value="$(arg ground_radius)"/>
+      <param name="vehicle_height"    value="$(arg vehicle_height)"/>
+    </node>
+  </group>
+
+  <!-- ===== local planner (motion primitives + collision avoidance) ===== -->
+  <node pkg="local_planner" type="localPlanner" name="localPlanner" output="screen" required="true">
+    <param name="pathFolder" type="string" value="$(find local_planner)/paths" />
+    <param name="vehicleLength" value="$(arg vehicleLength)" />
+    <param name="vehicleWidth"  value="$(arg vehicleWidth)" />
+    <param name="sensorOffsetX" value="$(arg sensorOffsetX)" />
+    <param name="sensorOffsetY" value="$(arg sensorOffsetY)" />
+    <param name="twoWayDrive"   value="$(arg twoWayDrive)" />
+    <param name="laserVoxelSize" type="double" value="0.05" />
+    <param name="terrainVoxelSize" type="double" value="0.2" />
+    <param name="useTerrainAnalysis" type="bool" value="true" />
+    <param name="checkObstacle" type="bool" value="true" />
+    <param name="checkRotObstacle" type="bool" value="false" />
+    <param name="adjacentRange" type="double" value="4.25" />
+    <param name="obstacleHeightThre" type="double" value="0.15" />
+    <param name="groundHeightThre" type="double" value="0.1" />
+    <param name="costHeightThre" type="double" value="0.1" />
+    <param name="costScore" type="double" value="0.02" />
+    <param name="useCost" type="bool" value="false" />
+    <param name="pointPerPathThre" type="int" value="2" />
+    <param name="minRelZ" type="double" value="-0.5" />
+    <param name="maxRelZ" type="double" value="0.25" />
+    <param name="maxSpeed" value="$(arg maxSpeed)" />
+    <param name="dirWeight" type="double" value="0.02" />
+    <param name="dirThre" type="double" value="90.0" />
+    <param name="dirToVehicle" type="bool" value="false" />
+    <param name="pathScale" type="double" value="1.25" />
+    <param name="minPathScale" type="double" value="0.75" />
+    <param name="pathScaleStep" type="double" value="0.25" />
+    <param name="pathScaleBySpeed" type="bool" value="true" />
+    <param name="minPathRange" type="double" value="1.0" />
+    <param name="pathRangeStep" type="double" value="0.5" />
+    <param name="pathRangeBySpeed" type="bool" value="true" />
+    <param name="pathCropByGoal" type="bool" value="true" />
+    <param name="autonomyMode" value="$(arg autonomyMode)" />
+    <param name="autonomySpeed" value="$(arg maxSpeed)" />
+    <param name="joyToSpeedDelay" type="double" value="2.0" />
+    <param name="joyToCheckObstacleDelay" type="double" value="5.0" />
+    <param name="goalClearRange" type="double" value="0.5" />
+    <param name="goalX" type="double" value="0" />
+    <param name="goalY" type="double" value="0" />
+  </node>
+
+  <!-- ===== path follower (pure-pursuit -> TwistStamped) ===== -->
+  <node pkg="local_planner" type="pathFollower" name="pathFollower" output="screen" required="true">
+    <param name="sensorOffsetX" value="$(arg sensorOffsetX)" />
+    <param name="sensorOffsetY" value="$(arg sensorOffsetY)" />
+    <param name="pubSkipNum" type="int" value="1" />
+    <param name="twoWayDrive" value="$(arg twoWayDrive)" />
+    <param name="lookAheadDis" type="double" value="0.5" />
+    <param name="yawRateGain" type="double" value="7.5" />
+    <param name="stopYawRateGain" type="double" value="7.5" />
+    <param name="maxYawRate" type="double" value="90.0" />
+    <param name="maxSpeed" value="$(arg maxSpeed)" />
+    <param name="maxAccel" type="double" value="2.5" />
+    <param name="switchTimeThre" type="double" value="1.0" />
+    <param name="dirDiffThre" type="double" value="0.1" />
+    <param name="stopDisThre" type="double" value="0.2" />
+    <param name="slowDwnDisThre" type="double" value="0.85" />
+    <param name="useInclRateToSlow" type="bool" value="false" />
+    <param name="inclRateThre" type="double" value="120.0" />
+    <param name="slowRate1" type="double" value="0.25" />
+    <param name="slowRate2" type="double" value="0.5" />
+    <param name="slowTime1" type="double" value="2.0" />
+    <param name="slowTime2" type="double" value="2.0" />
+    <param name="useInclToStop" type="bool" value="false" />
+    <param name="inclThre" type="double" value="45.0" />
+    <param name="stopTime" type="double" value="5.0" />
+    <param name="noRotAtStop" type="bool" value="false" />
+    <param name="noRotAtGoal" type="bool" value="true" />
+    <param name="autonomyMode" value="$(arg autonomyMode)" />
+    <param name="autonomySpeed" value="$(arg maxSpeed)" />
+    <param name="joyToSpeedDelay" type="double" value="2.0" />
+    <!-- send the planner cmd to the relay, NOT directly onto /cmd_vel (which is
+         the twist_mux Twist input) -->
+    <remap from="/cmd_vel" to="/cmd_vel_stamped"/>
+  </node>
+
+  <!-- vehicle frame = base_link (identity); keeps the planner's vehicle-frame
+       path connected to odom for RViz. No 'sensor' frame is published
+       (loam_interface sendTF=false), so nothing depends on it. -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="vehicleTransPublisher"
+        args="0 0 0 0 0 0 base_link vehicle"/>
+
+  <!-- ===== command relay: TwistStamped(vehicle) -> Twist on twist_mux ===== -->
+  <node pkg="mobile_manipulator" type="twiststamped_to_twist.py"
+        name="twiststamped_to_twist" output="screen">
+    <param name="input"  value="/cmd_vel_stamped"/>
+    <param name="output" value="/cmd_vel"/>
+  </node>
+
+  <!-- ===== goal bridge: RViz 2D Nav Goal -> /way_point (odom) ===== -->
+  <node pkg="mobile_manipulator" type="goal_to_waypoint.py"
+        name="goal_to_waypoint" output="screen">
+    <param name="input"        value="/move_base_simple/goal"/>
+    <param name="output"       value="/way_point"/>
+    <param name="target_frame" value="odom"/>
+  </node>
+
+</launch>

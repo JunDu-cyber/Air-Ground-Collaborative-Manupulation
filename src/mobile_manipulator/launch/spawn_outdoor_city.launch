@@ -6,6 +6,14 @@
        Gazebo, e.g. in the air-ground co-sim where the UAV side already brought
        Gazebo up. Default true keeps standalone behavior unchanged. -->
   <arg name="start_gazebo" default="true"/>
+  <!-- egocentric:=true drops the GPS-anchored global EKF + local EKF +
+       navsat_transform from the live chain. The LiDAR-inertial odometry
+       (DLIO/FAST-LIO, brought up by egocentric_nav.launch) then becomes the SOLE
+       publisher of odom->base_link and there is no `map` frame. The GPS plugin and
+       /ground_truth/state (both defined in the URDF) stay available so the
+       air-ground anchor node can read a one-shot global snapshot. Default false
+       keeps the legacy dual-EKF + move_base/DWA behavior unchanged. -->
+  <arg name="egocentric" default="false"/>
   <env name="HUSKY_LMS1XX_ENABLED" value="1"/>
 
   <!-- Model paths: collection + local Gazebo models + custom -->
@@ -48,10 +56,10 @@
         args="-param robot_description -urdf -model husky_ur5
               -x 0.0 -y 0.0 -z 0.5 -Y 0.0
               -J ur5_shoulder_pan_joint 0
-              -J ur5_shoulder_lift_joint -2.9
-              -J ur5_elbow_joint 2.9
-              -J ur5_wrist_1_joint -1.2
-              -J ur5_wrist_2_joint 0.0
+              -J ur5_shoulder_lift_joint -3.0
+              -J ur5_elbow_joint 2.6
+              -J ur5_wrist_1_joint 0.57
+              -J ur5_wrist_2_joint 1.57
               -J ur5_wrist_3_joint 0
               $(arg spawn_unpause_flag)"
         output="screen" />
@@ -78,19 +86,22 @@
        move_base 报 "None of the global plan points ... in the local costmap and free"、
        卡住打滑。带上俯仰后激光投影正确，坡上地面不再被当障碍。(全局 EKF 也是3D，两者
        都融 IMU 姿态 -> map->odom 里俯仰相互抵消，不会重复计) -->
-  <node pkg="robot_localization" type="ekf_localization_node" name="ekf_localization">
+  <node unless="$(arg egocentric)"
+        pkg="robot_localization" type="ekf_localization_node" name="ekf_localization">
     <rosparam command="load" file="$(find husky_control)/config/localization.yaml" />
     <param name="two_d_mode" value="false"/>
   </node>
 
   <!-- Global EKF: wheel odom + IMU + GPS -> map->odom (GPS-anchored) -->
-  <node pkg="robot_localization" type="ekf_localization_node" name="ekf_global">
+  <node unless="$(arg egocentric)"
+        pkg="robot_localization" type="ekf_localization_node" name="ekf_global">
     <rosparam command="load" file="$(find mobile_manipulator)/config/ekf_global.yaml" />
     <remap from="odometry/filtered" to="odometry/filtered_map"/>
   </node>
 
   <!-- navsat_transform: simulated GPS (navsat/fix) -> map-frame odometry/gps -->
-  <node pkg="robot_localization" type="navsat_transform_node" name="navsat_transform" output="screen">
+  <node unless="$(arg egocentric)"
+        pkg="robot_localization" type="navsat_transform_node" name="navsat_transform" output="screen">
     <rosparam command="load" file="$(find mobile_manipulator)/config/navsat_transform.yaml" />
     <remap from="imu/data"          to="imu/data"/>
     <remap from="gps/fix"           to="navsat/fix"/>

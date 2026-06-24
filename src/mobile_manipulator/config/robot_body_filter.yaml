@@ -1,0 +1,62 @@
+# ============================================================================
+# robot_body_filter — self-filter the UR5 arm + gripper out of the Velodyne
+# cloud BEFORE it reaches DLIO. Runs upstream of the LIO frontend so the moving
+# arm corrupts neither the odometry nor the terrain/registered cloud (no ghost
+# obstacle over the arm in /terrain_map). Run via:
+#   sensor_filters/pointcloud2_filter_chain  (~input=/velodyne_points,
+#                                             ~output=/velodyne_points_filtered)
+#
+# Operates in the sensor (velodyne) frame using a contains+clip test against the
+# inflated collision geometry of the listed links (robot_description + TF). No
+# odom dependency (frames/fixed=base_link), so it works from startup before the
+# LIO has converged. point_by_point=false: the Gazebo Velodyne plugin emits a
+# whole scan with a single stamp (not per-point), so no motion compensation.
+# ============================================================================
+cloud_filter_chain:
+  - name: robot_body_filter_arm
+    type: robot_body_filter/RobotBodyFilterPointCloud2
+    params:
+      # --- sensor ---
+      sensor/min_distance: 0.4          # drop returns closer than this (m)
+      sensor/max_distance: 100.0
+      sensor/point_by_point: false      # Gazebo VLP-16 = one stamp per scan
+
+      # --- frames ---
+      frames/fixed: base_link           # no odom dependency at startup
+      frames/sensor: velodyne
+      frames/filtering: velodyne
+      frames/output: velodyne
+
+      # --- body model ---
+      body_model/robot_description_param: robot_description
+      body_model/inflation/scale: 1.1   # inflate collision 10% to catch edges
+      body_model/inflation/padding: 0.02
+
+      # --- which tests to run (contains only; no shadow/raycast = cheap) ---
+      filter/do_clipping: true
+      filter/do_contains_test: true
+      filter/do_shadow_test: false
+
+      # --- only clip these links (UR5 arm + Robotiq gripper + arm camera).
+      #     The chassis/wheels/lidar mast are below/around the sensor and rarely
+      #     self-intersect the cloud; restricting to the arm keeps FCL cheap. ---
+      only_links:
+        - ur5_base_link
+        - ur5_shoulder_link
+        - ur5_upper_arm_link
+        - ur5_forearm_link
+        - ur5_wrist_1_link
+        - ur5_wrist_2_link
+        - ur5_wrist_3_link
+        - robotiq_140_base_link
+        - left_outer_knuckle
+        - left_outer_finger
+        - left_inner_knuckle
+        - left_inner_finger
+        - left_inner_finger_pad
+        - right_outer_knuckle
+        - right_outer_finger
+        - right_inner_knuckle
+        - right_inner_finger
+        - right_inner_finger_pad
+        - realsense_camera_link

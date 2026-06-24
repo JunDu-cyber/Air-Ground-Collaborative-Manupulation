@@ -1,0 +1,54 @@
+# ============================================================================
+# DLIO override config for the Husky+UR5 UGV (egocentric LiDAR-inertial odom).
+#
+# Loaded AFTER the upstream cfg/params.yaml + cfg/dlio.yaml so these keys win.
+# Provides: egocentric frame names + the base_link->{imu,lidar} extrinsics that
+# match husky_ur5.urdf.xacro (Velodyne VLP-16 + dedicated gravity IMU).
+#
+#   base_link -> imu_lidar_link : identity (IMU mounted axis-aligned at base origin)
+#   base_link -> velodyne       : t=[-0.4188, 0, 0.6827], R=identity
+#       (computed from the URDF joint chain base_link->top_plate->velodyne)
+#
+# DLIO must run in the GLOBAL namespace so frames stay exactly odom/base_link
+# (see the ns-prefix guard patch in src/dlio/odom.cc). The deskewed cloud is
+# published in the odom frame and relayed by loam_interface to /registered_scan.
+# ============================================================================
+dlio:
+
+  # The Gazebo velodyne plugin sets every point's `time` field to 0 (no
+  # per-point sweep timestamps), so DLIO's deskewing sees a single timestamp and
+  # cannot motion-compensate — leaving the state unconstrained (accel bias
+  # diverges, registered cloud never publishes). Disable deskew: DLIO then treats
+  # each scan as a single instant, which is correct for this simulated sensor.
+  pointcloud:
+    deskew: false
+
+  # DLIO suppresses the registered/deskewed cloud until the robot has moved 0.1 m
+  # (waitUntilMove). That starves terrain_analysis -> /terrain_map -> the planner
+  # before the first motion (chicken-and-egg: the planner needs terrain to decide
+  # to move). Publish the cloud immediately so terrain is available from standstill.
+  map:
+    waitUntilMove: false
+
+  frames:
+    odom: odom
+    baselink: base_link
+    # DLIO also broadcasts base_link->lidar and base_link->imu. robot_state_publisher
+    # already owns base_link->velodyne and base_link->imu_lidar_link from the URDF,
+    # so reusing those names would give `velodyne` two parents and corrupt the TF
+    # tree. Use DLIO-private label frames here; only odom->base_link matters
+    # downstream (and DLIO is its sole publisher).
+    lidar: dlio_lidar
+    imu: dlio_imu
+
+  extrinsics:
+    baselink2imu:
+      t: [ 0.0, 0.0, 0.0 ]
+      R: [ 1., 0., 0.,
+           0., 1., 0.,
+           0., 0., 1. ]
+    baselink2lidar:
+      t: [ -0.4188, 0.0, 0.6827 ]   # rear-mast Velodyne (base_link->velodyne)
+      R: [ 1., 0., 0.,
+           0., 1., 0.,
+           0., 0., 1. ]
