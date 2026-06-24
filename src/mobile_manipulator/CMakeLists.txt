@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   std_msgs
   sensor_msgs
+  geometry_msgs
   urdf
   xacro
   actionlib
@@ -62,6 +63,7 @@ catkin_python_setup()
 add_message_files(
   FILES
   Detection.msg
+  WorldTarget.msg
 )
 
 add_service_files(
@@ -73,6 +75,7 @@ generate_messages(
   DEPENDENCIES
   std_msgs
   sensor_msgs
+  geometry_msgs
 )
 
 ################################################
@@ -105,7 +108,7 @@ generate_messages(
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-  CATKIN_DEPENDS gazebo_ros roscpp std_msgs sensor_msgs urdf xacro message_runtime
+  CATKIN_DEPENDS gazebo_ros roscpp std_msgs sensor_msgs geometry_msgs urdf xacro message_runtime
 )
 
 ###########

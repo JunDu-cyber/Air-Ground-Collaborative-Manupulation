@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Bridge an RViz "2D Nav Goal" to the CMU local_planner waypoint.
+"""Bridge a UGV goal (PoseStamped) to the CMU local_planner waypoint.
 
 The CMU localPlanner consumes geometry_msgs/PointStamped on /way_point and reads
-its x,y as the goal in the world (odom) frame. RViz's "2D Nav Goal" tool emits a
-geometry_msgs/PoseStamped on /move_base_simple/goal in the RViz fixed frame. This
-node converts Pose->Point and, if the goal arrives in another frame, TF-transforms
-it into the target (odom) frame first so clicking "just works".
+its x,y as the goal in the world (odom) frame. This node converts Pose->Point and,
+if the goal arrives in another frame, TF-transforms it into the target (odom) frame
+first.
 
-  ~input        (PoseStamped)  default /move_base_simple/goal
+The input is `/ugv/goal` (NOT `/move_base_simple/goal`): in the air-ground system
+`/move_base_simple/goal` is the UAV EGO-planner's goal (goal_elevator.py flies the
+drone there), so the UGV must not share it. `/ugv/goal` is the single UGV goal seam,
+fed either by ugv_target_tour (the autonomous target sequencer) or by hand for
+testing. For solo UGV runs with no UAV, set ~input:=/move_base_simple/goal to reuse
+the RViz "2D Nav Goal" tool.
+
+  ~input        (PoseStamped)  default /ugv/goal
   ~output       (PointStamped) default /way_point
   ~target_frame                default odom
 """
@@ -19,7 +25,7 @@ from geometry_msgs.msg import PoseStamped, PointStamped
 
 def main():
     rospy.init_node('goal_to_waypoint')
-    input_topic = rospy.get_param('~input', '/move_base_simple/goal')
+    input_topic = rospy.get_param('~input', '/ugv/goal')
     output_topic = rospy.get_param('~output', '/way_point')
     target_frame = rospy.get_param('~target_frame', 'odom')
 

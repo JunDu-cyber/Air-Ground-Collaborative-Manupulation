@@ -24,7 +24,9 @@ pkill -9 -f "mavros_node" 2>/dev/null || true
 pkill -9 -f "px4_bridge.py" 2>/dev/null || true
 pkill -9 -f "roslaunch .*airground_egocentric.launch" 2>/dev/null || true
 pkill -9 -f "roslaunch .*lidar_odometry.launch" 2>/dev/null || true
+pkill -9 -f "roslaunch .*cmu_planner.launch" 2>/dev/null || true
 pkill -9 -f "dlio_odom_node" 2>/dev/null || true
+pkill -9 -f "ugv_target_tour" 2>/dev/null || true
 pkill -9 -f "airground_anchor_latch" 2>/dev/null || true
 pkill -9 -f "roslaunch .*spawn_outdoor_city.launch" 2>/dev/null || true
 pkill -9 -f "roslaunch .*forest_uav_mapping.launch" 2>/dev/null || true
@@ -176,6 +178,23 @@ roslaunch mobile_manipulator lidar_odometry.launch odom_source:=dlio self_filter
 echo "[airground] waiting 8s for DLIO to initialize (odom->base_link) ..."
 sleep 8
 
+# 2.6 UGV CMU local planner + target tour. Lets the UGV navigate to the targets
+#     the UAV camera detects. The UGV stays PUT until you call /ugv/start_tour
+#     (the planner is idle with no goal, target_tour waits for the trigger), so it
+#     is safe to start now during the UAV mapping epoch. cost_source=terrain_analysis
+#     uses the UGV's own LiDAR terrain (independent of the UAV map). Detected
+#     targets arrive on /detected_targets (the reserved UAV-detector seam).
+UGV_NAV=${UGV_NAV:-true}
+if [ "$UGV_NAV" = "true" ]; then
+  echo "[airground] starting UGV CMU planner + target tour ..."
+  gnome-terminal --tab --title="3c_UGV_NAV" -- bash -c "
+source /opt/ros/noetic/setup.bash && \
+source '$EGO_WS/devel/setup.bash' && \
+export ROS_PACKAGE_PATH='$UGV_ROS_PACKAGE_PATH':\$ROS_PACKAGE_PATH && \
+roslaunch mobile_manipulator cmu_planner.launch cost_source:=terrain_analysis maxSpeed:=1.0; exec bash"
+  echo "[airground] UGV nav up (idle until: rosservice call /ugv/start_tour)"
+fi
+
 # 3. MAVROS.
 gnome-terminal --tab --title="4_MAVROS" -- bash -c "source /opt/ros/noetic/setup.bash && roslaunch '$MAVROS_PX4_LAUNCH' fcu_url:=\"udp://:14540@127.0.0.1:14580\"; exec bash"
 echo "[airground] waiting ${MAVROS_WAIT}s for MAVROS ..."
@@ -206,6 +225,9 @@ echo "  UAV spawn=($SPAWN_X,$SPAWN_Y,$SPAWN_Z) flight_height=${FLIGHT_H}m ; UGV 
 echo "  egocentric: NO map frame; DLIO owns odom->base_link; anchor latches odom->uav0/map_local"
 echo "  elevation map: /elevation_mapping/elevation_map_postprocessed (frame=odom)"
 echo "  UAV pose error: /uav/pose_cov (real MAVROS covariance -> Sigma_{odom->uav}, world_frame=odom)"
+echo "  UGV nav: detected targets -> /detected_targets (mobile_manipulator/WorldTarget)"
+echo "           after the UAV finishes: rosservice call /ugv/start_tour  (UGV tours the targets)"
 echo "  checks: rostopic echo -n1 /mavros/state ; rosrun rqt_tf_tree rqt_tf_tree"
 echo "          rosrun tf2_ros tf2_echo odom uav0/map_local   # anchor latched"
 echo "          rosrun tf2_ros tf2_echo odom base_link        # DLIO (no map frame in tree)"
+echo "  NOTE: RViz '2D Nav Goal' flies the UAV ONLY; the UGV goal is /ugv/goal."

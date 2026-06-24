@@ -149,12 +149,37 @@
     <param name="output" value="/cmd_vel"/>
   </node>
 
-  <!-- ===== goal bridge: RViz 2D Nav Goal -> /way_point (odom) ===== -->
+  <!-- single UGV goal seam. NOT /move_base_simple/goal (that flies the UAV's
+       EGO-planner in the air-ground system). Fed by ugv_target_tour (autonomous
+       target sequence) or hand-published for testing. -->
+  <arg name="ugv_goal_topic" default="/ugv/goal"/>
+
+  <!-- ===== goal bridge: /ugv/goal (PoseStamped, any frame) -> /way_point (odom) ===== -->
   <node pkg="mobile_manipulator" type="goal_to_waypoint.py"
         name="goal_to_waypoint" output="screen">
-    <param name="input"        value="/move_base_simple/goal"/>
+    <param name="input"        value="$(arg ugv_goal_topic)"/>
     <param name="output"       value="/way_point"/>
     <param name="target_frame" value="odom"/>
+  </node>
+
+  <!-- ===== target tour: collect UAV-detected targets, order, drive sequentially =====
+       Subscribes /detected_targets (mobile_manipulator/WorldTarget, the reserved
+       UAV-detector seam), TF-transforms each into odom, dedups, and on the
+       /ugv/start_tour service drives the UGV through them (distance/terrain order)
+       via $(arg ugv_goal_topic). RViz markers on /target_tour_markers. -->
+  <arg name="target_tour" default="true"/>
+  <node if="$(arg target_tour)"
+        pkg="mobile_manipulator" type="ugv_target_tour.py"
+        name="ugv_target_tour" output="screen">
+    <param name="detected_topic"      value="/detected_targets"/>
+    <param name="goal_topic"          value="$(arg ugv_goal_topic)"/>
+    <param name="odom_topic"          value="/state_estimation"/>
+    <param name="terrain_topic"       value="/terrain_map"/>
+    <param name="target_frame"        value="odom"/>
+    <param name="dedup_radius"        value="0.5"/>
+    <param name="reach_tolerance"     value="0.6"/>
+    <param name="goal_timeout"        value="60.0"/>
+    <param name="obstacle_cost_thre"  value="0.3"/>
   </node>
 
 </launch>
