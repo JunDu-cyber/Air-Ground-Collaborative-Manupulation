@@ -61,7 +61,7 @@ echo "🛩️  LOW_ALT=$LOW_ALT 飞行=${FLIGHT_H}m | UAV出生(${UAV_X},${UAV_Y
 # ── 终端1: Gazebo(paused, 全模型路径) + UGV(折叠臂, 不 unpause) ──
 gnome-terminal --tab --title="1_Gazebo+UGV" -- bash -c "
 source /opt/ros/noetic/setup.bash && source '$WS/devel/setup.bash' && source /usr/share/gazebo/setup.sh && \
-export GAZEBO_PLUGIN_PATH=\"$GPLUGIN:\$GAZEBO_PLUGIN_PATH\" && export GAZEBO_MODEL_DATABASE_URI='' && \
+export GAZEBO_PLUGIN_PATH=\"$GPLUGIN:\$GAZEBO_PLUGIN_PATH\" && export GAZEBO_MODEL_PATH=\"$WS/src/mobile_manipulator/gazebo_models:\$GAZEBO_MODEL_PATH\" && export GAZEBO_MODEL_DATABASE_URI='' && \
 export PX4_SIM_SPEED_FACTOR='$PX4_SIM_SPEED_FACTOR' && \
 export GAZEBO_WORLD_LAT='$DATUM_LAT' && export GAZEBO_WORLD_LON='$DATUM_LON' && \
 roslaunch mobile_manipulator air_ground_world.launch spawn_uav:=false unpause_on_spawn:=false gui:='$GUI' world:='$WORLD' 2>&1 | grep -v parser.cc; exec bash"
