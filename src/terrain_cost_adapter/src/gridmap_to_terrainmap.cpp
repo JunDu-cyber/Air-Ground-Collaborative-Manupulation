@@ -8,14 +8,23 @@
 // source feeding the planner, replacing terrain_analysis in Phase B.
 //
 //   in : grid_map_msgs/GridMap  (elevation_mapping, layer `height_layer`, odom)
-//   out: sensor_msgs/PointCloud2 (PointXYZI, intensity=cost, frame = map frame)
+//   out: sensor_msgs/PointCloud2 /terrain_map     (PointXYZI, intensity=cost)
+//        sensor_msgs/PointCloud2 /terrain_map_ext (PointXYZI, intensity=cost)
 //
-// cost(cell) = clamp(elevation - localGround, 0, vehicleHeight), where
-// localGround = min elevation in a `ground_radius` window (a flat patch -> ~0
-// cost = traversable; a step/rock/wall -> cost = its height -> obstacle once it
-// exceeds the planner's obstacleHeightThre). This is the same metric the CMU
+// /terrain_map cost(cell) = clamp(elevation - localGround, 0, vehicleHeight),
+// where localGround = min elevation in a `ground_radius` window (a flat patch ->
+// ~0 cost = traversable; a step/rock/wall -> cost = its height -> obstacle once
+// it exceeds the planner's obstacleHeightThre). This is the same metric the CMU
 // terrain_analysis produces, so the planner's thresholds carry over.
+//
+// /terrain_map_ext cost(cell) = (1 - traversability) * vehicleHeight, from the
+// postprocessor's `trav_layer` (slope+roughness, 0..1). Unlike height-above-
+// ground it penalizes steep slopes, so the FAR global planner routes around
+// terrain the local metric cannot see. Same [0, vehicleHeight] range, so FAR's
+// obstacle thresholds match the local planner's. Only published when the layer
+// exists (i.e. the extended postprocessor pipeline is loaded).
 // ============================================================================
+#include <algorithm>
 #include <cmath>
 #include <string>
 
@@ -30,7 +39,9 @@
 
 namespace {
 ros::Publisher g_pub;
+ros::Publisher g_pub_ext;
 std::string g_height_layer;
+std::string g_trav_layer;
 double g_ground_radius;
 double g_vehicle_height;
 }  // namespace
@@ -99,6 +110,40 @@ void gridMapCallback(const grid_map_msgs::GridMap& message) {
   out.header.frame_id = map.getFrameId();        // == elevation_mapping map_frame (odom)
   out.header.stamp = message.info.header.stamp;
   g_pub.publish(out);
+
+  // ---- /terrain_map_ext: traversability-based cost for the FAR global planner
+  if (map.exists(g_trav_layer)) {
+    const grid_map::Matrix& trav = map[g_trav_layer];
+    pcl::PointCloud<pcl::PointXYZI> ext;
+    ext.reserve(cloud.size());
+    for (grid_map::GridMapIterator it(map); !it.isPastEnd(); ++it) {
+      const grid_map::Index idx(*it);
+      const float t = trav(idx(0), idx(1));
+      const float e = elev(idx(0), idx(1));
+      if (!std::isfinite(t) || !std::isfinite(e)) {
+        continue;
+      }
+      grid_map::Position pos;
+      map.getPosition(idx, pos);
+
+      pcl::PointXYZI p;
+      p.x = static_cast<float>(pos.x());
+      p.y = static_cast<float>(pos.y());
+      p.z = e;
+      p.intensity = std::max(0.0f, std::min(1.0f, 1.0f - t)) *
+                    static_cast<float>(g_vehicle_height);
+      ext.push_back(p);
+    }
+    sensor_msgs::PointCloud2 out_ext;
+    pcl::toROSMsg(ext, out_ext);
+    out_ext.header = out.header;
+    g_pub_ext.publish(out_ext);
+  } else {
+    ROS_WARN_THROTTLE(10.0,
+                      "[gridmap_to_terrainmap] no '%s' layer in grid_map; "
+                      "/terrain_map_ext idle (extended postprocessor not loaded?)",
+                      g_trav_layer.c_str());
+  }
 }
 
 int main(int argc, char** argv) {
@@ -106,20 +151,25 @@ int main(int argc, char** argv) {
   ros::NodeHandle nh;
   ros::NodeHandle pnh("~");
 
-  std::string grid_map_topic, terrain_map_topic;
+  std::string grid_map_topic, terrain_map_topic, terrain_map_ext_topic;
   pnh.param<std::string>("grid_map_topic", grid_map_topic,
                          "/elevation_mapping/elevation_map_postprocessed");
   pnh.param<std::string>("terrain_map_topic", terrain_map_topic, "/terrain_map");
+  pnh.param<std::string>("terrain_map_ext_topic", terrain_map_ext_topic, "/terrain_map_ext");
   pnh.param<std::string>("height_layer", g_height_layer, "elevation_inpainted");
+  pnh.param<std::string>("trav_layer", g_trav_layer, "traversability");
   pnh.param<double>("ground_radius", g_ground_radius, 0.75);
   pnh.param<double>("vehicle_height", g_vehicle_height, 1.0);
 
   g_pub = nh.advertise<sensor_msgs::PointCloud2>(terrain_map_topic, 2);
+  g_pub_ext = nh.advertise<sensor_msgs::PointCloud2>(terrain_map_ext_topic, 2);
   ros::Subscriber sub = nh.subscribe(grid_map_topic, 1, gridMapCallback);
 
-  ROS_INFO("[gridmap_to_terrainmap] %s (layer %s) -> %s  (ground_radius=%.2f, vehicleHeight=%.2f)",
+  ROS_INFO("[gridmap_to_terrainmap] %s (layer %s) -> %s  (ground_radius=%.2f, vehicleHeight=%.2f); "
+           "(layer %s) -> %s",
            grid_map_topic.c_str(), g_height_layer.c_str(), terrain_map_topic.c_str(),
-           g_ground_radius, g_vehicle_height);
+           g_ground_radius, g_vehicle_height,
+           g_trav_layer.c_str(), terrain_map_ext_topic.c_str());
   ros::spin();
   return 0;
 }

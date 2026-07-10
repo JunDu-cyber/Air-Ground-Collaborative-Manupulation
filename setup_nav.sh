@@ -43,6 +43,10 @@ cd "$SRC"
   git clone --depth 1 https://github.com/vectr-ucla/direct_lidar_inertial_odometry.git
 [ -d robot_body_filter ] || \
   git clone --depth 1 https://github.com/peci1/robot_body_filter.git
+# FAR planner (visibility-graph global route planner; multi-package repo with a
+# nested src/: far_planner, graph_decoder, boundary_handler, teleop_rviz_plugin)
+[ -d far_planner ] || \
+  git clone --depth 1 -b melodic-noetic https://github.com/MichaelFYang/far_planner.git
 # FAST_LIO is the optional STEP 2 A/B baseline. Build it with BUILD_FASTLIO=1.
 # It needs (a) livox_ros_driver for the CustomMsg type (the driver auto-bootstraps
 # the Livox-SDK at build time) and (b) its own ikd-Tree / IKFoM_toolkit submodules.
@@ -77,7 +81,11 @@ for f in loam_interface/src/loamInterface.cpp \
   sed -i 's/"map"/"odom"/g' "$AEDE/src/$f"
 done
 
-# 4b. DLIO: don't prepend an empty-namespace "/" to frame names when running in
+# 4b. FAR planner needs NO source patch: its frame is the `world_frame` config
+#     param (default "map"), overridden to "odom" by
+#     mobile_manipulator/config/far_ugv_overrides.yaml in cmu_planner.launch.
+
+# 4c. DLIO: don't prepend an empty-namespace "/" to frame names when running in
 #     the global namespace, so frames stay exactly odom/base_link/velodyne/imu.
 DLIO_ODOM="$SRC/direct_lidar_inertial_odometry/src/dlio/odom.cc"
 if ! grep -q 'if (!ns.empty())' "$DLIO_ODOM"; then
@@ -92,7 +100,7 @@ echo "[5/5] building (catkin build — this workspace uses catkin_tools)..."
 cd "$WS_DIR"
 PKGS="loam_interface local_planner terrain_analysis terrain_analysis_ext \
   sensor_scan_generation direct_lidar_inertial_odometry robot_body_filter \
-  terrain_cost_adapter"
+  terrain_cost_adapter far_planner graph_decoder"
 [ "${BUILD_FASTLIO:-0}" = "1" ] && PKGS="$PKGS livox_ros_driver fast_lio"
 catkin build $PKGS -j"$(nproc --ignore=2)"
 

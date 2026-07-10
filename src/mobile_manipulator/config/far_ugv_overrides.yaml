@@ -1,0 +1,17 @@
+# FAR planner overrides for the egocentric Husky UGV. Loaded AFTER
+# far_planner/config/default.yaml into the far_planner node's private
+# namespace, so only the keys that differ from upstream defaults live here.
+#
+# Interface recap (verified against far_planner.cpp, melodic-noetic branch):
+#   subs : /goal_point (PointStamped), /odom_world->/state_estimation,
+#          /terrain_cloud->/terrain_map_ext, /scan_cloud->/registered_scan,
+#          /terrain_local_cloud->/terrain_map   (remaps in our launch)
+#   pubs : /way_point (PointStamped -> CMU localPlanner),
+#          /far_reach_goal_status (Bool), /navigation_boundary
+#   graph save/load (visibility-graph pre-seeding): /save_file_dir,
+#          /read_file_dir (std_msgs/String with a .vgh path)
+
+world_frame: odom          # egocentric stack has no map frame (DLIO odom root)
+is_static_env: false       # terrain keeps evolving: UAV prior + live UGV LiDAR
+is_attempt_autoswitch: true  # attemptable navigation into not-yet-observed area
+robot_dim: 1.0             # Husky footprint 0.99 x 0.67 m -> conservative 1.0

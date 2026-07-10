@@ -1,7 +1,10 @@
 # Post-processing pipeline run by elevation_mapping on the fused map before it is
-# published. It fills sensor holes, estimates surface normals, and derives a
-# per-cell terrain SLOPE layer (radians) that the Week-3 traversability costmap
-# will threshold. Layers produced: elevation_inpainted, normal_vectors_*, slope.
+# published. It fills sensor holes, estimates surface normals, and derives per-cell
+# terrain SLOPE (radians), ROUGHNESS (m) and TRAVERSABILITY (0..1) layers.
+# traversability feeds the FAR global planner via gridmap_to_terrainmap
+# (/terrain_map_ext, intensity = (1-traversability)*vehicle_height).
+# Layers produced: elevation_inpainted, normal_vectors_*, slope, roughness,
+# traversability.
 postprocessor_pipeline:
   # Fill small holes (cells the UAV cloud missed) by inpainting the elevation.
   - name: inpaint
@@ -28,3 +31,39 @@ postprocessor_pipeline:
     params:
       output_layer: slope
       expression: acos(normal_vectors_z)
+
+  # Local surface roughness (m): stddev of the in-painted elevation in a 0.5 m
+  # window. Flat/smooth ground ~0; rubble or vegetation clutter is high.
+  - name: roughness
+    type: gridMapFilters/SlidingWindowMathExpressionFilter
+    params:
+      input_layer: elevation_inpainted
+      output_layer: roughness
+      expression: sqrt(sumOfFinites(square(elevation_inpainted - meanOfFinites(elevation_inpainted))) / numberOfFinites(elevation_inpainted))
+      compute_empty_cells: false
+      edge_handling: crop
+      window_length: 0.5
+
+  # Traversability in [0,1]: 1 = flat smooth ground, 0 = impassable.
+  # slope term: 0.44 rad = 25 deg, the Husky usable slope limit (a 35 deg
+  # incline that the height-above-ground metric cannot see scores ~0 here).
+  # roughness term: 0.15 m local stddev = impassable rubble.
+  - name: traversability
+    type: gridMapFilters/MathExpressionFilter
+    params:
+      output_layer: traversability
+      expression: 0.6 * (1.0 - (slope / 0.44)) + 0.4 * (1.0 - (roughness / 0.15))
+
+  # Clamp traversability to [0, 1].
+  - name: traversability_floor
+    type: gridMapFilters/ThresholdFilter
+    params:
+      layer: traversability
+      lower_threshold: 0.0
+      set_to: 0.0
+  - name: traversability_ceil
+    type: gridMapFilters/ThresholdFilter
+    params:
+      layer: traversability
+      upper_threshold: 1.0
+      set_to: 1.0

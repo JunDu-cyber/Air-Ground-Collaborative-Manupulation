@@ -21,6 +21,13 @@
   <!-- terrain_analysis (Phase A bootstrap) | elevation (Phase B grid_map) -->
   <arg name="cost_source" default="terrain_analysis"/>
 
+  <!-- 'far' = FAR global planner owns /way_point (needs cost_source:=elevation,
+       whose postprocessor derives the traversability layer feeding
+       /terrain_map_ext); 'none' = Phase-A direct goal->waypoint bridge.
+       NEVER launch terrain_analysis_ext alongside 'far': it also publishes
+       /terrain_map_ext and the two sources would fight. -->
+  <arg name="global_planner" default="none"/>
+
   <!-- Husky geometry / speed -->
   <arg name="vehicleLength" default="0.99"/>
   <arg name="vehicleWidth"  default="0.67"/>
@@ -154,13 +161,39 @@
        target sequence) or hand-published for testing. -->
   <arg name="ugv_goal_topic" default="/ugv/goal"/>
 
-  <!-- ===== goal bridge: /ugv/goal (PoseStamped, any frame) -> /way_point (odom) ===== -->
-  <node pkg="mobile_manipulator" type="goal_to_waypoint.py"
+  <!-- ===== goal bridge (global_planner:=none): /ugv/goal -> /way_point (odom).
+       Gated off in FAR mode - FAR owns /way_point there and two publishers
+       on the localPlanner goal topic must never coexist. ===== -->
+  <node unless="$(eval arg('global_planner')=='far')"
+        pkg="mobile_manipulator" type="goal_to_waypoint.py"
         name="goal_to_waypoint" output="screen">
     <param name="input"        value="$(arg ugv_goal_topic)"/>
     <param name="output"       value="/way_point"/>
     <param name="target_frame" value="odom"/>
   </node>
+
+  <!-- ===== FAR global planner (global_planner:=far) =====
+       Visibility-graph route planner over /terrain_map_ext (traversability
+       cost from the UAV-built elevation map: slope-aware, unlike the local
+       height-above-ground metric). Emits intermediate /way_point goals that
+       the localPlanner follows; goals come in on /goal_point via the
+       ugv_goal_to_far_goal bridge, keeping /ugv/goal as the single seam. -->
+  <group if="$(eval arg('global_planner')=='far')">
+    <node pkg="far_planner" type="far_planner" name="far_planner" output="screen">
+      <rosparam command="load" file="$(find far_planner)/config/default.yaml"/>
+      <rosparam command="load" file="$(find mobile_manipulator)/config/far_ugv_overrides.yaml"/>
+      <remap from="/odom_world"          to="/state_estimation"/>
+      <remap from="/terrain_cloud"       to="/terrain_map_ext"/>
+      <remap from="/scan_cloud"          to="/registered_scan"/>
+      <remap from="/terrain_local_cloud" to="/terrain_map"/>
+    </node>
+
+    <node pkg="mobile_manipulator" type="ugv_goal_to_far_goal.py"
+          name="ugv_goal_to_far_goal" output="screen">
+      <param name="input"  value="$(arg ugv_goal_topic)"/>
+      <param name="output" value="/goal_point"/>
+    </node>
+  </group>
 
   <!-- ===== target tour: collect UAV-detected targets, order, drive sequentially =====
        Subscribes /detected_targets (mobile_manipulator/WorldTarget, the reserved
