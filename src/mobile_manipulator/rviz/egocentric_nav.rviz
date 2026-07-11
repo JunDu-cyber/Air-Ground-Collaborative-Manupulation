@@ -298,31 +298,22 @@ Visualization Manager:
     - Class: rviz/Select
     - Class: rviz/FocusCamera
     - Class: rviz/Measure
-    # ---- "2D Nav Goal" -> /ugv/goal : works in EITHER planner mode ----
-    # /ugv/goal (PoseStamped) is the goal seam both modes listen on:
-    #   global_planner:=none -> goal_to_waypoint.py     /ugv/goal -> /way_point  -> localPlanner
-    #   global_planner:=far  -> ugv_goal_to_far_goal.py /ugv/goal -> /goal_point -> FAR
-    # It has to be SetGoal rather than PublishPoint, because the seam is a PoseStamped and
-    # PublishPoint can only emit a PointStamped. Use this one with global_planner:=none,
-    # which drives localPlanner directly and does not depend on FAR being initialised.
-    - Class: rviz/SetGoal
-      Topic: /ugv/goal
-
-    # ---- "Publish Point" -> /goal_point : straight to FAR ----
-    # This is the CORRECT topic for FAR and it does work: FAR subscribes to /goal_point
-    # (far_planner.cpp:19) and drives to it.
+    # ---- "Publish Point" -> /goal_point : the goal button. Sends straight to FAR ----
+    # This is the CORRECT topic: FAR subscribes to /goal_point (far_planner.cpp:19) and
+    # drives to whatever you click.
     #
-    # But FAR will ignore it until its visibility graph exists. WaypointCallBack
-    # (far_planner.cpp:699) returns early on !is_graph_init_ and only warns in DEBUG
-    # mode, so an early click vanishes with no message at all. The graph only comes up
-    # once FAR has an obstacle to plan around (is_cloud_init_ needs a non-empty
-    # surround_obs_cloud_).
+    # If a click seems to do nothing, FAR has not built its visibility graph yet.
+    # WaypointCallBack (far_planner.cpp:699) returns early on !is_graph_init_ and only
+    # warns in DEBUG mode, so the goal is discarded without a single message. The graph
+    # only comes up once FAR has an obstacle to plan around (is_cloud_init_ needs a
+    # non-empty surround_obs_cloud_).
     #
-    # Watch out for test_ramp:=true here: with the ramp in front of the robot,
-    # /FAR_obs_debug measures width=0 and no graph is ever built, so every click is
-    # silently dropped -- even though /terrain_map_ext plainly carries 353 obstacle cells
-    # (315 of them surviving FAR's z-crop). Without the ramp FAR builds a 139-vertex graph
-    # and Publish Point drives normally. So: ramp OR FAR, not both.
+    # In particular, do NOT combine this with test_ramp:=true. With the ramp in front of
+    # the robot, /FAR_obs_debug measures width=0, no graph is ever built, and every click
+    # is silently dropped -- even though /terrain_map_ext plainly carries 353 obstacle
+    # cells, 315 of them surviving FAR's z-crop, so FAR is discarding them for reasons of
+    # its own. Without the ramp FAR builds a 139-vertex graph and this works normally.
+    # Ramp OR FAR, not both; with the ramp, use global_planner:=none.
     - Class: rviz/PublishPoint
       Single click: true
       Topic: /goal_point
