@@ -42,9 +42,24 @@ input_sources:
     topic: /uav0/mapping/velodyne_points_gated
     queue_size: 1
     publish_on_update: true
+
+    # --- PER-SOURCE covariance lever arm (needs our elevation_mapping patch) ---
+    # The pivot of the pose-covariance lever arm for THIS source: the UAV's body, not the
+    # UGV's. SensorProcessorBase looks up base->sensor and map->base from this frame and
+    # propagates the covariance below into each point's height variance. Upstream had one
+    # node-wide value; we made it per-source precisely because a UAV and a UGV cannot share
+    # a pivot (see patches/elevation_mapping-per-source-pose-covariance.patch).
+    robot_base_frame_id: uav0/base_link
+    # This source's OWN body pose covariance: the real MAVROS covariance of odom->uav,
+    # published by scripts/uav_pose_cov_publisher.py. The UGV source declares no topic and
+    # so keeps using the node-wide one (which is empty), exactly as before.
+    robot_pose_with_covariance_topic: /uav/pose_cov
+    robot_pose_cache_size: 200
+
     sensor_processor:
-      type: laser
-      apply_voxelgrid_filter: true
-      # Coarser than the UGV's 0.05: aerial points are plentiful and far away, and the
-      # 200 m-scale sweep would otherwise flood the fusion.
-      voxelgrid_filter_size: 0.15
+      # `perfect` is correct HERE, unlike a naive merge: the aerial LiDAR's own range noise
+      # is negligible next to the UAV's pose error, and that pose error is now modelled
+      # properly, through the UAV's own covariance on the UAV's own lever arm. (Our local
+      # PerfectSensorProcessor patch also folds the UAV's altitude variance straight into
+      # height variance.) This is the same model airground_egocentric.launch uses standalone.
+      type: perfect
