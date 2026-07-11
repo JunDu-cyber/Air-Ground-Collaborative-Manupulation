@@ -3,11 +3,12 @@
 grid_map_visualizations:
 
   # Terrain surface as a point cloud at the OBSERVED elevation height. Use the raw
-  # `elevation` layer, NOT `elevation_inpainted`: the OpenCV inpaint extrapolates the
-  # observed terrain into every unobserved (NaN) cell of the 50x50 map, so visualizing
-  # it paints a strange-shaped surface over areas the UAV never scanned. The inpainted
-  # layer is still produced (the slope/normals/costmap pipeline needs a hole-free map),
-  # it just isn't shown here.
+  # `elevation` layer, NOT `elevation_filled`: the hole-filling extrapolates observed
+  # terrain into unobserved (NaN) cells, so visualizing it paints a surface over areas
+  # nothing ever scanned. `elevation` is NaN exactly where nothing was measured, which
+  # is also why gridmap_to_terrainmap uses it as the validity mask. The filled layer is
+  # still produced (normals/slope/roughness need a hole-free map), it just isn't shown
+  # here.
   - name: elevation_cloud
     type: point_cloud
     params:

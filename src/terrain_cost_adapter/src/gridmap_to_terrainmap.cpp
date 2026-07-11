@@ -42,6 +42,7 @@ ros::Publisher g_pub;
 ros::Publisher g_pub_ext;
 std::string g_height_layer;
 std::string g_trav_layer;
+std::string g_validity_layer;
 double g_ground_radius;
 double g_vehicle_height;
 }  // namespace
@@ -52,7 +53,7 @@ void gridMapCallback(const grid_map_msgs::GridMap& message) {
 
   std::string layer = g_height_layer;
   if (!map.exists(layer)) {
-    // fall back to the raw elevation layer if the inpainted one is absent
+    // fall back to the raw elevation layer if the hole-filled one is absent
     if (map.exists("elevation")) {
       layer = "elevation";
     } else {
@@ -67,13 +68,45 @@ void gridMapCallback(const grid_map_msgs::GridMap& message) {
   const double res = map.getResolution();
   const int win = std::max(1, static_cast<int>(std::round(g_ground_radius / res)));
 
-  pcl::PointCloud<pcl::PointXYZI> cloud;
-  cloud.reserve(static_cast<size_t>(size(0)) * static_cast<size_t>(size(1)));
+  // Emit only cells the sensor actually observed. `height_layer` is the HOLE-FILLED
+  // elevation, which is finite everywhere -- great for computing normals/roughness
+  // over small holes, but if we published all of it we would hand the planners
+  // ~89% invented terrain, ~16% of which scores as obstacle. Those phantom walls
+  // fragment FAR's visibility graph and send it on huge detours around nothing.
+  // The raw `elevation` layer is NaN wherever nothing was ever measured, so it is
+  // the validity mask. This matches terrain_analysis_ext, which only ever emits
+  // observed terrain; unobserved space stays UNKNOWN (not free, not obstacle) and
+  // FAR's attemptable navigation handles it.
+  const bool use_mask = !g_validity_layer.empty() && map.exists(g_validity_layer);
+  if (!use_mask) {
+    ROS_WARN_THROTTLE(10.0,
+                      "[gridmap_to_terrainmap] validity layer '%s' missing; publishing "
+                      "inpainted cells as if observed (planners will see phantom terrain)",
+                      g_validity_layer.c_str());
+  }
+  const grid_map::Matrix& valid = use_mask ? map[g_validity_layer] : elev;
+  auto observed = [&](const grid_map::Index& idx) {
+    return std::isfinite(valid(idx(0), idx(1)));
+  };
+
+  const bool has_trav = map.exists(g_trav_layer);
+  if (!has_trav) {
+    ROS_WARN_THROTTLE(10.0,
+                      "[gridmap_to_terrainmap] no '%s' layer in grid_map; "
+                      "/terrain_map_ext idle (extended postprocessor not loaded?)",
+                      g_trav_layer.c_str());
+  }
+  const grid_map::Matrix& trav = has_trav ? map[g_trav_layer] : elev;
+
+  pcl::PointCloud<pcl::PointXYZI> cloud, ext;
+  const size_t cells = static_cast<size_t>(size(0)) * static_cast<size_t>(size(1));
+  cloud.reserve(cells);
+  ext.reserve(cells);
 
   for (grid_map::GridMapIterator it(map); !it.isPastEnd(); ++it) {
     const grid_map::Index idx(*it);
     const float e = elev(idx(0), idx(1));
-    if (!std::isfinite(e)) {
+    if (!std::isfinite(e) || !observed(idx)) {
       continue;
     }
 
@@ -103,6 +136,28 @@ void gridMapCallback(const grid_map_msgs::GridMap& message) {
     p.z = e;
     p.intensity = cost;
     cloud.push_back(p);
+
+    if (!has_trav) continue;
+    const float t = trav(idx(0), idx(1));
+    if (!std::isfinite(t)) continue;
+
+    // Drape the FAR cloud on the GROUND, not on top of the obstacle.
+    //
+    // FAR crops /terrain_cloud to |z - robot_z| < kTolerZ (~1.85 m) before splitting
+    // it into free/obstacle. Upstream terrain_analysis_ext feeds it raw LiDAR points,
+    // so a wall contributes returns all the way down to ground level and survives that
+    // crop. Our 2.5D grid has ONE point per cell carrying the elevation of the obstacle
+    // TOP (a building reads z ~= 2.8 m), so every obstacle would be cropped away --
+    // leaving FAR's surrounding obstacle cloud empty, `is_cloud_init_` false, and its
+    // whole planning loop inert. The cost already lives in `intensity`; z only has to
+    // say where on the terrain surface this cell is.
+    pcl::PointXYZI q;
+    q.x = p.x;
+    q.y = p.y;
+    q.z = ground;
+    q.intensity = std::max(0.0f, std::min(1.0f, 1.0f - t)) *
+                  static_cast<float>(g_vehicle_height);
+    ext.push_back(q);
   }
 
   sensor_msgs::PointCloud2 out;
@@ -111,38 +166,11 @@ void gridMapCallback(const grid_map_msgs::GridMap& message) {
   out.header.stamp = message.info.header.stamp;
   g_pub.publish(out);
 
-  // ---- /terrain_map_ext: traversability-based cost for the FAR global planner
-  if (map.exists(g_trav_layer)) {
-    const grid_map::Matrix& trav = map[g_trav_layer];
-    pcl::PointCloud<pcl::PointXYZI> ext;
-    ext.reserve(cloud.size());
-    for (grid_map::GridMapIterator it(map); !it.isPastEnd(); ++it) {
-      const grid_map::Index idx(*it);
-      const float t = trav(idx(0), idx(1));
-      const float e = elev(idx(0), idx(1));
-      if (!std::isfinite(t) || !std::isfinite(e)) {
-        continue;
-      }
-      grid_map::Position pos;
-      map.getPosition(idx, pos);
-
-      pcl::PointXYZI p;
-      p.x = static_cast<float>(pos.x());
-      p.y = static_cast<float>(pos.y());
-      p.z = e;
-      p.intensity = std::max(0.0f, std::min(1.0f, 1.0f - t)) *
-                    static_cast<float>(g_vehicle_height);
-      ext.push_back(p);
-    }
+  if (has_trav) {
     sensor_msgs::PointCloud2 out_ext;
     pcl::toROSMsg(ext, out_ext);
     out_ext.header = out.header;
     g_pub_ext.publish(out_ext);
-  } else {
-    ROS_WARN_THROTTLE(10.0,
-                      "[gridmap_to_terrainmap] no '%s' layer in grid_map; "
-                      "/terrain_map_ext idle (extended postprocessor not loaded?)",
-                      g_trav_layer.c_str());
   }
 }
 
@@ -156,8 +184,10 @@ int main(int argc, char** argv) {
                          "/elevation_mapping/elevation_map_postprocessed");
   pnh.param<std::string>("terrain_map_topic", terrain_map_topic, "/terrain_map");
   pnh.param<std::string>("terrain_map_ext_topic", terrain_map_ext_topic, "/terrain_map_ext");
-  pnh.param<std::string>("height_layer", g_height_layer, "elevation_inpainted");
+  pnh.param<std::string>("height_layer", g_height_layer, "elevation_filled");
   pnh.param<std::string>("trav_layer", g_trav_layer, "traversability");
+  // NaN wherever the sensor never measured; set to "" to publish inpainted cells too.
+  pnh.param<std::string>("validity_layer", g_validity_layer, "elevation");
   pnh.param<double>("ground_radius", g_ground_radius, 0.75);
   pnh.param<double>("vehicle_height", g_vehicle_height, 1.0);
 

@@ -60,3 +60,27 @@ cloud_filter_chain:
         - right_inner_finger
         - right_inner_finger_pad
         - realsense_camera_link
+
+  # ---------------------------------------------------------------------------
+  # Second pass: an unconditional box around the rigid base. robot_body_filter
+  # above tests against COLLISION geometry, but husky_description declares
+  # top_chassis_link and user_rail_link visual-only, so returns off them survive.
+  # elevation_mapping then accumulates them into a ~0.73 m mound centred on the
+  # robot, which localPlanner reads as an obstacle ring that blocks all 343 of
+  # its motion primitives (the Husky drives ~1.1 m, then cmd_vel goes to zero).
+  #
+  # The box spans the full footprint column: Husky is 0.99 x 0.67 m (half-extents
+  # 0.50 x 0.335) padded to 0.60 x 0.42, and z runs from below the wheels to just
+  # above the UR5 base and mast top. The robot's own map cells therefore go NaN
+  # and the `fill_holes` postprocessor (MedianFillFilter) fills them from the
+  # surrounding ground.
+  #
+  # The moving UR5 arm is NOT covered by this box -- that stays robot_body_filter's
+  # job (those links do have collision meshes). Both filters run.
+  # ---------------------------------------------------------------------------
+  - name: self_box
+    type: mobileManipulator/SelfBoxFilterPointCloud2
+    params:
+      frames/target: base_link
+      box/min: [-0.60, -0.42, -0.30]
+      box/max: [ 0.60,  0.42,  0.90]

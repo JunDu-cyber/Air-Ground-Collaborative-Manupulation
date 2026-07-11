@@ -74,10 +74,15 @@
   <exec_depend>message_runtime</exec_depend>
   <exec_depend>gpd_ros</exec_depend>
 
+  <!-- SelfBoxFilterPointCloud2 (sensor_filters chain plugin) -->
+  <depend>filters</depend>
+  <depend>pluginlib</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
 
   <!-- The export tag contains other, unspecified, tags -->
   <export>
     <!-- Other tools can request additional information be placed here -->
-
+    <filters plugin="${prefix}/filter_plugins.xml"/>
   </export>
 </package>

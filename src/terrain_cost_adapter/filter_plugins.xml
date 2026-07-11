@@ -1,0 +1,13 @@
+<class_libraries>
+  <library path="lib/libterrain_cost_adapter_filters">
+    <class name="terrainCostAdapter/RoughnessFilter"
+           type="terrain_cost_adapter::RoughnessFilter&lt;grid_map::GridMap&gt;"
+           base_class_type="filters::FilterBase&lt;grid_map::GridMap&gt;">
+      <description>
+        Local surface roughness (population stddev of a layer over a square
+        window), computed with NaN-masked integral images: O(1) per cell,
+        independent of window size.
+      </description>
+    </class>
+  </library>
+</class_libraries>

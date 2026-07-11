@@ -3,23 +3,38 @@
 # terrain SLOPE (radians), ROUGHNESS (m) and TRAVERSABILITY (0..1) layers.
 # traversability feeds the FAR global planner via gridmap_to_terrainmap
 # (/terrain_map_ext, intensity = (1-traversability)*vehicle_height).
-# Layers produced: elevation_inpainted, normal_vectors_*, slope, roughness,
+# Layers produced: elevation_filled, normal_vectors_*, slope, roughness,
 # traversability.
 postprocessor_pipeline:
-  # Fill small holes (cells the UAV cloud missed) by inpainting the elevation.
-  - name: inpaint
-    type: gridMapCv/InpaintFilter
+  # Fill small holes (cells the sensor missed) with the median of the neighbourhood.
+  #
+  # NOT gridMapCv/InpaintFilter: it round-trips the layer through an 8-bit image
+  # (CV_8UC1), quantising elevation to 256 levels ACROSS THE WHOLE MAP RANGE. With
+  # buildings in view that range is ~32 m, so the step is ~0.12 m -- and a 0.12 m
+  # stair-step across a 0.25 m cell reads as a 26 deg slope, over the 25 deg
+  # traversability limit. Flat ground then quantises into obstacles: 81% of observed
+  # cells were classed impassable. It looked fine near spawn only because the
+  # elevation range there is small (~6 m -> 2.4 cm steps).
+  #
+  # MedianFillFilter stays in float. filter_existing_values: false keeps measured
+  # cells bit-exact; only NaN holes are filled.
+  - name: fill_holes
+    type: gridMapFilters/MedianFillFilter
     params:
       input_layer: elevation
-      output_layer: elevation_inpainted
-      radius: 0.3
+      output_layer: elevation_filled
+      fill_hole_radius: 0.3
+      filter_existing_values: false
+      existing_value_radius: 0.1
+      fill_mask_layer: should_fill
+      debug_infill_mask_layer: debug_infill_mask
 
-  # Surface normals from the in-painted elevation. radius ~2 cells (resolution
+  # Surface normals from the hole-filled elevation. radius ~2 cells (resolution
   # 0.25 m) smooths sensor noise while keeping real terrain relief.
   - name: surface_normals
     type: gridMapFilters/NormalVectorsFilter
     params:
-      input_layer: elevation_inpainted
+      input_layer: elevation_filled
       output_layers_prefix: normal_vectors_
       radius: 0.5
       normal_vector_positive_axis: z
@@ -34,14 +49,15 @@ postprocessor_pipeline:
 
   # Local surface roughness (m): stddev of the in-painted elevation in a 0.5 m
   # window. Flat/smooth ground ~0; rubble or vegetation clutter is high.
+  # NOT gridMapFilters/SlidingWindowMathExpressionFilter: that one re-parses its
+  # expression string and allocates a submap per cell, dragging the postprocessor
+  # from 4 Hz to 0.03 Hz once the map fills, which starves localPlanner of
+  # /terrain_map. Ours computes the same stddev from integral images, O(1)/cell.
   - name: roughness
-    type: gridMapFilters/SlidingWindowMathExpressionFilter
+    type: terrainCostAdapter/RoughnessFilter
     params:
-      input_layer: elevation_inpainted
+      input_layer: elevation_filled
       output_layer: roughness
-      expression: sqrt(sumOfFinites(square(elevation_inpainted - meanOfFinites(elevation_inpainted))) / numberOfFinites(elevation_inpainted))
-      compute_empty_cells: false
-      edge_handling: crop
       window_length: 0.5
 
   # Traversability in [0,1]: 1 = flat smooth ground, 0 = impassable.
@@ -54,16 +70,21 @@ postprocessor_pipeline:
       output_layer: traversability
       expression: 0.6 * (1.0 - (slope / 0.44)) + 0.4 * (1.0 - (roughness / 0.15))
 
-  # Clamp traversability to [0, 1].
+  # Clamp traversability to [0, 1]. ThresholdFilter takes condition_layer +
+  # output_layer (NOT "layer"), and exactly one of lower_/upper_threshold per
+  # filter -- getting this wrong makes configure() fail and silently kills the
+  # WHOLE pipeline, so the postprocessed map never gets published.
   - name: traversability_floor
     type: gridMapFilters/ThresholdFilter
     params:
-      layer: traversability
+      condition_layer: traversability
+      output_layer: traversability
       lower_threshold: 0.0
       set_to: 0.0
   - name: traversability_ceil
     type: gridMapFilters/ThresholdFilter
     params:
-      layer: traversability
+      condition_layer: traversability
+      output_layer: traversability
       upper_threshold: 1.0
       set_to: 1.0

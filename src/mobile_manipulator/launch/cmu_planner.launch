@@ -59,7 +59,7 @@
           name="gridmap_to_terrainmap" output="screen">
       <param name="grid_map_topic"    value="/elevation_mapping/elevation_map_postprocessed"/>
       <param name="terrain_map_topic" value="/terrain_map"/>
-      <param name="height_layer"      value="elevation_inpainted"/>
+      <param name="height_layer"      value="elevation_filled"/>
       <param name="ground_radius"     value="$(arg ground_radius)"/>
       <param name="vehicle_height"    value="$(arg vehicle_height)"/>
     </node>

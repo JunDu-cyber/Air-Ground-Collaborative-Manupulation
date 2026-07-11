@@ -1,0 +1,253 @@
+Panels:
+  - Class: rviz/Displays
+    Help Height: 78
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /FAR cost (/terrain_map_ext)1
+        - /FAR global path (/viz_path_topic)1
+      Splitter Ratio: 0.5
+    Tree Height: 720
+  - Class: rviz/Tool Properties
+    Expanded:
+      - /Publish Point1
+    Name: Tool Properties
+    Splitter Ratio: 0.6
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz/Grid
+      Color: 120; 120; 120
+      Enabled: true
+      Line Style:
+        Line Width: 0.03
+        Value: Lines
+      Name: Grid (odom)
+      Normal Cell Count: 0
+      Plane: XY
+      Plane Cell Count: 40
+      Reference Frame: <Fixed Frame>
+      Value: true
+
+    - Alpha: 1
+      Class: rviz/RobotModel
+      Enabled: true
+      Name: Robot
+      Robot Description: robot_description
+      TF Prefix: ""
+      Value: true
+      Visual Enabled: true
+
+    - Class: rviz/TF
+      Enabled: false
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Value: false
+
+    # --- THE headline display: FAR's traversal cost. intensity 0 (blue) = free,
+    #     up to vehicle_height (red) = impassable. Should hug the observed area,
+    #     be blue on roads/grass and red on buildings. This is the cloud FAR plans on.
+    - Alpha: 1
+      Autocompute Intensity Bounds: false
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: Intensity
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 1.0
+      Min Color: 0; 0; 0
+      Min Intensity: 0.0
+      Name: FAR cost (/terrain_map_ext)
+      Position Transformer: XYZ
+      Size (Pixels): 3
+      Size (m): 0.22
+      # Flat Squares (2 triangles/point), NOT Boxes (12): the map is ~25k points, and
+      # RViz's OGRE 1.9 renderer intermittently segfaults inside the NVIDIA GL driver.
+      # Less geometry through that path = less exposure, and it keeps software_gl:=true
+      # (llvmpipe) fast enough to be usable. A 2.5D cost map reads fine flat anyway.
+      Style: Flat Squares
+      Topic: /terrain_map_ext
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+
+    # --- Local-planner cost (height above ground). Off by default; toggle on to
+    #     compare against the FAR cost above.
+    - Alpha: 1
+      Autocompute Intensity Bounds: false
+      Channel Name: intensity
+      Class: rviz/PointCloud2
+      Color Transformer: Intensity
+      Decay Time: 0
+      Enabled: false
+      Max Intensity: 1.0
+      Min Intensity: 0.0
+      Name: Local cost (/terrain_map)
+      Position Transformer: XYZ
+      Size (m): 0.22
+      Style: Flat Squares
+      Topic: /terrain_map
+      Use rainbow: true
+      Value: false
+
+    # --- Live LiDAR after self-filtering + registration, colored by height.
+    - Alpha: 0.6
+      Autocompute Intensity Bounds: true
+      Channel Name: intensity
+      Class: rviz/PointCloud2
+      Color Transformer: AxisColor
+      Axis: Z
+      Decay Time: 0
+      Enabled: true
+      Name: LiDAR (/registered_scan)
+      Position Transformer: XYZ
+      Size (Pixels): 2
+      Style: Points
+      Topic: /registered_scan
+      Use Fixed Frame: true
+      Value: true
+
+    # --- FAR visibility graph: the nodes + edges FAR routes over. Should be a
+    #     sparse polyline skeleton, NOT a dense speckle (dense = phantom obstacles).
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Name: FAR visibility graph (/viz_graph_topic)
+      Marker Topic: /viz_graph_topic
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+
+    # --- FAR obstacle contours (the polygon boundaries it extracts).
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Name: FAR contours (/viz_contour_topic)
+      Marker Topic: /viz_contour_topic
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+
+    # --- FAR global route to the goal (green polyline). This is the plan.
+    - Class: rviz/Marker
+      Enabled: true
+      Name: FAR global path (/viz_path_topic)
+      Marker Topic: /viz_path_topic
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+
+    # --- FAR graph nodes.
+    - Class: rviz/Marker
+      Enabled: true
+      Name: FAR nodes (/viz_node_topic)
+      Marker Topic: /viz_node_topic
+      Namespaces: {}
+      Queue Size: 100
+      Value: true
+
+    # --- The immediate waypoint FAR hands to the local planner (steps toward goal).
+    - Alpha: 1
+      Class: rviz/PointStamped
+      Color: 255; 170; 0
+      Enabled: true
+      History Length: 1
+      Name: FAR waypoint (/way_point)
+      Radius: 0.4
+      Topic: /way_point
+      Value: true
+
+    # --- Your commanded goal (what you clicked). See Tools note below.
+    - Alpha: 1
+      Class: rviz/PointStamped
+      Color: 255; 0; 0
+      Enabled: true
+      History Length: 1
+      Name: Goal (/goal_point)
+      Radius: 0.5
+      Topic: /goal_point
+      Value: true
+
+    # --- What FAR itself classified as obstacle (red) vs free (green) after its
+    #     z-crop. If obstacles look empty here while buildings are visible, the
+    #     terrain cloud is being cropped away. Off by default.
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Channel Name: intensity
+      Class: rviz/PointCloud2
+      Color: 255; 0; 0
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: false
+      Name: FAR obstacles (/FAR_obs_debug)
+      Position Transformer: XYZ
+      Size (m): 0.15
+      Style: Boxes
+      Topic: /FAR_obs_debug
+      Use Fixed Frame: true
+      Value: false
+
+    - Alpha: 0.3
+      Autocompute Intensity Bounds: true
+      Channel Name: intensity
+      Class: rviz/PointCloud2
+      Color: 0; 255; 0
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: false
+      Name: FAR free (/FAR_free_debug)
+      Position Transformer: XYZ
+      Size (m): 0.1
+      Style: Points
+      Topic: /FAR_free_debug
+      Use Fixed Frame: true
+      Value: false
+
+  Enabled: true
+  Global Options:
+    Background Color: 32; 32; 32
+    Default Light: true
+    Fixed Frame: odom
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz/Interact
+      Hide Inactive Objects: true
+    - Class: rviz/MoveCamera
+    - Class: rviz/Select
+    - Class: rviz/FocusCamera
+    - Class: rviz/Measure
+    # Publish Point is wired to /goal_point: click it, then click a spot on the
+    # ground to send that point straight to FAR as the navigation goal.
+    - Class: rviz/PublishPoint
+      Single click: true
+      Topic: /goal_point
+  Value: true
+  Views:
+    Current:
+      Class: rviz/Orbit
+      Distance: 45
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+      Name: Orbit (follows robot)
+      Pitch: 1.0
+      Target Frame: base_link
+      Yaw: 3.1
+    Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 900
+  Width: 1500
+  Hide Left Dock: false
+  Hide Right Dock: true
