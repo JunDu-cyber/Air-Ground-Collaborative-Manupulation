@@ -1,0 +1,199 @@
+diff --git a/elevation_mapping/include/elevation_mapping/sensor_processors/SensorProcessorBase.hpp b/elevation_mapping/include/elevation_mapping/sensor_processors/SensorProcessorBase.hpp
+index b062210..3dcb12c 100644
+--- a/elevation_mapping/include/elevation_mapping/sensor_processors/SensorProcessorBase.hpp
++++ b/elevation_mapping/include/elevation_mapping/sensor_processors/SensorProcessorBase.hpp
+@@ -9,9 +9,13 @@
+ #pragma once
+ 
+ // ROS
++#include <geometry_msgs/PoseWithCovarianceStamped.h>
+ #include <ros/ros.h>
+ #include <tf/transform_listener.h>
+ 
++#include <deque>
++#include <mutex>
++
+ // Eigen
+ #include <Eigen/Core>
+ 
+@@ -80,6 +84,35 @@ class SensorProcessorBase {
+    */
+   bool isTfAvailableInBuffer() const { return firstTfAvailable_; }
+ 
++ protected:
++  // AIR-GROUND EXTENSION (mobile_manipulator): OPTIONAL PER-SOURCE POSE COVARIANCE.
++  //
++  // Upstream has ONE node-wide robot_pose_with_covariance_topic, cached in ElevationMapping
++  // and handed to every sensor processor. Together with the (now per-source)
++  // robot_base_frame_id it forms the lever arm that turns body-pose uncertainty into each
++  // point's height variance.
++  //
++  // With two bodies that single topic is wrong: the UGV's points would be weighted by the
++  // UAV's covariance. So a source may declare its own topic in its own namespace:
++  //     input_sources:
++  //       uav: { robot_pose_with_covariance_topic: /uav/pose_cov, robot_base_frame_id: uav0/base_link, ... }
++  // When set, this processor subscribes itself and process() uses ITS covariance at the
++  // cloud's timestamp, ignoring the node-wide one. When unset (the default), the node-wide
++  // covariance passed into process() is used exactly as before -- so stock configs are
++  // untouched.
++  bool hasOwnPoseCovariance() const { return static_cast<bool>(poseCovarianceSubscriber_); }
++
++  //! Covariance of this source's own body at `time`; zero if none is cached yet.
++  Eigen::Matrix<double, 6, 6> ownPoseCovarianceAt(const ros::Time& time) const;
++
++  //! Subscribes to `robot_pose_with_covariance_topic` from THIS source's namespace, if set.
++  void setupOwnPoseCovariance();
++
++  ros::Subscriber poseCovarianceSubscriber_;
++  mutable std::mutex poseCovarianceMutex_;
++  std::deque<geometry_msgs::PoseWithCovarianceStamped> poseCovarianceCache_;
++  int poseCovarianceCacheSize_{200};
++
+  protected:
+   /*!
+    * Reads and verifies the parameters.
+diff --git a/elevation_mapping/src/input_sources/InputSourceManager.cpp b/elevation_mapping/src/input_sources/InputSourceManager.cpp
+index ad03137..eca26c6 100644
+--- a/elevation_mapping/src/input_sources/InputSourceManager.cpp
++++ b/elevation_mapping/src/input_sources/InputSourceManager.cpp
+@@ -43,11 +43,40 @@ bool InputSourceManager::configure(const XmlRpc::XmlRpcValue& config, const std:
+ 
+   bool successfulConfiguration = true;
+   std::set<std::string> subscribedTopics;
+-  SensorProcessorBase::GeneralParameters generalSensorProcessorConfig{nodeHandle_.param("robot_base_frame_id", std::string("/robot")),
+-                                                                      nodeHandle_.param("map_frame_id", std::string("/map"))};
++
++  // AIR-GROUND EXTENSION (mobile_manipulator): robot_base_frame_id is PER INPUT SOURCE.
++  //
++  // Upstream reads it once, node-wide, and hands the same GeneralParameters to every
++  // source. But this frame is the PIVOT OF THE POSE-COVARIANCE LEVER ARM: SensorProcessorBase
++  // looks up base->sensor and map->base and propagates the robot pose covariance through that
++  // arm into each point's height variance. One node-wide value therefore cannot serve two
++  // sensors carried by two different bodies.
++  //
++  // That is exactly our case: the UGV's Velodyne pivots at base_link (arm ~0.7 m) and the
++  // UAV's pivots at uav0/base_link (arm ~0.1 m). Sharing one pivot means either breaking the
++  // UGV source, or propagating the UAV's covariance through a ~20 m arm from the ground
++  // vehicle's chassis to an airborne sensor, which inflates the variance into nonsense.
++  //
++  // So each source may now override it in its own namespace:
++  //     input_sources:
++  //       lidar: { robot_base_frame_id: base_link,      ... }
++  //       uav:   { robot_base_frame_id: uav0/base_link, ... }
++  // Omitted -> falls back to the node-wide value, so existing configs behave identically.
++  const std::string nodeWideBaseFrame{nodeHandle_.param("robot_base_frame_id", std::string("/robot"))};
++  const std::string mapFrame{nodeHandle_.param("map_frame_id", std::string("/map"))};
++
+   // Configure all input sources in the list.
+   for (const auto& inputConfig : config) {
+-    Input source{(ros::NodeHandle(nodeHandle_.resolveName(sourceConfigurationName + "/" + inputConfig.first)))};
++    ros::NodeHandle sourceNodeHandle{nodeHandle_.resolveName(sourceConfigurationName + "/" + inputConfig.first)};
++
++    std::string sourceBaseFrame{nodeWideBaseFrame};
++    if (sourceNodeHandle.getParam("robot_base_frame_id", sourceBaseFrame) && sourceBaseFrame != nodeWideBaseFrame) {
++      ROS_INFO("Input source '%s': robot_base_frame_id overridden to '%s' (node-wide is '%s').", inputConfig.first.c_str(),
++               sourceBaseFrame.c_str(), nodeWideBaseFrame.c_str());
++    }
++    const SensorProcessorBase::GeneralParameters generalSensorProcessorConfig{sourceBaseFrame, mapFrame};
++
++    Input source{sourceNodeHandle};
+ 
+     const bool configured{source.configure(inputConfig.first, inputConfig.second, generalSensorProcessorConfig)};
+     if (!configured) {
+diff --git a/elevation_mapping/src/sensor_processors/PerfectSensorProcessor.cpp b/elevation_mapping/src/sensor_processors/PerfectSensorProcessor.cpp
+index f9c1c41..2ed0682 100644
+--- a/elevation_mapping/src/sensor_processors/PerfectSensorProcessor.cpp
++++ b/elevation_mapping/src/sensor_processors/PerfectSensorProcessor.cpp
+@@ -76,6 +76,13 @@ bool PerfectSensorProcessor::computeVariances(const PointCloudType::ConstPtr poi
+     heightVariance = rotationJacobian * rotationVariance * rotationJacobian.transpose();
+     heightVariance += sensorJacobian * sensorVariance * sensorJacobian.transpose();
+ 
++    // Air-ground extension (mobile_manipulator): UAV vertical-position (altitude)
++    // uncertainty adds directly to height variance. The map-frame z element of the
++    // robot-pose translation covariance. Horizontal x,y translation is deliberately
++    // routed through min_horizontal_variance + ElevationMap::fuse() (slope coupling)
++    // to avoid double-counting, so only the z (2,2) element is taken here.
++    heightVariance += static_cast<float>(robotPoseCovariance(2, 2));
++
+     // Copy to list.
+     variances(i) = heightVariance;
+   }
+diff --git a/elevation_mapping/src/sensor_processors/SensorProcessorBase.cpp b/elevation_mapping/src/sensor_processors/SensorProcessorBase.cpp
+index 58dd3ee..e4f1301 100644
+--- a/elevation_mapping/src/sensor_processors/SensorProcessorBase.cpp
++++ b/elevation_mapping/src/sensor_processors/SensorProcessorBase.cpp
+@@ -38,6 +38,10 @@ SensorProcessorBase::SensorProcessorBase(ros::NodeHandle& nodeHandle, const Gene
+       "\n\t- robot_base_frame_id: %s"
+       "\n\t- map_frame_id: %s",
+       generalConfig.robotBaseFrameId_.c_str(), generalConfig.mapFrameId_.c_str());
++
++  // AIR-GROUND EXTENSION: subscribe to this source's OWN pose covariance, if it declared one.
++  // No-op for stock configs, which declare none.
++  setupOwnPoseCovariance();
+ }
+ 
+ SensorProcessorBase::~SensorProcessorBase() = default;
+@@ -85,10 +89,63 @@ bool SensorProcessorBase::process(const PointCloudType::ConstPtr pointCloudInput
+   std::vector<PointCloudType::Ptr> pointClouds({pointCloudMapFrame, pointCloudSensorFrame});
+   removePointsOutsideLimits(pointCloudMapFrame, pointClouds);
+ 
++  // AIR-GROUND EXTENSION (mobile_manipulator): if this source declared its own
++  // robot_pose_with_covariance_topic, weight ITS points by ITS OWN body's covariance,
++  // not by the node-wide one. The node-wide topic belongs to whichever body the node was
++  // configured around, and with a UAV and a UGV feeding one map that is wrong for one of
++  // them. Falls through to the passed-in covariance when no per-source topic is set, so
++  // stock single-robot configs are bit-for-bit unchanged.
++  if (hasOwnPoseCovariance()) {
++    const Eigen::Matrix<double, 6, 6> ownCovariance{ownPoseCovarianceAt(timeStamp)};
++    return computeVariances(pointCloudSensorFrame, ownCovariance, variances);
++  }
++
+   // Compute variances
+   return computeVariances(pointCloudSensorFrame, robotPoseCovariance, variances);
+ }
+ 
++void SensorProcessorBase::setupOwnPoseCovariance() {
++  std::string topic;
++  if (!nodeHandle_.getParam("robot_pose_with_covariance_topic", topic) || topic.empty()) {
++    return;  // no per-source covariance: keep upstream behaviour
++  }
++  nodeHandle_.param("robot_pose_cache_size", poseCovarianceCacheSize_, 200);
++
++  poseCovarianceSubscriber_ = nodeHandle_.subscribe<geometry_msgs::PoseWithCovarianceStamped>(
++      topic, 10, [this](const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& msg) {
++        std::lock_guard<std::mutex> lock(poseCovarianceMutex_);
++        poseCovarianceCache_.push_back(*msg);
++        while (static_cast<int>(poseCovarianceCache_.size()) > poseCovarianceCacheSize_) {
++          poseCovarianceCache_.pop_front();
++        }
++      });
++  ROS_INFO("Sensor processor: using its OWN pose covariance from '%s' (pivot frame '%s').", topic.c_str(),
++           generalParameters_.robotBaseFrameId_.c_str());
++}
++
++Eigen::Matrix<double, 6, 6> SensorProcessorBase::ownPoseCovarianceAt(const ros::Time& time) const {
++  Eigen::Matrix<double, 6, 6> covariance;
++  covariance.setZero();
++
++  std::lock_guard<std::mutex> lock(poseCovarianceMutex_);
++  if (poseCovarianceCache_.empty()) {
++    ROS_WARN_THROTTLE(10.0, "Sensor processor has its own pose covariance topic but nothing cached yet; using zero.");
++    return covariance;
++  }
++
++  // Newest sample at or before `time`; if the cloud predates everything cached, take the oldest.
++  const geometry_msgs::PoseWithCovarianceStamped* best{&poseCovarianceCache_.front()};
++  for (const auto& sample : poseCovarianceCache_) {
++    if (sample.header.stamp <= time) {
++      best = &sample;
++    } else {
++      break;  // cache is in arrival (time) order
++    }
++  }
++  covariance = Eigen::Map<const Eigen::Matrix<double, 6, 6>>(best->pose.covariance.data());
++  return covariance;
++}
++
+ bool SensorProcessorBase::updateTransformations(const ros::Time& timeStamp) {
+   const Parameters parameters{parameters_.getData()};
+   try {

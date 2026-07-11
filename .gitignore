@@ -31,7 +31,6 @@ src/aws-robomaker-small-house-world/
 src/message_logger/
 src/kindr/
 src/kindr_ros/
-src/elevation_mapping/
 
 # Bulky upstream gazebo_models_worlds_collection: keep ONLY the models our
 # worlds actually use; ignore the other ~380 models and the upstream worlds.

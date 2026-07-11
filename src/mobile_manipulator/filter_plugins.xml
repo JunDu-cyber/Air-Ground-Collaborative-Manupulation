@@ -1,0 +1,13 @@
+<class_libraries>
+  <library path="lib/libmobile_manipulator_filters">
+    <class name="mobileManipulator/SelfBoxFilterPointCloud2"
+           type="mobile_manipulator::SelfBoxFilterPointCloud2"
+           base_class_type="filters::FilterBase&lt;sensor_msgs::PointCloud2&gt;">
+      <description>
+        Removes points falling inside an axis-aligned box fixed to the robot base.
+        Catches self-returns off links that have no collision geometry, which a
+        collision-mesh self-filter cannot remove.
+      </description>
+    </class>
+  </library>
+</class_libraries>

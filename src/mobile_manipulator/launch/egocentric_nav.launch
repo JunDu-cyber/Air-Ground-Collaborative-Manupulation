@@ -13,19 +13,30 @@
        and the Husky drives to it, avoiding terrain.
 
        Switches:
-         nav         : off | cmu                     (planner on/off)
-         odom_source : dlio | fastlio                (LIO backend, drop-in)
-         cost_source : terrain_analysis | elevation  (Phase A bootstrap / Phase B)
+         nav            : off | cmu                    (planner on/off)
+         odom_source    : dlio | fastlio               (LIO backend, drop-in)
+         cost_source    : terrain_analysis | elevation (Phase A bootstrap / Phase B)
+         global_planner : none | far                   (FAR needs cost_source:=elevation)
        ==================================================================== -->
 
-  <arg name="start_gazebo" default="true"/>
-  <arg name="gui"          default="true"/>
-  <arg name="nav"          default="cmu"/>
-  <arg name="odom_source"  default="dlio"/>
-  <arg name="cost_source"  default="terrain_analysis"/>
+  <arg name="start_gazebo"   default="true"/>
+  <arg name="gui"            default="true"/>
+  <arg name="nav"            default="cmu"/>
+  <arg name="odom_source"    default="dlio"/>
+  <arg name="cost_source"    default="terrain_analysis"/>
+  <arg name="global_planner" default="none"/>
   <arg name="self_filter"  default="true"/>
   <arg name="maxSpeed"     default="1.5"/>
   <arg name="rviz"         default="false"/>
+
+  <!-- Fuse the UAV's aerial LiDAR into the UGV's elevation map as a SECOND input source,
+       so the planner sees terrain beyond the UGV's line of sight. Needs
+       airground_egocentric.launch running alongside (enable_gate:=true). Enlarge the map
+       too, or the extra reach has nowhere to land:
+           uav_prior:=true map_size:=120 map_resolution:=0.35 -->
+  <arg name="uav_prior"      default="false"/>
+  <arg name="map_size"       default="40.0"/>
+  <arg name="map_resolution" default="0.25"/>
 
   <!-- ===== 1. World + Husky+UR5 (egocentric: no EKF/GPS in live chain) ===== -->
   <include file="$(find mobile_manipulator)/launch/spawn_outdoor_city.launch">
@@ -33,6 +44,23 @@
     <arg name="gui"          value="$(arg gui)"/>
     <arg name="egocentric"   value="true"/>
   </include>
+
+  <!-- ===== 1b. Optional 15 deg test ramp (test_ramp:=true) =====
+       outdoor_city has NO drivable slope: the grass_plane's collision is an infinite
+       half-space at z=0, so everything within ~30 m of spawn is dead flat, and past that
+       the heightmap erupts into a 33-47 deg escarpment the Husky cannot climb anyway. So
+       on the stock world there is simply nothing to LOOK at: every cell is free.
+
+       This ramp gives you something to see. 15 deg is well inside the Husky's 25-30 deg
+       limit, but the old height-above-minimum metric scored it 1.06*tan(15) = 0.284,
+       nearly twice the 0.15 m obstacle gate, and painted the whole thing red.
+
+       Spawned HERE, at launch, on purpose: elevation_mapping fuses rather than replaces,
+       so a ramp introduced after the robot has already mapped that ground as flat is
+       rejected as an outlier and never enters the map at all. -->
+  <arg name="test_ramp" default="false"/>
+  <node if="$(arg test_ramp)" name="spawn_test_ramp" pkg="gazebo_ros" type="spawn_model"
+        args="-sdf -file $(find mobile_manipulator)/urdf/test_ramp.sdf -model test_ramp"/>
 
   <!-- ===== 2. LiDAR-inertial odometry frontend (owns odom->base_link) ===== -->
   <include file="$(find mobile_manipulator)/launch/lidar_odometry.launch">
@@ -43,12 +71,48 @@
   <!-- ===== 3. CMU local_planner navigation loop ===== -->
   <include if="$(eval arg('nav')=='cmu')"
            file="$(find mobile_manipulator)/launch/cmu_planner.launch">
-    <arg name="cost_source" value="$(arg cost_source)"/>
-    <arg name="maxSpeed"    value="$(arg maxSpeed)"/>
+    <arg name="cost_source"    value="$(arg cost_source)"/>
+    <arg name="global_planner" value="$(arg global_planner)"/>
+    <arg name="maxSpeed"       value="$(arg maxSpeed)"/>
+    <arg name="uav_prior"      value="$(arg uav_prior)"/>
+    <arg name="map_size"       value="$(arg map_size)"/>
+    <arg name="map_resolution" value="$(arg map_resolution)"/>
   </include>
 
-  <!-- ===== 4. RViz (optional) ===== -->
-  <node if="$(arg rviz)" name="egocentric_rviz" pkg="rviz" type="rviz"
+  <!-- ===== 4. RViz (optional) =====
+       RViz segfaults intermittently INSIDE the NVIDIA GL driver on this machine:
+         #0  ?? ()                       <- jumped to a garbage address
+         #1  libnvidia-glcore.so.570.133.07
+         #3  Ogre::GLRenderSystem::_render(RenderOperation const&)
+         #18 rviz::VisualizationManager::onUpdate()
+       It is not our config or our topics: a 5-minute run of this exact config against
+       the full stack (Gazebo GUI + FAR + a live goal, ~25k-point /terrain_map_ext and a
+       30k-point /registered_scan) did not crash, and plain `rviz` with NO config at all
+       has also died here on an OGRE SceneManager.cpp assertion, as has gzserver.
+       This is RViz's ancient OGRE 1.9 GL2 renderer against a modern driver, so all we
+       can do is contain it:
+
+       respawn: a crash restarts RViz in ~2 s instead of ending your session. The sim
+                and the nav stack are untouched by the crash, so you only lose the view.
+       software_gl:=true: render with Mesa llvmpipe, bypassing libnvidia-glcore entirely,
+                so the crash cannot happen. Slower (CPU) but stable; use it if respawn
+                looping gets annoying. Gazebo keeps the real GPU.
+
+       Both env vars are required. LIBGL_ALWAYS_SOFTWARE alone does NOTHING here: it is a
+       Mesa variable, and libglvnd dispatches GLX to the NVIDIA vendor library, which
+       ignores it (verified: still reports the RTX 4060). __GLX_VENDOR_LIBRARY_NAME=mesa
+       is what actually swings the dispatch to Mesa; only then does llvmpipe engage. -->
+  <arg name="software_gl" default="false"/>
+
+  <node if="$(eval arg('rviz') and not arg('software_gl'))"
+        name="egocentric_rviz" pkg="rviz" type="rviz" respawn="true"
         args="-d $(find mobile_manipulator)/rviz/egocentric_nav.rviz"/>
+
+  <node if="$(eval arg('rviz') and arg('software_gl'))"
+        name="egocentric_rviz" pkg="rviz" type="rviz" respawn="true"
+        args="-d $(find mobile_manipulator)/rviz/egocentric_nav.rviz">
+    <env name="__GLX_VENDOR_LIBRARY_NAME" value="mesa"/>
+    <env name="LIBGL_ALWAYS_SOFTWARE"     value="1"/>
+  </node>
 
 </launch>

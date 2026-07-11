@@ -1,30 +1,103 @@
-# Post-processing pipeline run by elevation_mapping on the fused map before it is
-# published. It fills sensor holes, estimates surface normals, and derives a
-# per-cell terrain SLOPE layer (radians) that the Week-3 traversability costmap
-# will threshold. Layers produced: elevation_inpainted, normal_vectors_*, slope.
+# Post-processing pipeline run by elevation_mapping on the raw map before it is
+# published. It fills sensor holes, fits a local plane per cell, and derives the
+# terrain SLOPE (rad), STEP (m, signed residual from that plane), ROUGHNESS (m, RMS
+# residual about that plane) and TRAVERSABILITY (0..1) layers.
+#
+# gridmap_to_terrainmap turns these into the two planner cost clouds:
+#   /terrain_map     (localPlanner) intensity = max(|step|, 0.15 * slope/0.44)
+#   /terrain_map_ext (FAR)          intensity = (1 - traversability) * vehicle_height
+#
+# Layers produced: elevation_filled, slope, step, step_abs, roughness, traversability.
 postprocessor_pipeline:
-  # Fill small holes (cells the UAV cloud missed) by inpainting the elevation.
-  - name: inpaint
-    type: gridMapCv/InpaintFilter
+  # Fill small holes (cells the sensor missed) with the median of the neighbourhood.
+  #
+  # NOT gridMapCv/InpaintFilter: it round-trips the layer through an 8-bit image
+  # (CV_8UC1), quantising elevation to 256 levels ACROSS THE WHOLE MAP RANGE. With
+  # buildings in view that range is ~32 m, so the step is ~0.12 m -- and a 0.12 m
+  # stair-step across a 0.25 m cell reads as a 26 deg slope, over the 25 deg
+  # traversability limit. Flat ground then quantises into obstacles: 81% of observed
+  # cells were classed impassable. It looked fine near spawn only because the
+  # elevation range there is small (~6 m -> 2.4 cm steps).
+  #
+  # MedianFillFilter stays in float. filter_existing_values: false keeps measured
+  # cells bit-exact; only NaN holes are filled.
+  - name: fill_holes
+    type: gridMapFilters/MedianFillFilter
     params:
       input_layer: elevation
-      output_layer: elevation_inpainted
-      radius: 0.3
+      output_layer: elevation_filled
+      fill_hole_radius: 0.3
+      filter_existing_values: false
+      existing_value_radius: 0.1
+      fill_mask_layer: should_fill
+      debug_infill_mask_layer: debug_infill_mask
 
-  # Surface normals from the in-painted elevation. radius ~2 cells (resolution
-  # 0.25 m) smooths sensor noise while keeping real terrain relief.
-  - name: surface_normals
-    type: gridMapFilters/NormalVectorsFilter
+  # ONE least-squares plane fit per cell yields slope, step and roughness together.
+  # This single filter replaces what used to be three (NormalVectorsFilter +
+  # MathExpressionFilter(acos) + RoughnessFilter).
+  #
+  # The point is `step` = elevation - plane(cell), the SIGNED residual from the
+  # locally fitted plane. It is what the obstacle metric is built from, and it is
+  # slope-invariant by construction: a smooth ramp of ANY angle has step ~ 0.
+  # The metric it replaces (height above the local MINIMUM) never subtracted the
+  # slope, so on a plane of slope t it read ~1.06*tan(t) -- crossing localPlanner's
+  # 0.15 m obstacle gate at just 8.1 deg. Every slope past ~8 deg was a wall, though
+  # the Husky climbs 25-30. A min-filter is also blind to negative obstacles: a
+  # ditch's own cells become the ground datum, so a hole read as flat and FREE.
+  # A signed residual catches both: + = wall/rock/curb, - = ditch/drop-off.
+  #
+  # `roughness` here is the RMS residual ABOUT THE PLANE, i.e. slope-corrected.
+  # The old stddev-of-elevation reported ~0.05 m on a perfectly smooth 20 deg
+  # slope purely from the tilt, which then bled into traversability.
+  #
+  # window 1.25 m = 5x5 = 25 cells at 0.25 m resolution. A 3x3 (9-cell) window was
+  # tried first and lost the map's speckled frontier: requiring 6 finite cells out of
+  # 9 left only 95.8% of observed cells with a usable fit, and the adapter drops the
+  # rest as unassessable -- which blanks the cost cloud exactly where the robot is
+  # driving. Measured coverage of observed cells, min_points 6:
+  #     0.75 m (9 cells)  95.8%      1.25 m (25 cells)  99.1%      1.75 m (49)  99.9%
+  # 1.25 m also gives the fit 25 points of support instead of 9. Not wider: the window
+  # must stay near the Husky's 0.99 m footprint, or a window straddling a wall tilts
+  # the plane far enough to soften the wall top and stiffen the ground beside it.
+  - name: plane_fit
+    type: terrainCostAdapter/PlaneFitFilter
     params:
-      input_layer: elevation_inpainted
-      output_layers_prefix: normal_vectors_
-      radius: 0.5
-      normal_vector_positive_axis: z
+      input_layer: elevation_filled
+      slope_layer: slope
+      step_layer: step
+      step_abs_layer: step_abs
+      roughness_layer: roughness
+      window_length: 1.25
+      min_points: 6
 
-  # Terrain slope (rad) = angle between the surface normal and vertical.
-  # 0 = flat, pi/2 = vertical wall. Thresholded later for traversability.
-  - name: slope
+  # Traversability in [0,1]: 1 = flat smooth ground, 0 = impassable.
+  # slope term:     0.44 rad = 25 deg, the Husky usable slope limit.
+  # roughness term: 0.15 m RMS residual = impassable rubble.
+  # step term:      0.15 m residual from the local plane = a wall, curb or ditch.
+  #                 This is the discriminator slope+roughness alone lack: a 0.2 m
+  #                 curb spread over a 0.75 m window is only a ~15 deg slope and is
+  #                 perfectly smooth, so without the step term it scored as drivable.
+  - name: traversability
     type: gridMapFilters/MathExpressionFilter
     params:
-      output_layer: slope
-      expression: acos(normal_vectors_z)
+      output_layer: traversability
+      expression: 0.5 * (1.0 - (slope / 0.44)) + 0.2 * (1.0 - (roughness / 0.15)) + 0.3 * (1.0 - (step_abs / 0.15))
+
+  # Clamp traversability to [0, 1]. ThresholdFilter takes condition_layer +
+  # output_layer (NOT "layer"), and exactly one of lower_/upper_threshold per
+  # filter -- getting this wrong makes configure() fail and silently kills the
+  # WHOLE pipeline, so the postprocessed map never gets published.
+  - name: traversability_floor
+    type: gridMapFilters/ThresholdFilter
+    params:
+      condition_layer: traversability
+      output_layer: traversability
+      lower_threshold: 0.0
+      set_to: 0.0
+  - name: traversability_ceil
+    type: gridMapFilters/ThresholdFilter
+    params:
+      condition_layer: traversability
+      output_layer: traversability
+      upper_threshold: 1.0
+      set_to: 1.0

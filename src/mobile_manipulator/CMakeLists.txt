@@ -4,6 +4,12 @@ project(mobile_manipulator)
 ## Compile as C++17
 add_compile_options(-std=c++17)
 
+# The workspace sets no CMAKE_BUILD_TYPE; without this the self-box filter's
+# per-point loop runs unoptimised on every scan.
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release)
+endif()
+
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
@@ -20,6 +26,10 @@ find_package(catkin REQUIRED COMPONENTS
   cv_bridge
   image_transport
   message_generation
+  filters
+  pluginlib
+  tf2
+  tf2_ros
 )
 find_package(OpenCV REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system filesystem)
@@ -108,7 +118,10 @@ generate_messages(
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
+  INCLUDE_DIRS include
+  LIBRARIES mobile_manipulator_filters
   CATKIN_DEPENDS gazebo_ros roscpp std_msgs sensor_msgs geometry_msgs urdf xacro message_runtime
+                 filters pluginlib tf2 tf2_ros
 )
 
 ###########
@@ -118,7 +131,7 @@ catkin_package(
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 include_directories(
-# include
+  include
   ${catkin_INCLUDE_DIRS}
 )
 
@@ -178,6 +191,19 @@ add_executable(navigation_client src/navigation_client.cc)
 #   ${catkin_LIBRARIES}
 # )
 target_link_libraries(navigation_client ${catkin_LIBRARIES})
+
+# sensor_filters plugin: removes self-returns off links that carry no collision
+# geometry, which robot_body_filter cannot touch. Loaded by the
+# pointcloud2_filter_chain in config/robot_body_filter.yaml.
+add_library(mobile_manipulator_filters src/self_box_filter.cpp)
+target_link_libraries(mobile_manipulator_filters ${catkin_LIBRARIES})
+
+install(TARGETS mobile_manipulator_filters
+  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION})
+install(DIRECTORY include/${PROJECT_NAME}/
+  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION})
+install(FILES filter_plugins.xml
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
 #############
 ## Install ##
 #############
@@ -196,6 +222,9 @@ catkin_install_python(PROGRAMS
   scripts/pcd_to_occupancy_map.py
   scripts/uav_pose_cov_publisher.py
   scripts/uav_cloud_altitude_gate.py
+  scripts/goal_to_waypoint.py
+  scripts/ugv_goal_to_far_goal.py
+  scripts/verify_nav_pipeline.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

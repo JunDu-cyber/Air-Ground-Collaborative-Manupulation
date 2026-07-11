@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<!-- A 15 degree ramp, for SEEING the difference the plane-fit obstacle metric makes.
+
+     NOTE: no double dashes anywhere in this comment. XML forbids them inside comments,
+     and an SDF that fails to parse spawns nothing, silently: the launch carries on and
+     you end up staring at bare grass wondering where your ramp went.
+
+     15 deg is comfortably inside the Husky's 25-30 deg capability, but the old
+     height-above-minimum metric scored a 15 deg slope at 1.06*tan(15) = 0.284, nearly
+     twice localPlanner's 0.15 m obstacle gate, so it painted the whole ramp red and the
+     robot could only ever drive around it. The plane fit sees |step| ~ 0 on a smooth
+     incline and a slope pseudo-height of 0.15 * 15/25 = 0.09, so the ramp is free.
+
+     Launch with test_ramp:=true. It MUST be spawned at launch, before the robot maps
+     that ground: elevation_mapping fuses rather than replaces, so a ramp added to a map
+     that already holds confident flat-ground estimates is rejected as an outlier and
+     never appears at all (verified: the map read flat while /registered_scan clearly
+     showed the ramp).
+
+     Geometry: a 30 x 16 x 2 m box pitched 15 deg about +X, positioned so the near top
+     corner sits exactly on the ground at y = 6. Top edge lands at y = 21.5, z = 4.1.
+     12 m wide, NOT 30. A 30 m version was tried so that climbing it would be cheaper
+     than walking around, but 30 m of 4 m-tall geometry 6 m in front of the robot is a
+     wall that blinds the LiDAR to the whole scene beyond. FAR then sees no obstacles at
+     all (the ramp itself is correctly free), never sets is_cloud_init_, never builds a
+     visibility graph, and silently discards every goal you click. 12 m leaves the rest
+     of the world visible. The trade is that the planner may prefer to drive AROUND the
+     ramp rather than up it, which is fine: the point of the ramp is to give the cost map
+     something non-flat to colour, not to force a climb. -->
+<sdf version="1.6">
+  <model name="test_ramp">
+    <static>true</static>
+    <pose>0 13.99 1.105 0.2618 0 0</pose>
+    <link name="link">
+      <collision name="collision">
+        <geometry><box><size>12 16 2</size></box></geometry>
+        <surface>
+          <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <geometry><box><size>12 16 2</size></box></geometry>
+        <material>
+          <ambient>0.3 0.5 0.3 1</ambient>
+          <diffuse>0.4 0.6 0.4 1</diffuse>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

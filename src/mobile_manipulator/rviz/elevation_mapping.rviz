@@ -46,7 +46,7 @@ Visualization Manager:
       Enabled: true
       Grid Cell Decimation: 1
       Grid Line Thickness: 0.1
-      Height Layer: elevation_inpainted
+      Height Layer: elevation_filled
       Height Transformer: GridMapLayer
       History Length: 1
       Invert ColorMap: false
