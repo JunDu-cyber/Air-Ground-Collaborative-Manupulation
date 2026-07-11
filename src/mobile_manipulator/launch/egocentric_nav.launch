@@ -29,6 +29,15 @@
   <arg name="maxSpeed"     default="1.5"/>
   <arg name="rviz"         default="false"/>
 
+  <!-- Fuse the UAV's aerial LiDAR into the UGV's elevation map as a SECOND input source,
+       so the planner sees terrain beyond the UGV's line of sight. Needs
+       airground_egocentric.launch running alongside (enable_gate:=true). Enlarge the map
+       too, or the extra reach has nowhere to land:
+           uav_prior:=true map_size:=120 map_resolution:=0.35 -->
+  <arg name="uav_prior"      default="false"/>
+  <arg name="map_size"       default="40.0"/>
+  <arg name="map_resolution" default="0.25"/>
+
   <!-- ===== 1. World + Husky+UR5 (egocentric: no EKF/GPS in live chain) ===== -->
   <include file="$(find mobile_manipulator)/launch/spawn_outdoor_city.launch">
     <arg name="start_gazebo" value="$(arg start_gazebo)"/>
@@ -65,6 +74,9 @@
     <arg name="cost_source"    value="$(arg cost_source)"/>
     <arg name="global_planner" value="$(arg global_planner)"/>
     <arg name="maxSpeed"       value="$(arg maxSpeed)"/>
+    <arg name="uav_prior"      value="$(arg uav_prior)"/>
+    <arg name="map_size"       value="$(arg map_size)"/>
+    <arg name="map_resolution" value="$(arg map_resolution)"/>
   </include>
 
   <!-- ===== 4. RViz (optional) =====

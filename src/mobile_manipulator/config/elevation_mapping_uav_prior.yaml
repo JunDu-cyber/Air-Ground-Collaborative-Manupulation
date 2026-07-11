@@ -1,0 +1,50 @@
+# UAV aerial prior as a SECOND input source for the UGV's elevation_mapping.
+#
+# Loaded ON TOP OF elevation_mapping_ugv.yaml (uav_prior:=true in cmu_planner.launch),
+# never instead of it. rosparam flattens each file into the node's private namespace, so
+# `input_sources/lidar/*` from the UGV config and `input_sources/uav/*` from here coexist
+# and elevation_mapping subscribes to BOTH: InputSourceManager::configure() iterates every
+# entry under input_sources (InputSourceManager.cpp:50), fusing them into one grid_map.
+#
+# The point: the UGV's own VLP-16 only sees terrain in line of sight, so a hill's far side
+# and anything past ~20 m is unknown. The UAV flies at ~12 m and sees over all of it, so
+# the planner can route on terrain the UGV has not reached yet -- which is the whole reason
+# the air-ground stack exists.
+#
+# WHY `laser` HERE AND NOT `perfect` (as airground_egocentric.launch uses):
+# `perfect` reports near-zero variance, because in the standalone UAV config the real error
+# is the UAV's POSE error, fed in separately via robot_pose_with_covariance_topic
+# (/uav/pose_cov) with robot_base_frame_id = uav0/base_link -- that frame is the pivot of
+# the covariance lever arm (SensorProcessorBase.cpp:101-112).
+#
+# We cannot reuse that here. robot_base_frame_id is a SINGLE node-wide parameter shared by
+# every input source, and the UGV needs it to be base_link. Pointing it at uav0/base_link
+# would break the UGV source; leaving it at base_link would propagate the UAV's covariance
+# through a 20 m lever arm from the UGV's chassis to the airborne sensor, inflating the
+# variance into nonsense.
+#
+# So this config takes no pose covariance at all (the UGV config leaves
+# robot_pose_with_covariance_topic empty, and we do not set it): every source is weighted
+# purely by its own sensor noise model. `laser` gives the UAV cloud an honest
+# range-dependent variance. `perfect` would have made aerial points look MORE certain than
+# the UGV's own close-range measurements and let the prior steamroll them.
+#
+# The cost of that simplification: the UAV's pose drift is not modelled, so treat the
+# aerial prior as a coarse guide for routing, not as ground truth to drive blind on. The
+# UGV's own LiDAR still dominates nearby, where it has the shorter range and lower variance.
+input_sources:
+  uav:
+    type: pointcloud
+    # Self-filtered, altitude-gated UAV cloud (frame uav0/velodyne_link). Gated so the
+    # degenerate on-ground ring scan never enters the map -- see uav_cloud_altitude_gate.py.
+    # NOTE: airground_egocentric.launch must run with enable_gate:=true for this topic to
+    # exist; with the gate off the cloud is on .../velodyne_points_sensor instead.
+    topic: /uav0/mapping/velodyne_points_gated
+    queue_size: 1
+    publish_on_update: true
+    sensor_processor:
+      type: laser
+      apply_voxelgrid_filter: true
+      # Coarser than the UGV's 0.05: aerial points are plentiful and far away, and the
+      # 200 m-scale sweep would otherwise flood the fusion.
+      voxelgrid_filter_size: 0.15

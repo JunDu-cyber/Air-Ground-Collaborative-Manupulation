@@ -57,10 +57,37 @@
        self-filtered Velodyne (and, in the co-sim, the fused UAV aerial prior);
        gridmap_to_terrainmap turns it into the planner's PointXYZI cost cloud.
        terrain_analysis is NOT started in this mode (single cost source). -->
+  <!-- Fuse the UAV's aerial LiDAR into the SAME elevation map as a second input source.
+       The UGV's VLP-16 only sees line of sight, so a hill's far side and anything much
+       past 20 m is unknown; the UAV at ~12 m sees over all of it, letting the planner
+       route on terrain the UGV has not reached. Needs airground_egocentric.launch running
+       (with enable_gate:=true, which is what publishes the gated cloud this subscribes to).
+       Off by default: with no UAV the extra source simply never receives a message. -->
+  <arg name="uav_prior" default="false"/>
+
+  <!-- Map geometry, overridable. The default 40 x 40 m patch is sized for LOCAL planning
+       and is deliberately small; it cannot even reach the hill at y=30. Enlarge it when
+       using the aerial prior, or the extra range the UAV buys you has nowhere to land:
+         uav_prior:=true map_size:=120 map_resolution:=0.35
+       Cost scales with cell count: the postprocessor (PlaneFitFilter) runs over every
+       cell, so 120 m at 0.35 = 118k cells vs 25.6k today. Measured ~0.8-1.5 ms at 160x160,
+       so this stays cheap, but do not go to 200 m at 0.25 (640k cells) without checking. -->
+  <arg name="map_size"       default="40.0"/>
+  <arg name="map_resolution" default="0.25"/>
+
   <group if="$(eval arg('cost_source')=='elevation')">
     <node pkg="elevation_mapping" type="elevation_mapping" name="elevation_mapping" output="screen">
       <rosparam command="load" file="$(find mobile_manipulator)/config/elevation_mapping_ugv.yaml"/>
+      <!-- Loaded AFTER the UGV config, and ADDITIVE: rosparam flattens each file into the
+           node's private namespace, so input_sources/lidar/* and input_sources/uav/* coexist
+           and InputSourceManager subscribes to both. -->
+      <rosparam if="$(arg uav_prior)" command="load"
+                file="$(find mobile_manipulator)/config/elevation_mapping_uav_prior.yaml"/>
       <rosparam command="load" file="$(find mobile_manipulator)/config/elevation_postprocessor.yaml"/>
+      <!-- After the rosparam files, so these win. -->
+      <param name="length_in_x" value="$(arg map_size)"/>
+      <param name="length_in_y" value="$(arg map_size)"/>
+      <param name="resolution"  value="$(arg map_resolution)"/>
     </node>
     <node pkg="terrain_cost_adapter" type="gridmap_to_terrainmap"
           name="gridmap_to_terrainmap" output="screen">
