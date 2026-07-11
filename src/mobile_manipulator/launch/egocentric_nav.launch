@@ -36,6 +36,23 @@
     <arg name="egocentric"   value="true"/>
   </include>
 
+  <!-- ===== 1b. Optional 15 deg test ramp (test_ramp:=true) =====
+       outdoor_city has NO drivable slope: the grass_plane's collision is an infinite
+       half-space at z=0, so everything within ~30 m of spawn is dead flat, and past that
+       the heightmap erupts into a 33-47 deg escarpment the Husky cannot climb anyway. So
+       on the stock world there is simply nothing to LOOK at: every cell is free.
+
+       This ramp gives you something to see. 15 deg is well inside the Husky's 25-30 deg
+       limit, but the old height-above-minimum metric scored it 1.06*tan(15) = 0.284,
+       nearly twice the 0.15 m obstacle gate, and painted the whole thing red.
+
+       Spawned HERE, at launch, on purpose: elevation_mapping fuses rather than replaces,
+       so a ramp introduced after the robot has already mapped that ground as flat is
+       rejected as an outlier and never enters the map at all. -->
+  <arg name="test_ramp" default="false"/>
+  <node if="$(arg test_ramp)" name="spawn_test_ramp" pkg="gazebo_ros" type="spawn_model"
+        args="-sdf -file $(find mobile_manipulator)/urdf/test_ramp.sdf -model test_ramp"/>
+
   <!-- ===== 2. LiDAR-inertial odometry frontend (owns odom->base_link) ===== -->
   <include file="$(find mobile_manipulator)/launch/lidar_odometry.launch">
     <arg name="odom_source" value="$(arg odom_source)"/>

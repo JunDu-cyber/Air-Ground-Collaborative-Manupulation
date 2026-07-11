@@ -81,23 +81,96 @@ Visualization Manager:
       Use rainbow: true
       Value: true
 
-    # --- Local-planner cost (height above ground). Off by default; toggle on to
-    #     compare against the FAR cost above.
+    # --- THE obstacle map localPlanner gates on: the plane-fit cost,
+    #     max(|step|, 0.15 * slope/0.44). Intensity range is 0..0.3 so the 0.15 obstacle
+    #     gate sits in the MIDDLE of the rainbow: blue/cyan = free, green ~ on the gate,
+    #     orange/red = obstacle. A smooth slope up to 25 deg stays blue; a wall, curb or
+    #     ditch goes red. This is the display that shows the fix.
     - Alpha: 1
       Autocompute Intensity Bounds: false
       Channel Name: intensity
       Class: rviz/PointCloud2
       Color Transformer: Intensity
       Decay Time: 0
-      Enabled: false
-      Max Intensity: 1.0
+      Enabled: true
+      Max Intensity: 0.3
       Min Intensity: 0.0
-      Name: Local cost (/terrain_map)
+      Name: Obstacle cost (/terrain_map) gate=0.15
       Position Transformer: XYZ
       Size (m): 0.22
       Style: Flat Squares
       Topic: /terrain_map
       Use rainbow: true
+      Value: true
+
+    # --- STEP: the signed residual from the locally fitted plane. THIS is the new
+    #     metric itself. Flat ground and smooth slopes alike read ~0 (that is the whole
+    #     point); walls and curbs go positive, ditches negative. Surface height is the
+    #     elevation, colour is the step.
+    - Alpha: 1
+      Autocompute Intensity Bounds: false
+      Class: grid_map_rviz_plugin/GridMap
+      Color Layer: step
+      Color Transformer: GridMapLayer
+      ColorMap: default
+      Enabled: false
+      Grid Cell Decimation: 1
+      Grid Line Thickness: 0.1
+      Height Layer: elevation_filled
+      Height Transformer: GridMapLayer
+      History Length: 1
+      Invert ColorMap: false
+      Max Intensity: 0.3
+      Min Intensity: -0.3
+      Name: grid_map STEP (residual from local plane)
+      Show Grid Lines: false
+      Topic: /elevation_mapping/elevation_map_postprocessed
+      Use ColorMap: true
+      Value: false
+
+    # --- SLOPE (rad). 0.44 rad = 25 deg = the Husky limit, so the top of the colour
+    #     range IS the limit: anything short of full-scale is climbable.
+    - Alpha: 1
+      Autocompute Intensity Bounds: false
+      Class: grid_map_rviz_plugin/GridMap
+      Color Layer: slope
+      Color Transformer: GridMapLayer
+      ColorMap: default
+      Enabled: false
+      Grid Cell Decimation: 1
+      Grid Line Thickness: 0.1
+      Height Layer: elevation_filled
+      Height Transformer: GridMapLayer
+      History Length: 1
+      Invert ColorMap: false
+      Max Intensity: 0.44
+      Min Intensity: 0.0
+      Name: grid_map SLOPE (full scale = 25 deg limit)
+      Show Grid Lines: false
+      Topic: /elevation_mapping/elevation_map_postprocessed
+      Use ColorMap: true
+      Value: false
+
+    # --- TRAVERSABILITY 0..1 (1 = perfect ground). This is what FAR plans on.
+    - Alpha: 1
+      Autocompute Intensity Bounds: false
+      Class: grid_map_rviz_plugin/GridMap
+      Color Layer: traversability
+      Color Transformer: GridMapLayer
+      ColorMap: default
+      Enabled: false
+      Grid Cell Decimation: 1
+      Grid Line Thickness: 0.1
+      Height Layer: elevation_filled
+      Height Transformer: GridMapLayer
+      History Length: 1
+      Invert ColorMap: false
+      Max Intensity: 1.0
+      Min Intensity: 0.0
+      Name: grid_map TRAVERSABILITY
+      Show Grid Lines: false
+      Topic: /elevation_mapping/elevation_map_postprocessed
+      Use ColorMap: true
       Value: false
 
     # --- Live LiDAR after self-filtering + registration, colored by height.
