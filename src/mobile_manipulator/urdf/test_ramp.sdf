@@ -19,21 +19,27 @@
 
      Geometry: a 30 x 16 x 2 m box pitched 15 deg about +X, positioned so the near top
      corner sits exactly on the ground at y = 6. Top edge lands at y = 21.5, z = 4.1.
-     30 m wide on purpose: a narrow ramp is simply cheaper to walk around than to climb,
-     and the planner rightly does so. -->
+     12 m wide, NOT 30. A 30 m version was tried so that climbing it would be cheaper
+     than walking around, but 30 m of 4 m-tall geometry 6 m in front of the robot is a
+     wall that blinds the LiDAR to the whole scene beyond. FAR then sees no obstacles at
+     all (the ramp itself is correctly free), never sets is_cloud_init_, never builds a
+     visibility graph, and silently discards every goal you click. 12 m leaves the rest
+     of the world visible. The trade is that the planner may prefer to drive AROUND the
+     ramp rather than up it, which is fine: the point of the ramp is to give the cost map
+     something non-flat to colour, not to force a climb. -->
 <sdf version="1.6">
   <model name="test_ramp">
     <static>true</static>
     <pose>0 13.99 1.105 0.2618 0 0</pose>
     <link name="link">
       <collision name="collision">
-        <geometry><box><size>30 16 2</size></box></geometry>
+        <geometry><box><size>12 16 2</size></box></geometry>
         <surface>
           <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
         </surface>
       </collision>
       <visual name="visual">
-        <geometry><box><size>30 16 2</size></box></geometry>
+        <geometry><box><size>12 16 2</size></box></geometry>
         <material>
           <ambient>0.3 0.5 0.3 1</ambient>
           <diffuse>0.4 0.6 0.4 1</diffuse>
