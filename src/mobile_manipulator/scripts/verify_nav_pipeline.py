@@ -12,14 +12,18 @@ Run it against a live stack started with:
 Checks, in the order the data flows:
 
   1. self-filter    no LiDAR returns land on the robot's own body
-  2. layers         the grid_map postprocessor produces slope/roughness/traversability
-  3. roughness      the integral-image filter matches a numpy reference
-  4. observed-mask  the cost clouds carry ONLY cells the sensor actually saw
-  5. rates          the cost clouds keep up (the sliding-window filter used to stall here)
-  6. self-mound     no phantom obstacle ring around the robot
-  7. drive          (--drive) FAR routes the Husky to a goal, without phantom detours
-  8. slope cost     /terrain_map_ext penalises slopes that /terrain_map cannot see
-                    (needs observed terrain, so it runs last; skipped if you don't drive)
+  2. layers         the postprocessor produces slope/step/step_abs/roughness/traversability
+  3. plane fit      the integral-image filter matches an independent numpy reference
+  4. metric         the obstacle metric gets right the four cases height-above-minimum
+                    got wrong: a ramp is free, a ditch is an obstacle, a wall still
+                    blocks, and roughness no longer reacts to smooth tilt
+  5. observed-mask  the cost clouds carry ONLY cells the sensor actually saw
+  6. rates          the cost clouds keep up (the sliding-window filter used to stall here)
+  7. self-mound     no phantom obstacle ring around the robot
+  8. drive          (--drive) FAR routes the Husky to a goal, without phantom detours
+  9. slope cost     the LOCAL cost cloud no longer has a slope blind spot, and has not
+                    over-corrected into calling the world a wall (needs observed terrain,
+                    so it runs after the drive)
 
 Exit status is 0 only if every check passes, so it can gate a commit.
 """
@@ -38,6 +42,16 @@ import sensor_msgs.point_cloud2 as pc2
 
 POSTPROC = "/elevation_mapping/elevation_map_postprocessed"
 RESULTS = []
+
+# Must mirror the deployed config: elevation_mapping_ugv.yaml resolution, the
+# PlaneFitFilter window in elevation_postprocessor.yaml, and the adapter's cost
+# scaling in cmu_planner.launch (obstacle_height_thre MUST equal localPlanner's
+# obstacleHeightThre, which is what the slope term is rescaled against).
+RES = 0.25            # elevation map resolution [m]
+HALF = 2              # round(window_length 1.25 / RES) = 5 -> forced odd -> half = 2
+MIN_POINTS = 6        # PlaneFitFilter min_points
+SLOPE_LIMIT = 0.44    # rad, 25 deg -- Husky usable slope limit
+OBST_THRE = 0.15      # localPlanner obstacleHeightThre [m]
 
 
 def record(name, ok, detail):
@@ -95,12 +109,73 @@ def check_self_filter():
                   f"fields={sorted(fields)}")
 
 
-def check_layers_and_roughness():
+def plane_fit_reference(E, res=RES, half=HALF, min_points=MIN_POINTS):
+    """Naive windowed least-squares plane fit — an INDEPENDENT re-derivation of what
+    PlaneFitFilter computes with integral images. Deliberately written the slow,
+    obvious way (explicit per-cell submatrix, no SATs) so that agreeing with the C++
+    is real evidence and not the same bug written twice.
+
+    Note this is invariant to grid_map's row/column-vs-x/y layout: transposing the
+    grid only swaps a<->b, and slope=atan(hypot(a,b)), the residual and its RMS are
+    all unchanged by that swap.
+    """
+    rows, cols = E.shape
+    fin = np.isfinite(E)
+    slope = np.full_like(E, np.nan)
+    step = np.full_like(E, np.nan)
+    rough = np.full_like(E, np.nan)
+
+    for i in range(rows):
+        i0, i1 = max(0, i - half), min(rows - 1, i + half)
+        for j in range(cols):
+            if not fin[i, j]:
+                continue
+            j0, j1 = max(0, j - half), min(cols - 1, j + half)
+            sub = E[i0:i1 + 1, j0:j1 + 1]
+            mask = np.isfinite(sub)
+            n = int(mask.sum())
+            if n < min_points:
+                continue
+            ii, jj = np.nonzero(mask)
+            y = (i0 + ii) * res
+            x = (j0 + jj) * res
+            z = sub[mask]
+
+            xb, yb, zb = x.mean(), y.mean(), z.mean()
+            dx, dy, dz = x - xb, y - yb, z - zb
+            Sxx = (dx * dx).sum()
+            Sxy = (dx * dy).sum()
+            Syy = (dy * dy).sum()
+            Sxz = (dx * dz).sum()
+            Syz = (dy * dz).sum()
+            Szz = (dz * dz).sum()
+
+            det = Sxx * Syy - Sxy * Sxy
+            if not abs(det) > 1e-12:
+                continue
+            a = (Sxz * Syy - Syz * Sxy) / det
+            b = (Syz * Sxx - Sxz * Sxy) / det
+
+            zp = zb + a * (j * res - xb) + b * (i * res - yb)
+            slope[i, j] = math.atan(math.hypot(a, b))
+            step[i, j] = E[i, j] - zp
+            rough[i, j] = math.sqrt(max(0.0, (Szz - a * Sxz - b * Syz) / n))
+    return slope, step, rough
+
+
+def terrain_cost(step, slope, thre=OBST_THRE, limit=SLOPE_LIMIT, vh=1.0):
+    """The /terrain_map intensity gridmap_to_terrainmap publishes: an obstacle is a
+    real discontinuity (|step|) OR a smooth-but-too-steep surface (slope rescaled so
+    it hits `thre` exactly at the vehicle's slope limit)."""
+    return np.clip(np.maximum(np.abs(step), thre * slope / limit), 0.0, vh)
+
+
+def check_layers_and_plane_fit():
     m = rospy.wait_for_message(POSTPROC, GridMap, timeout=60.0)
-    want = ["elevation_filled", "slope", "roughness", "traversability"]
+    want = ["elevation_filled", "slope", "step", "step_abs", "roughness", "traversability"]
     missing = [w for w in want if w not in m.layers]
     ok = record("postprocessor layers present", not missing,
-                f"missing={missing}" if missing else "slope, roughness, traversability")
+                f"missing={missing}" if missing else "slope, step, step_abs, roughness, traversability")
     if not ok:
         return False
 
@@ -109,30 +184,70 @@ def check_layers_and_roughness():
     record("traversability clamped to [0,1]", t.min() >= -1e-6 and t.max() <= 1 + 1e-6,
            f"min={t.min():.3f} max={t.max():.3f}")
 
-    # Reference stddev over the same 3x3 window the plugin uses
-    # (windowSize = round(0.5 / 0.25) = 2 -> forced odd -> 3).
-    E, R = layer(m, "elevation_filled"), layer(m, "roughness")
-    h, rows, cols = 1, *E.shape
-    fin = np.isfinite(E)
-    X, N = np.where(fin, E, 0.0), fin.astype(np.float64)
-    ref = np.full_like(E, np.nan)
-    for i in range(rows):
-        i0, i1 = max(0, i - h), min(rows - 1, i + h)
-        for j in range(cols):
-            if not fin[i, j]:
-                continue
-            j0, j1 = max(0, j - h), min(cols - 1, j + h)
-            n = N[i0:i1 + 1, j0:j1 + 1].sum()
-            if n < 2:
-                continue
-            w = X[i0:i1 + 1, j0:j1 + 1]
-            ref[i, j] = math.sqrt(max(0.0, (w ** 2).sum() / n - (w.sum() / n) ** 2))
+    E = layer(m, "elevation_filled")
+    S, P, R = layer(m, "slope"), layer(m, "step"), layer(m, "roughness")
+    rs, rp, rr = plane_fit_reference(E)
 
-    both = np.isfinite(ref) & np.isfinite(R)
-    nan_mismatch = int((np.isfinite(R) ^ np.isfinite(ref)).sum())
-    err = np.abs(ref[both] - R[both]).max() if both.any() else float("inf")
-    return record("roughness matches numpy reference", err < 1e-4 and nan_mismatch == 0,
-                  f"max|diff|={err:.2e} over {both.sum()} cells, NaN mismatch={nan_mismatch}")
+    worst, worst_name, nan_mism = 0.0, "", 0
+    for name, got, ref in (("slope", S, rs), ("step", P, rp), ("roughness", R, rr)):
+        both = np.isfinite(ref) & np.isfinite(got)
+        nan_mism += int((np.isfinite(got) ^ np.isfinite(ref)).sum())
+        e = np.abs(ref[both] - got[both]).max() if both.any() else float("inf")
+        if e > worst:
+            worst, worst_name = e, name
+    n_cmp = int((np.isfinite(rp) & np.isfinite(P)).sum())
+    return record("plane fit matches numpy reference", worst < 1e-5 and nan_mism == 0,
+                  f"max|diff|={worst:.2e} (worst: {worst_name}) over {n_cmp} cells, "
+                  f"NaN mismatch={nan_mism}")
+
+
+def check_metric_properties():
+    """The four terrain cases the old height-above-minimum metric got wrong.
+
+    These run on the numpy reference, which check `plane fit matches numpy reference`
+    has just proven equals the deployed C++ filter bit-for-bit. So this measures the
+    METRIC's behaviour on terrain the simulator does not happen to contain, without
+    re-testing the implementation.
+    """
+    n, res = 21, RES
+    ii, jj = np.mgrid[0:n, 0:n]
+
+    def cost_of(E):
+        s, p, _ = plane_fit_reference(E)
+        c = terrain_cost(p, s)
+        core = c[HALF + 1:-(HALF + 1), HALF + 1:-(HALF + 1)]  # ignore border clipping
+        return core
+
+    # 1. A 15 deg ramp is DRIVABLE. The old metric read 1.06*tan(15) = 0.28 -> wall.
+    ramp = (jj * res) * math.tan(math.radians(15.0))
+    c = cost_of(ramp)
+    record("15 deg ramp is free (was a wall)", c.max() < OBST_THRE,
+           f"max cost {c.max():.3f} < {OBST_THRE} "
+           f"(old metric: {1.06 * math.tan(math.radians(15.0)):.3f} -> obstacle)")
+
+    # 2. A 0.5 m ditch is an OBSTACLE. The old metric made the hole its own ground
+    #    datum, so it read 0.00 and the robot drove in.
+    ditch = np.zeros((n, n))
+    ditch[:, n // 2 - 1:n // 2 + 2] = -0.5
+    c = cost_of(ditch)
+    record("0.5 m ditch is an obstacle (was free)", c.max() > OBST_THRE,
+           f"max cost {c.max():.3f} > {OBST_THRE} (old metric: 0.000 -> free)")
+
+    # 3. A wall must still block -- guards the plane-fit smearing risk.
+    wall = np.zeros((n, n))
+    wall[:, n // 2:] = 2.5
+    c = cost_of(wall)
+    record("wall still blocks", c.max() > OBST_THRE,
+           f"max cost {c.max():.3f} > {OBST_THRE}")
+
+    # 4. Roughness must measure roughness, not tilt. A perfectly smooth 20 deg slope
+    #    scored ~0.05 m under the old stddev-of-elevation.
+    smooth = (jj * res) * math.tan(math.radians(20.0))
+    _, _, rr = plane_fit_reference(smooth)
+    core = rr[HALF + 1:-(HALF + 1), HALF + 1:-(HALF + 1)]
+    return record("roughness is slope-corrected", np.nanmax(core) < 1e-6,
+                  f"max roughness {np.nanmax(core):.2e} on a smooth 20 deg slope "
+                  f"(old stddev metric: ~0.05)")
 
 
 def check_observed_mask():
@@ -211,17 +326,22 @@ def check_self_mound():
                   f"{frac:.1f}% of cells within 0.5 m are obstacles")
 
 
-def check_slope_cost(min_free=5000, settle=60.0):
-    """/terrain_map is blind to slopes; /terrain_map_ext must not be.
+def check_slope_cost(min_cells=5000, settle=60.0):
+    """The local cost cloud must no longer have a slope blind spot.
 
-    Only meaningful once the robot has observed some non-flat terrain. At spawn the
-    cost cloud is a few thousand cells of flat ground, so a low count says nothing
-    about the pipeline -- hence the min_free sample gate rather than a bare count.
-    elevation_mapping keeps fusing for a while after the robot stops, so wait for
-    the observed set to grow rather than sampling the instant the drive ends.
+    This check used to assert the OPPOSITE: that cells reading free in /terrain_map
+    were costly in /terrain_map_ext. That was measuring the blind spot of the old
+    height-above-minimum metric -- /terrain_map could not see slopes at all, so only
+    the traversability-derived ext cloud caught them, and a healthy pipeline showed a
+    large disagreement. The plane-fit metric folds slope into /terrain_map directly,
+    so that disagreement is exactly what we set out to remove: the assertion is now
+    inverted, and a LARGE gap would mean the local planner is still slope-blind.
+
+    Only meaningful once the robot has observed some terrain, so it runs after the
+    drive; elevation_mapping keeps fusing for a while after the robot stops.
     """
     deadline = time.time() + settle
-    n_free = caught = 0
+    n = 0
     while True:
         _, a = cloud_xyi("/terrain_map")
         _, b = cloud_xyi("/terrain_map_ext")
@@ -229,24 +349,31 @@ def check_slope_cost(min_free=5000, settle=60.0):
         hb = {(round(x, 3), round(y, 3)): i for x, y, i in b}
         keys = sorted(set(ha) & set(hb))
         if not keys:
-            return record("slope discrimination", False, "no overlapping cells")
+            return record("local cost is slope-aware", False, "no overlapping cells")
         A = np.array([ha[k] for k in keys])
         B = np.array([hb[k] for k in keys])
-        free_by_height = A < 0.1
-        n_free = int(free_by_height.sum())
-        caught = int((free_by_height & (B > 0.5)).sum())
-        if n_free >= min_free or time.time() > deadline:
+        n = len(keys)
+        if n >= min_cells or time.time() > deadline:
             break
         time.sleep(5.0)
 
-    if n_free < min_free:
-        return skip("slope discrimination",
-                    f"only {n_free} free cells observed after {settle:.0f} s (need "
-                    f"{min_free}); drive further with --goal to see more terrain")
-    frac = 100.0 * caught / n_free
-    return record("slope discrimination", frac >= 0.5,
-                  f"{caught}/{n_free} ({frac:.2f}%) of cells that look free by height "
-                  f"are costly by traversability")
+    if n < min_cells:
+        return skip("local cost is slope-aware",
+                    f"only {n} overlapping cells after {settle:.0f} s (need {min_cells})")
+
+    # Cells the traversability map calls impassable that the LOCAL map still waves
+    # through. This was ~3% with the old metric (every one of them a slope); it must
+    # now be tiny, because /terrain_map applies the same slope limit itself.
+    blind = int(((A < 0.1) & (B > 0.5)).sum())
+    blind_pct = 100.0 * blind / n
+    record("local cost has no slope blind spot", blind_pct < 1.0,
+           f"{blind}/{n} ({blind_pct:.2f}%) cells impassable by traversability but free "
+           f"by local cost (was ~3%, every one a slope the local metric could not see)")
+
+    # And it must not have over-corrected into calling the world a wall.
+    obst = 100.0 * (A > OBST_THRE).mean()
+    return record("local obstacle fraction is sane", 0.2 < obst < 40.0,
+                  f"{obst:.1f}% of observed cells are obstacles in /terrain_map")
 
 
 def check_drive(goal, timeout=180.0, tol=0.8):
@@ -288,6 +415,28 @@ def check_drive(goal, timeout=180.0, tol=0.8):
                   f"{len(set(wps))} distinct waypoints")
 
 
+# NOTE: there is deliberately no end-to-end "drive up a slope" check.
+#
+# outdoor_city has no drivable slope to use. I measured the true ground by teleporting
+# the robot and letting it settle: the grass_plane's collision is an INFINITE <plane>
+# half-space at z=0, so everything within ~30 m of spawn is dead flat (+/-0.15 m), and
+# beyond that the heightmap erupts 6.4 m in 10 m -- a 33-47 deg escarpment the Husky
+# genuinely cannot climb and SHOULD refuse. (The heightmap PNG suggests a gentler 22 deg,
+# but it is sampled at 3.9 m/pixel, which smooths the real grade. Trust the settle probe.)
+#
+# Spawning a ramp at runtime does not work either: elevation_mapping never ingests it.
+# With a 15 deg ramp physically present in Gazebo and plainly visible in /registered_scan
+# (mean z 1.07 at y=9-13, rising to 2.71 at y=17-22), the fused map still read flat ground
+# (-0.19 to -0.33 m) straight along the ramp centreline, with step ~ 0 and slope ~ 2 deg.
+# The map fuses rather than replaces and does not take on geometry that appears after the
+# fact; /elevation_mapping/clear_map does not rescue it, and calling that service mid-run
+# empties FAR's obstacle cloud so it stops emitting waypoints entirely.
+#
+# Any "ramp cost" measured through that fixture describes a map with no ramp in it, so it
+# would be a flaky test reporting an artefact as a failure. The slope behaviour is instead
+# covered by check_metric_properties(), which runs on the numpy reference that
+# check_layers_and_plane_fit() has just proven equals the deployed C++ filter to ~1e-7.
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -304,17 +453,19 @@ def main():
     try:
         print("1-3. sensor cloud -> grid_map layers")
         check_self_filter()
-        check_layers_and_roughness()
-        print("\n4-5. grid_map -> cost clouds")
+        check_layers_and_plane_fit()
+        print("\n4. obstacle metric properties (plane fit vs terrain)")
+        check_metric_properties()
+        print("\n5-6. grid_map -> cost clouds")
         check_observed_mask()
         check_rates(args.rate_window)
-        print("\n6. cost cloud sanity")
+        print("\n7. cost cloud sanity")
         check_self_mound()
         if args.drive:
-            print("\n7. FAR global planner")
+            print("\n8. FAR global planner")
             check_drive(tuple(args.goal))
         # Last: it needs observed terrain, which the drive provides.
-        print("\n8. slope cost")
+        print("\n9. slope cost")
         check_slope_cost()
     except rospy.ROSException as e:
         print(f"\nAborted: {e}\nIs the stack running, and did you source devel/setup.bash?")

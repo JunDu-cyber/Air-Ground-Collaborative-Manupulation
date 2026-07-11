@@ -9,5 +9,18 @@
         independent of window size.
       </description>
     </class>
+
+    <class name="terrainCostAdapter/PlaneFitFilter"
+           type="terrain_cost_adapter::PlaneFitFilter&lt;grid_map::GridMap&gt;"
+           base_class_type="filters::FilterBase&lt;grid_map::GridMap&gt;">
+      <description>
+        Least-squares plane fit over a square window, yielding slope, a SIGNED
+        step (residual from the plane, so ramps read ~0 at any angle while walls
+        and ditches both stand out) and a slope-corrected roughness (RMS residual
+        about the plane). NaN-masked integral images: O(1) per cell, independent
+        of window size. Supersedes RoughnessFilter and the NormalVectorsFilter +
+        MathExpressionFilter slope pair.
+      </description>
+    </class>
   </library>
 </class_libraries>

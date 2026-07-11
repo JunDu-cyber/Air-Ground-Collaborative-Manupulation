@@ -37,9 +37,16 @@
   <arg name="twoWayDrive"   default="true"/>
   <arg name="autonomyMode"  default="true"/>
 
-  <!-- adapter tuning (Phase B): local-ground window + cost clamp -->
-  <arg name="ground_radius"  default="0.75"/>
-  <arg name="vehicle_height" default="1.0"/>
+  <!-- adapter tuning (Phase B): cost clamp + plane-fit obstacle metric.
+       slope_limit 0.44 rad = 25 deg (Husky limit). obstacle_height_thre MUST track
+       localPlanner's obstacleHeightThre below: the adapter rescales slope into a
+       pseudo-height against it, so that a slope at slope_limit lands exactly on the
+       obstacle gate. ground_radius now only feeds the legacy fallback metric and the
+       ground-level draping of the FAR cloud. -->
+  <arg name="ground_radius"        default="0.75"/>
+  <arg name="vehicle_height"       default="1.0"/>
+  <arg name="slope_limit"          default="0.44"/>
+  <arg name="obstacle_height_thre" default="0.15"/>
 
   <!-- ===== Terrain cost source A: terrain_analysis (bootstrap) ===== -->
   <include if="$(eval arg('cost_source')=='terrain_analysis')"
@@ -60,8 +67,12 @@
       <param name="grid_map_topic"    value="/elevation_mapping/elevation_map_postprocessed"/>
       <param name="terrain_map_topic" value="/terrain_map"/>
       <param name="height_layer"      value="elevation_filled"/>
+      <param name="step_layer"        value="step"/>
+      <param name="slope_layer"       value="slope"/>
       <param name="ground_radius"     value="$(arg ground_radius)"/>
       <param name="vehicle_height"    value="$(arg vehicle_height)"/>
+      <param name="slope_limit"          value="$(arg slope_limit)"/>
+      <param name="obstacle_height_thre" value="$(arg obstacle_height_thre)"/>
     </node>
   </group>
 

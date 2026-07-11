@@ -41,8 +41,11 @@ target_link_libraries(gridmap_to_terrainmap
   ${PCL_LIBRARIES}
 )
 
-# grid_map filter-chain plugin, loaded in-process by elevation_mapping.
-add_library(terrain_cost_adapter_filters src/roughness_filter.cpp)
+# grid_map filter-chain plugins, loaded in-process by elevation_mapping.
+add_library(terrain_cost_adapter_filters
+  src/roughness_filter.cpp
+  src/plane_fit_filter.cpp
+)
 target_link_libraries(terrain_cost_adapter_filters ${catkin_LIBRARIES})
 
 install(TARGETS gridmap_to_terrainmap

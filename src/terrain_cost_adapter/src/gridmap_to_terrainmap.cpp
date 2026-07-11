@@ -43,8 +43,12 @@ ros::Publisher g_pub_ext;
 std::string g_height_layer;
 std::string g_trav_layer;
 std::string g_validity_layer;
+std::string g_step_layer;
+std::string g_slope_layer;
 double g_ground_radius;
 double g_vehicle_height;
+double g_slope_limit;
+double g_obstacle_height_thre;
 }  // namespace
 
 void gridMapCallback(const grid_map_msgs::GridMap& message) {
@@ -98,6 +102,21 @@ void gridMapCallback(const grid_map_msgs::GridMap& message) {
   }
   const grid_map::Matrix& trav = has_trav ? map[g_trav_layer] : elev;
 
+  // Plane-fit cost source. `step` is the SIGNED residual from the locally fitted
+  // plane, so it is slope-invariant (a smooth ramp of any angle reads ~0) and it
+  // catches negative obstacles (a ditch reads negative; the old height-above-MINIMUM
+  // metric made the ditch its own ground datum and called the hole free ground).
+  const bool has_plane = map.exists(g_step_layer) && map.exists(g_slope_layer);
+  if (!has_plane) {
+    ROS_WARN_THROTTLE(10.0,
+                      "[gridmap_to_terrainmap] no '%s'/'%s' layers; falling back to the "
+                      "height-above-minimum metric, which reads every slope past ~8 deg as "
+                      "a wall and is blind to ditches (is PlaneFitFilter in the chain?)",
+                      g_step_layer.c_str(), g_slope_layer.c_str());
+  }
+  const grid_map::Matrix& step = has_plane ? map[g_step_layer] : elev;
+  const grid_map::Matrix& slope = has_plane ? map[g_slope_layer] : elev;
+
   pcl::PointCloud<pcl::PointXYZI> cloud, ext;
   const size_t cells = static_cast<size_t>(size(0)) * static_cast<size_t>(size(1));
   cloud.reserve(cells);
@@ -110,7 +129,8 @@ void gridMapCallback(const grid_map_msgs::GridMap& message) {
       continue;
     }
 
-    // local ground = minimum elevation in a (2*win+1)^2 window
+    // Local ground datum. Only needed for the legacy fallback metric and to drape the
+    // FAR cloud at ground level; the plane-fit cost below does not use it.
     float ground = e;
     for (int di = -win; di <= win; ++di) {
       const int i = idx(0) + di;
@@ -123,7 +143,32 @@ void gridMapCallback(const grid_map_msgs::GridMap& message) {
       }
     }
 
-    float cost = e - ground;
+    float cost;
+    if (has_plane) {
+      const float s = step(idx(0), idx(1));
+      const float sl = slope(idx(0), idx(1));
+      if (!std::isfinite(s) || !std::isfinite(sl)) continue;  // degenerate fit -> unknown
+
+      // Two independent ways for a cell to be impassable, combined into the ONE scalar
+      // localPlanner gates on (obstacle iff intensity > obstacleHeightThre):
+      //
+      //   |step|          a wall, curb, rock or ditch -- an actual discontinuity, in
+      //                   metres, and already comparable to obstacleHeightThre.
+      //   slope penalty   a SMOOTH but too-steep surface, which has step ~ 0 and would
+      //                   otherwise sail through. Rescaled into a pseudo-height that
+      //                   hits exactly obstacleHeightThre at slope_limit, so a slope at
+      //                   the Husky's 25 deg limit lands precisely on the gate: below it
+      //                   the term stays under the threshold and |step| dominates; a
+      //                   smooth 45 deg cliff trips the gate on slope alone.
+      //
+      // Taking the max (not a sum) keeps each term's physical meaning and keeps the
+      // CMU-side obstacleHeightThre tuning untouched.
+      const float slope_pseudo_height =
+          static_cast<float>(g_obstacle_height_thre) * sl / static_cast<float>(g_slope_limit);
+      cost = std::max(std::fabs(s), slope_pseudo_height);
+    } else {
+      cost = e - ground;  // legacy: height above the local minimum
+    }
     if (cost < 0.0f) cost = 0.0f;
     if (cost > static_cast<float>(g_vehicle_height)) cost = static_cast<float>(g_vehicle_height);
 
@@ -188,8 +233,16 @@ int main(int argc, char** argv) {
   pnh.param<std::string>("trav_layer", g_trav_layer, "traversability");
   // NaN wherever the sensor never measured; set to "" to publish inpainted cells too.
   pnh.param<std::string>("validity_layer", g_validity_layer, "elevation");
+  // Plane-fit layers (PlaneFitFilter). Absent -> legacy height-above-minimum metric.
+  pnh.param<std::string>("step_layer", g_step_layer, "step");
+  pnh.param<std::string>("slope_layer", g_slope_layer, "slope");
   pnh.param<double>("ground_radius", g_ground_radius, 0.75);
   pnh.param<double>("vehicle_height", g_vehicle_height, 1.0);
+  // Slope at which terrain becomes impassable: 0.44 rad = 25 deg (Husky limit).
+  pnh.param<double>("slope_limit", g_slope_limit, 0.44);
+  // MUST match localPlanner's obstacleHeightThre -- it is the gate this cost is
+  // scaled against, so that a slope at slope_limit lands exactly on the threshold.
+  pnh.param<double>("obstacle_height_thre", g_obstacle_height_thre, 0.15);
 
   g_pub = nh.advertise<sensor_msgs::PointCloud2>(terrain_map_topic, 2);
   g_pub_ext = nh.advertise<sensor_msgs::PointCloud2>(terrain_map_ext_topic, 2);
