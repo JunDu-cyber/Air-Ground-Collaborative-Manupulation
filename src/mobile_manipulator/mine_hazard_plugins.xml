@@ -1,0 +1,10 @@
+<library path="lib/libmine_hazard_layer">
+  <class name="mobile_manipulator::MineHazardLayer"
+         type="mobile_manipulator::MineHazardLayer"
+         base_class_type="costmap_2d::Layer">
+    <description>
+      Retained lethal obstacles generated from UAV-confirmed landmines. A mine
+      is removed only after the disposal mission reports CLEARED.
+    </description>
+  </class>
+</library>

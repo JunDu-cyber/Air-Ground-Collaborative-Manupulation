@@ -1,0 +1,5 @@
+<launch>
+  <test test-name="mine_hazard_layer_test"
+        pkg="mobile_manipulator" type="mine_hazard_layer_test"
+        time-limit="20.0"/>
+</launch>

@@ -1,0 +1,39 @@
+# One manipulation contract is used for both halves of the transport cycle.
+# PICK uses wrist RGB-D and ignores drop_pose. PLACE uses the already attached
+# object and the map-frame drop_pose; it never reuses the UAV pose as a grasp
+# target.
+uint8 PICK=0
+uint8 PLACE=1
+uint8 operation
+uint32 mine_id
+uint32 source_detection_id
+geometry_msgs/PoseStamped mine_pose
+geometry_msgs/PoseStamped approach_pose
+geometry_msgs/PoseStamped drop_pose
+float32 nominal_diameter_m
+---
+# PICK SUCCESS means the object is physically retained for transport. The
+# mission removes the source hazard only after a later PLACE SUCCESS.
+uint8 SUCCESS=0
+uint8 RETRYABLE_FAILURE=1
+uint8 FATAL_FAILURE=2
+uint8 TARGET_NOT_FOUND=3
+uint8 UNSAFE=4
+uint8 CANCELLED=5
+
+uint8 outcome
+bool success
+string message
+---
+uint8 WAITING=0
+uint8 LOCALIZING=1
+uint8 PLANNING=2
+uint8 GRASPING=3
+uint8 VERIFYING=4
+uint8 TRANSPORTING=5
+uint8 PLACING=6
+uint8 RELEASING=7
+
+uint8 stage
+float32 progress
+string detail

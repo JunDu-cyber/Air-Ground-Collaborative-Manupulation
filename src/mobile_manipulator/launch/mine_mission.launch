@@ -1,0 +1,155 @@
+<launch>
+  <!-- UAV confirmed mines -> approach -> PICK -> fast locked HOME return -> PLACE.
+       The mock server is simulation-only; mine_grasp_minimal or an external
+       server owns the real PICK/PLACE /mine_grasp Action. -->
+  <arg name="auto_start" default="true"/>
+  <arg name="start_mock" default="false"/>
+  <arg name="mock_mode" default="success"/> <!-- success|failure|fatal|timeout -->
+  <arg name="mock_delete_model" default="true"/>
+  <arg name="resume_from_file" default="false"/>
+  <arg name="persistence_file" default="$(env HOME)/.ros/mine_mission_state.yaml"/>
+
+  <arg name="approach_distance" default="0.62"/>
+  <arg name="navigation_approach_distance" default="0.84"/>
+  <arg name="candidate_count" default="16"/>
+  <arg name="candidate_limit" default="3"/>
+  <!-- Wall-clock limit is deliberately generous for CPU-only Gazebo. A
+       separate progress watchdog exits a genuinely stalled/circling goal. -->
+  <arg name="navigation_timeout" default="600.0"/>
+  <arg name="navigation_stall_timeout" default="45.0"/>
+  <arg name="loaded_navigation_stall_timeout" default="8.0"/>
+  <arg name="arm_server_wait" default="5.0"/>
+  <arg name="arm_timeout" default="360.0"/>
+  <arg name="place_timeout" default="120.0"/>
+  <arg name="action_result_grace" default="1.0"/>
+  <arg name="require_carry_speed_limit" default="true"/>
+  <arg name="require_survey_complete" default="false"/>
+  <arg name="wait_for_survey_before_dispatch" default="$(arg require_survey_complete)"/>
+  <arg name="retry_limit" default="1"/>
+  <arg name="task_alias_radius" default="1.00"/>
+  <arg name="task_alias_height_tolerance" default="0.20"/>
+
+  <node pkg="mobile_manipulator" type="mine_mission_manager.py"
+        name="mine_mission_manager" output="screen" required="true">
+    <param name="auto_start" value="$(arg auto_start)"/>
+    <param name="resume_from_file" value="$(arg resume_from_file)"/>
+    <param name="persistence_file" value="$(arg persistence_file)"/>
+    <param name="mine_map_topic" value="/mine_detection/map"/>
+    <param name="terrain_map_topic" value="/terrain_map"/>
+    <param name="map_frame" value="map"/>
+    <param name="base_frame" value="base_link"/>
+    <param name="move_base_action" value="/move_base"/>
+    <param name="make_plan_service" value="/move_base/make_plan"/>
+    <param name="grasp_action" value="/mine_grasp"/>
+    <param name="approach_distance" value="$(arg approach_distance)"/>
+    <param name="navigation_approach_distance" value="$(arg navigation_approach_distance)"/>
+    <param name="candidate_count" value="$(arg candidate_count)"/>
+    <param name="candidate_limit" value="$(arg candidate_limit)"/>
+    <param name="navigation_timeout" value="$(arg navigation_timeout)"/>
+    <param name="navigation_stall_timeout" value="$(arg navigation_stall_timeout)"/>
+    <param name="loaded_navigation_stall_timeout" value="$(arg loaded_navigation_stall_timeout)"/>
+    <param name="navigation_progress_epsilon" value="0.05"/>
+    <param name="arrival_hold_time" value="0.30"/>
+    <param name="arm_server_wait" value="$(arg arm_server_wait)"/>
+    <param name="arm_timeout" value="$(arg arm_timeout)"/>
+    <param name="place_timeout" value="$(arg place_timeout)"/>
+    <param name="action_result_grace" value="$(arg action_result_grace)"/>
+    <param name="require_carry_speed_limit" value="$(arg require_carry_speed_limit)"/>
+    <param name="require_survey_complete" value="$(arg require_survey_complete)"/>
+    <param name="wait_for_survey_before_dispatch" value="$(arg wait_for_survey_before_dispatch)"/>
+    <param name="retry_limit" value="$(arg retry_limit)"/>
+    <param name="task_alias_radius" value="$(arg task_alias_radius)"/>
+    <param name="task_alias_height_tolerance" value="$(arg task_alias_height_tolerance)"/>
+    <param name="map_settle_time" value="3.0"/>
+    <param name="retry_delay" value="10.0"/>
+    <param name="arrival_distance_tolerance" value="0.020"/>
+    <param name="arrival_yaw_tolerance_deg" value="3.0"/>
+    <!-- Position-only handoff on the collision-safe outer ring. Heading is
+         owned by the bounded fine controller after move_base is cancelled. -->
+    <param name="coarse_arrival_distance_tolerance" value="0.07"/>
+    <param name="coarse_arrival_yaw_tolerance_deg" value="180.0"/>
+    <param name="fine_alignment_timeout" value="60.0"/>
+    <param name="fine_alignment_hold" value="0.6"/>
+    <param name="fine_alignment_max_linear" value="0.12"/>
+    <param name="fine_alignment_max_angular" value="0.25"/>
+    <!-- move_base cancel is asynchronous. Keep the priority-254 base lock and
+         zero fine command until fresh controller odometry reports stopped and
+         its continuous pose spans <=5 mm / <=0.5 deg over 0.5 s. map->base is
+         not a braking sensor; global-EKF correction is not physical motion. -->
+    <param name="fine_alignment_handoff_timeout" value="2.0"/>
+    <param name="fine_alignment_handoff_window" value="0.5"/>
+    <param name="fine_alignment_handoff_translation_tolerance" value="0.005"/>
+    <param name="fine_alignment_handoff_yaw_tolerance_deg" value="0.5"/>
+    <param name="fine_alignment_handoff_min_samples" value="5"/>
+    <!-- Controller odometry is the authoritative braking signal. A composed
+         map->base TF can repeat its stamp or shift under global-EKF correction
+         while the physical chassis is stopped. -->
+    <param name="base_odom_topic" value="/husky_velocity_controller/odom"/>
+    <param name="fine_handoff_odom_max_age" value="0.75"/>
+    <param name="fine_handoff_linear_velocity_tolerance" value="0.03"/>
+    <param name="fine_handoff_angular_velocity_tolerance" value="0.05"/>
+    <!-- Empty PICK is allowed to leave the inner inflation region only after
+         arm LOOK recovery and no-retained evidence.  Motion is reverse-only. -->
+    <param name="empty_pick_retreat_timeout" value="8.0"/>
+    <!-- PLACE is an area transaction.  Once released, back out of the new
+         disposal hazard without any depot XY/yaw alignment, then dispatch the
+         next mine. -->
+    <param name="post_place_retreat_distance" value="0.80"/>
+    <param name="post_place_retreat_speed" value="0.55"/>
+    <param name="post_place_retreat_timeout" value="10.0"/>
+    <!-- A transient local-costmap ABORT must not immediately strand a locked
+         mine and inhibit the remaining field.  Retries are bounded and each is
+         preceded by a measured stop plus costmap clear/repaint. -->
+    <param name="loaded_return_attempts" value="3"/>
+    <param name="loaded_return_retry_delay" value="0.5"/>
+    <param name="loaded_return_costmap_settle" value="0.30"/>
+    <!-- End obstacle-aware travel on entering the clear depot neighbourhood.
+         Disposal is position-area based: after braking, the assigned drop
+         transform is regenerated from the actual base pose.  No depot XY/yaw
+         fine alignment is performed. -->
+    <param name="loaded_dropoff_navigation_handoff_distance" value="0.45"/>
+    <param name="dropoff_fine_alignment_max_initial_distance_error" value="0.45"/>
+    <param name="dropoff_relaxed_acceptance_radius" value="0.75"/>
+    <param name="drop_now_service" value="/mine_grasp/drop_now"/>
+    <!-- After the picked source coordinate has been removed from navigation
+         (the locked model remains visible in Gazebo), use the high-priority
+         fine command for a bounded in-place turn toward the depot. move_base
+         then owns all translational obstacle avoidance. -->
+    <param name="loaded_departure_turn_timeout" value="20.0"/>
+    <param name="loaded_departure_turn_tolerance_deg" value="6.0"/>
+    <param name="loaded_departure_turn_hold" value="0.30"/>
+    <!-- Full-chain runs measured 0.280 to 0.285 m outward error after move_base
+         cancellation/braking.  This only admits that short residual motion to
+         the <=0.12 m/s controller; the 0.62 m target and 2 cm/3 deg final
+         acceptance gates remain unchanged. -->
+    <param name="fine_alignment_max_initial_distance_error" value="0.35"/>
+    <param name="fine_alignment_cmd_vel_topic" value="/mine_mission/fine_cmd_vel"/>
+    <param name="nominal_diameter" value="0.136"/>
+    <param name="drop_standoff" value="0.65"/>
+    <param name="depot_forward" value="1.8"/>
+    <param name="depot_columns" value="5"/>
+    <param name="depot_column_spacing" value="1.20"/>
+    <param name="depot_row_spacing" value="2.00"/>
+    <param name="depot_parking_clearance" value="0.75"/>
+    <param name="hazard_transition_settle" value="0.25"/>
+    <!-- The carried Gazebo model is a no-reaction kinematic follower.  Return
+         travel may therefore use the 3.4 m/s flat-ground profile; the live
+         5-degree attitude stop, LiDAR, costmaps and DWA braking remain active. -->
+    <param name="carry_max_vel_x" value="3.40"/>
+    <param name="carry_max_vel_theta" value="1.20"/>
+    <!-- Reject near-zero crawl samples while preserving slower collision-safe
+         arcs near obstacles. -->
+    <param name="carry_min_vel_trans" value="0.25"/>
+    <param name="carry_min_vel_theta" value="0.15"/>
+    <param name="carry_acc_lim_x" value="3.00"/>
+    <param name="carry_acc_lim_theta" value="1.80"/>
+  </node>
+
+  <node if="$(arg start_mock)" pkg="mobile_manipulator"
+        type="mock_mine_grasp_server.py" name="mock_mine_grasp_server"
+        output="screen" required="true">
+    <param name="action_name" value="/mine_grasp"/>
+    <param name="mode" value="$(arg mock_mode)"/>
+    <param name="delete_gazebo_model" value="$(arg mock_delete_model)"/>
+  </node>
+</launch>

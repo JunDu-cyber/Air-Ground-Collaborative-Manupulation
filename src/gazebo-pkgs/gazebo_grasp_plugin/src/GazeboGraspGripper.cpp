@@ -19,6 +19,10 @@ using gazebo::GazeboGraspGripper;
 
 ///////////////////////////////////////////////////////////////////////////////
 GazeboGraspGripper::GazeboGraspGripper():
+  disableCollisionsOnAttach(false),
+  kinematicAttachment(false),
+  kinematicOriginalGravityMode(true),
+  kinematicOriginalMode(false),
   attached(false)
 {
 }
@@ -32,6 +36,12 @@ GazeboGraspGripper::GazeboGraspGripper(const GazeboGraspGripper &o):
   fixedJoint(o.fixedJoint),
   palmLink(o.palmLink),
   disableCollisionsOnAttach(o.disableCollisionsOnAttach),
+  kinematicAttachment(o.kinematicAttachment),
+  kinematicObjectLink(o.kinematicObjectLink),
+  kinematicObjectModel(o.kinematicObjectModel),
+  kinematicRelativeModelPose(o.kinematicRelativeModelPose),
+  kinematicOriginalGravityMode(o.kinematicOriginalGravityMode),
+  kinematicOriginalMode(o.kinematicOriginalMode),
   attached(o.attached),
   attachedObjName(o.attachedObjName)
 {}
@@ -52,6 +62,9 @@ bool GazeboGraspGripper::Init(physics::ModelPtr &_model,
 {
   this->gripperName = _gripperName;
   this->attached = false;
+  this->kinematicAttachment = false;
+  this->kinematicObjectLink.reset();
+  this->kinematicObjectModel.reset();
   this->disableCollisionsOnAttach = _disableCollisionsOnAttach;
   this->model = _model;
   physics::PhysicsEnginePtr physics =
@@ -136,6 +149,88 @@ const std::string &GazeboGraspGripper::attachedObject() const
   return attachedObjName;
 }
 
+///////////////////////////////////////////////////////////////////////////////
+bool GazeboGraspGripper::isKinematicAttachment() const
+{
+  return this->attached && this->kinematicAttachment;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+bool GazeboGraspGripper::HandleKinematicAttach(const std::string &objName)
+{
+  if (!this->palmLink)
+  {
+    gzwarn << "GazeboGraspGripper: palm link not found, cannot create "
+           << "kinematic transport lock." << std::endl;
+    return false;
+  }
+  physics::WorldPtr world = this->model->GetWorld();
+  if (!world)
+  {
+    gzerr << "GazeboGraspGripper: world is NULL" << std::endl;
+    return false;
+  }
+  physics::CollisionPtr collision =
+    boost::dynamic_pointer_cast<physics::Collision>(
+      gazebo::GetEntityByName(world, objName));
+  if (!collision || !collision->GetLink() || !collision->GetLink()->GetModel())
+  {
+    gzerr << "GazeboGraspGripper: object '" << objName
+          << "' has no movable model/link for kinematic attachment."
+          << std::endl;
+    return false;
+  }
+  if (this->attached)
+  {
+    return this->attachedObjName == objName && this->kinematicAttachment;
+  }
+
+  this->kinematicObjectLink = collision->GetLink();
+  this->kinematicObjectModel = this->kinematicObjectLink->GetModel();
+  this->kinematicOriginalGravityMode =
+    this->kinematicObjectLink->GetGravityMode();
+  this->kinematicOriginalMode = this->kinematicObjectLink->GetKinematic();
+
+#if GAZEBO_MAJOR_VERSION >= 8
+  const GzPose3 modelWorldPose = this->kinematicObjectModel->WorldPose();
+#else
+  const GzPose3 modelWorldPose = this->kinematicObjectModel->GetWorldPose();
+#endif
+  this->kinematicRelativeModelPose =
+    modelWorldPose - gazebo::GetWorldPose(this->palmLink);
+
+  // No physical constraint or contact impulse is allowed to reach the UGV
+  // while carrying.  Gazebo still renders and publishes this same model.
+  this->kinematicObjectLink->SetCollideMode("none");
+  this->kinematicObjectLink->SetGravityMode(false);
+  this->kinematicObjectLink->SetKinematic(true);
+  const GzVector3 zero = gazebo::GetVector(0.0, 0.0, 0.0);
+  this->kinematicObjectLink->SetLinearVel(zero);
+  this->kinematicObjectLink->SetAngularVel(zero);
+
+  this->kinematicAttachment = true;
+  this->attached = true;
+  this->attachedObjName = objName;
+  this->UpdateKinematicAttachment();
+  return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void GazeboGraspGripper::UpdateKinematicAttachment()
+{
+  if (!this->attached || !this->kinematicAttachment || !this->palmLink ||
+      !this->kinematicObjectLink || !this->kinematicObjectModel)
+    return;
+
+  // Pose3 addition composes the palm world pose with the relative model pose.
+  const GzPose3 targetWorldPose = this->kinematicRelativeModelPose +
+                                  gazebo::GetWorldPose(this->palmLink);
+  this->kinematicObjectModel->SetWorldPose(targetWorldPose);
+  const GzVector3 zero = gazebo::GetVector(0.0, 0.0, 0.0);
+  this->kinematicObjectLink->SetLinearVel(zero);
+  this->kinematicObjectLink->SetAngularVel(zero);
+}
+
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -207,6 +302,28 @@ void GazeboGraspGripper::HandleDetach(const std::string &objName)
   if (!world.get())
   {
     gzerr << "GazeboGraspGripper: world is NULL" << std::endl << std::endl;
+    return;
+  }
+  if (this->kinematicAttachment)
+  {
+    // Place uses the final followed pose.  Restore ordinary dynamics only at
+    // explicit release so the mine can settle visibly on the depot surface.
+    this->UpdateKinematicAttachment();
+    if (this->kinematicObjectLink)
+    {
+      this->kinematicObjectLink->SetKinematic(this->kinematicOriginalMode);
+      this->kinematicObjectLink->SetGravityMode(
+        this->kinematicOriginalGravityMode);
+      this->kinematicObjectLink->SetCollideMode("all");
+      const GzVector3 zero = gazebo::GetVector(0.0, 0.0, 0.0);
+      this->kinematicObjectLink->SetLinearVel(zero);
+      this->kinematicObjectLink->SetAngularVel(zero);
+    }
+    this->kinematicAttachment = false;
+    this->kinematicObjectLink.reset();
+    this->kinematicObjectModel.reset();
+    this->attached = false;
+    this->attachedObjName.clear();
     return;
   }
 #ifdef USE_MODEL_ATTACH

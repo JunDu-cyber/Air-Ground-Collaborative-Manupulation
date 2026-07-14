@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Five graspable mines on the first straight road of outdoor_city.world.
+       The first two are visible while the UAV hovers near its (0,0) takeoff;
+       the remaining three exercise mapping while it flies along +X. -->
+  <arg name="model_file"
+       default="$(find mobile_manipulator)/gazebo_models/landmine/model.sdf"/>
+
+  <rosparam param="/mine_field/layout">
+    frame_id: map
+    world: outdoor_city
+    mines:
+      - {name: landmine_01, x: 1.4, y: 0.9}
+      - {name: landmine_02, x: 2.3, y: -1.1}
+      - {name: landmine_03, x: 5.5, y: 1.4}
+      - {name: landmine_04, x: 8.5, y: -1.4}
+      - {name: landmine_05, x: 11.5, y: 1.3}
+  </rosparam>
+
+  <node pkg="gazebo_ros" type="spawn_model" name="spawn_landmine_01"
+        args="-sdf -file $(arg model_file) -model landmine_01 -reference_frame world -x 1.4 -y 0.9 -z 0.10"
+        output="screen"/>
+  <node pkg="gazebo_ros" type="spawn_model" name="spawn_landmine_02"
+        args="-sdf -file $(arg model_file) -model landmine_02 -reference_frame world -x 2.3 -y -1.1 -z 0.10"
+        output="screen"/>
+  <node pkg="gazebo_ros" type="spawn_model" name="spawn_landmine_03"
+        args="-sdf -file $(arg model_file) -model landmine_03 -reference_frame world -x 5.5 -y 1.4 -z 0.10"
+        output="screen"/>
+  <node pkg="gazebo_ros" type="spawn_model" name="spawn_landmine_04"
+        args="-sdf -file $(arg model_file) -model landmine_04 -reference_frame world -x 8.5 -y -1.4 -z 0.10"
+        output="screen"/>
+  <node pkg="gazebo_ros" type="spawn_model" name="spawn_landmine_05"
+        args="-sdf -file $(arg model_file) -model landmine_05 -reference_frame world -x 11.5 -y 1.3 -z 0.10"
+        output="screen"/>
+</launch>

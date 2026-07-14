@@ -10,13 +10,19 @@ ur5_arm_controller:
      - ur5_wrist_3_joint
   constraints:
       goal_time: 5.0                    # was 0.6 — too tight, caused abort-and-retry dancing
-      stopped_velocity_tolerance: 0.1
-      ur5_shoulder_pan_joint: {trajectory: 0.1, goal: 0.1}
-      ur5_shoulder_lift_joint: {trajectory: 0.1, goal: 0.1}
-      ur5_elbow_joint: {trajectory: 0.1, goal: 0.1}
-      ur5_wrist_1_joint: {trajectory: 0.1, goal: 0.1}
-      ur5_wrist_2_joint: {trajectory: 0.1, goal: 0.1}
-      ur5_wrist_3_joint: {trajectory: 0.1, goal: 0.1}
+      # Gazebo's controller-state velocity field was measured at
+      # 0.0508-0.0551 rad/s while the same 0.52 s joint-position windows moved
+      # less than 0.0000016 rad.  Keep the action server from timing out on that
+      # field-only disagreement; mine_grasp_executor still applies its stricter
+      # independent <=0.05 rad/s position-window/TCP/span/attitude gate after
+      # every MoveIt, Cartesian and direct-joint motion.
+      stopped_velocity_tolerance: 0.08
+      ur5_shoulder_pan_joint: {trajectory: 0.1, goal: 0.01}
+      ur5_shoulder_lift_joint: {trajectory: 0.1, goal: 0.01}
+      ur5_elbow_joint: {trajectory: 0.1, goal: 0.01}
+      ur5_wrist_1_joint: {trajectory: 0.1, goal: 0.01}
+      ur5_wrist_2_joint: {trajectory: 0.1, goal: 0.01}
+      ur5_wrist_3_joint: {trajectory: 0.1, goal: 0.01}
   stop_trajectory_duration: 0.0        # was 0.5 — each stop() was running a 0.5 s hold trajectory
   state_publish_rate:  25
   action_monitor_rate: 10
@@ -32,5 +38,8 @@ gripper_controller:
     - finger_joint
   constraints:
     goal_time: 2.0                  # allow the linkage time to settle
-    stopped_velocity_tolerance: 0.05
-    finger_joint: {trajectory: 0.2, goal: 0.05}   # loose: grasping rarely hits exact angle
+    stopped_velocity_tolerance: 0.02
+    finger_joint: {trajectory: 0.2, goal: 0.01}
+  stop_trajectory_duration: 0.0
+  state_publish_rate: 25
+  action_monitor_rate: 10

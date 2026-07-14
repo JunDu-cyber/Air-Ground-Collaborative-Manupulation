@@ -1,0 +1,22 @@
+Model task: YOLO instance segmentation
+Model architecture: YOLO11s-seg
+Input image size: 960
+Recommended confidence threshold: 0.7337337337
+Class ID: 0
+Class name: landmine
+
+Preferred PyTorch model:
+weights/best.pt
+
+Exported ONNX model:
+weights/best.onnx
+
+Final test metrics:
+Box mAP50: 0.9906248643
+Box mAP50-95: 0.8532486106
+Mask mAP50: 0.9906248643
+Mask mAP50-95: 0.7084263085
+Mask precision: 0.9889728293
+Mask recall: 0.9993055556
+
+Use best.pt rather than last.pt.

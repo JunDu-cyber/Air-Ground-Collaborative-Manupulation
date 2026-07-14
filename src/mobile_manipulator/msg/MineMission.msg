@@ -1,0 +1,10 @@
+std_msgs/Header header
+uint32 revision
+uint32 epoch
+uint32 current_mine_id
+bool running
+bool paused
+bool survey_complete
+geometry_msgs/PoseStamped home_pose
+geometry_msgs/PoseArray disposed_mines
+mobile_manipulator/MineMissionEntry[] entries

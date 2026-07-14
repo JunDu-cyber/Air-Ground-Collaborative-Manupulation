@@ -1,0 +1,32 @@
+# Husky command arbitration plus an independent lock owned by the mine mission.
+# /e_stop remains reserved for the existing emergency-stop chain.
+topics:
+- name: mine_fine_alignment
+  topic: /mine_mission/fine_cmd_vel
+  timeout: 0.2
+  priority: 20
+- name: joy
+  topic: joy_teleop/cmd_vel
+  timeout: 0.5
+  priority: 10
+- name: kb
+  topic: kb_teleop/cmd_vel
+  timeout: 0.5
+  priority: 9
+- name: interactive_marker
+  topic: twist_marker_server/cmd_vel
+  timeout: 0.5
+  priority: 8
+- name: external
+  topic: cmd_vel
+  timeout: 0.5
+  priority: 1
+locks:
+- name: e_stop
+  topic: e_stop
+  timeout: 0.0
+  priority: 255
+- name: mine_mission
+  topic: /mine_mission/base_lock
+  timeout: 0.0
+  priority: 254

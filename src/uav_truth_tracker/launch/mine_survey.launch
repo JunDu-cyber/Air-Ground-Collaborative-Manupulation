@@ -1,0 +1,44 @@
+<launch>
+  <arg name="goal_topic" default="/uav/survey_goal"/>
+  <arg name="flight_height" default="4.0"/>
+  <!-- Leave enough CPU-inference time at each coverage point for independent
+       observations even when Gazebo is running below real time. -->
+  <arg name="dwell" default="8.0"/>
+  <arg name="start_delay" default="5.0"/>
+  <arg name="candidate_hold_duration" default="18.0"/>
+  <!-- Scenario expectation only; it is never read from Gazebo/model truth. -->
+  <arg name="minimum_confirmed_mines" default="5"/>
+  <arg name="max_rescan_rounds" default="3"/>
+  <arg name="rescan_wait_duration" default="10.0"/>
+  <!-- Generic safe loiter outside the survey strip before UGV dispatch. -->
+  <arg name="completion_loiter_x" default="0.0"/>
+  <arg name="completion_loiter_y" default="-6.0"/>
+  <arg name="completion_loiter_dwell" default="3.0"/>
+  <node pkg="uav_truth_tracker" type="mine_survey_waypoints.py"
+        name="mine_survey_waypoints" output="screen">
+    <param name="goal_topic" value="$(arg goal_topic)"/>
+    <param name="pose_topic" value="/mavros/local_position/pose"/>
+    <param name="frame_id" value="map"/>
+    <param name="flight_height" value="$(arg flight_height)"/>
+    <param name="dwell" value="$(arg dwell)"/>
+    <param name="start_delay" value="$(arg start_delay)"/>
+    <param name="candidate_hold_duration" value="$(arg candidate_hold_duration)"/>
+    <param name="minimum_confirmed_mines" value="$(arg minimum_confirmed_mines)"/>
+    <param name="max_rescan_rounds" value="$(arg max_rescan_rounds)"/>
+    <param name="rescan_wait_duration" value="$(arg rescan_wait_duration)"/>
+    <param name="completion_loiter_x" value="$(arg completion_loiter_x)"/>
+    <param name="completion_loiter_y" value="$(arg completion_loiter_y)"/>
+    <param name="completion_loiter_dwell" value="$(arg completion_loiter_dwell)"/>
+    <param name="candidate_map_topic" value="/mine_detection/map"/>
+    <param name="reach_radius" value="1.2"/>
+    <param name="goal_timeout" value="90.0"/>
+    <!-- Outdoor-city 道路覆盖线，不读取 /gazebo/model_states 或地雷真值。 -->
+    <rosparam param="waypoints">
+      - [2.5, -0.5]
+      - [5.5,  0.4]
+      - [8.5, -0.4]
+      - [11.5, 0.5]
+      - [2.5, -0.5]
+    </rosparam>
+  </node>
+</launch>

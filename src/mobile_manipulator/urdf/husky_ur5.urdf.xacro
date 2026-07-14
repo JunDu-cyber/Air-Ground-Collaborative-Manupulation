@@ -1,6 +1,15 @@
 <?xml version="1.0"?>
 <robot name="husky_ur5" xmlns:xacro="http://ros.org/wiki/xacro">
 
+  <!-- Project-owned wrist RGB-D horizontal field of view, in radians.
+       Default 1.308996939 rad = 75 deg.  The previous 60 deg view put the
+       measured M004 detonator ray near v=453/480, behind the gripper crossbar.
+       Widening the optics moves that same ~21 deg ray to v~400 while preserving
+       the camera pose, 640x480 registration, depth geometry and optical frame.
+       This parameter affects visibility only; it is never a grasp target or a
+       substitute for wrist RGB-D measurement. -->
+  <xacro:arg name="wrist_camera_horizontal_fov_rad" default="1.308996939"/>
+
   <xacro:include filename="$(find husky_description)/urdf/husky.urdf.xacro" />
 
   <xacro:include filename="$(find husky_description)/urdf/accessories/sick_lms1xx_mount.urdf.xacro" />
@@ -65,6 +74,20 @@
     <origin xyz="0 0 0" rpy="0 -1.57 1.57"/>
   </xacro:robotiq_140_gripper>
 
+  <!-- Mine-grasp TCP derived from the Robotiq 2F-140 URDF geometry, not from
+       a task-space offset.  At the nominal finger_joint=0.499 rad contact
+       configuration (39.742 mm inner gap for the 40 mm detonator),
+       the two pad centres measured in robotiq_arg2f_base_link are
+       y=+/-0.023621 m, z=0.198591 m.  Their midpoint is therefore the physical
+       contact centre below.  Rz(+pi/2) maps TCP +X onto the jaw-closing axis
+       (gripper-base +Y), while TCP +Z remains the physical approach axis. -->
+  <link name="grasp_tcp"/>
+  <joint name="grasp_tcp_joint" type="fixed">
+    <parent link="robotiq_arg2f_base_link"/>
+    <child link="grasp_tcp"/>
+    <origin xyz="0 0 0.1985905960" rpy="0 0 1.5707963268"/>
+  </joint>
+
   <!-- Grasp fix: creates a virtual joint between gripper and object when both
        fingers make opposing contact, preventing the object from flying away. -->
   <gazebo>
@@ -83,10 +106,33 @@
       <forces_angle_tolerance>100</forces_angle_tolerance>
       <update_rate>90</update_rate>
       <grip_count_threshold>1</grip_count_threshold>
-      <max_grip_count>8</max_grip_count>
-      <release_tolerance>0.005</release_tolerance>
-      <disable_collisions_on_attach>false</disable_collisions_on_attach>
+      <!-- Keep the physical opposing-contact requirement, but give an already
+           established grasp 0.5 s of solver-contact hysteresis.  Eight ticks
+           (89 ms) detached one measured grasp during the 3 s hold even though
+           the jaw/TCP relative pose remained inside the executor gate.  The
+           10 mm release displacement is still far below the >50 mm pad motion
+           produced by the verified OPEN command, so PLACE releases normally. -->
+      <max_grip_count>45</max_grip_count>
+      <release_tolerance>0.010</release_tolerance>
+      <!-- Once grasp-fix owns the rigid transport joint, continuing to solve
+           finger/object contacts over-constrains Gazebo and made the measured
+           finger velocity oscillate at 0.27 rad/s.  Disable only the attached
+           object's Gazebo contacts while that joint exists; HandleDetach
+           restores collide mode "all" at PLACE.  MoveIt's attached collision
+           object remains active for arm/chassis planning throughout. -->
+      <disable_collisions_on_attach>true</disable_collisions_on_attach>
       <contact_topic>__default_topic__</contact_topic>
+      <!-- Mission-only simulator fallback. The executor may request this only
+           after its final visual TCP gate and unique spatial association pass.
+           The plugin keeps the same Gazebo model visible as a kinematic palm
+           follower, so it cannot drop or transmit terrain impulses to the UGV. -->
+      <force_lock_enabled>true</force_lock_enabled>
+      <force_attach_topic>/mine_grasp/force_attach</force_attach_topic>
+      <force_detach_topic>/mine_grasp/force_detach</force_detach_topic>
+      <force_status_topic>/mine_grasp/force_lock_status</force_status_topic>
+      <force_arm_name>robotiq_140</force_arm_name>
+      <force_object_prefix>landmine</force_object_prefix>
+      <force_collision_suffix>body::detonator_collision</force_collision_suffix>
     </plugin>
   </gazebo>
 
@@ -141,7 +187,7 @@
       <update_rate>30.0</update_rate>
       <visualize>true</visualize>
       <camera>
-        <horizontal_fov>1.047198</horizontal_fov>
+        <horizontal_fov>$(arg wrist_camera_horizontal_fov_rad)</horizontal_fov>
         <image>
           <width>640</width>
           <height>480</height>

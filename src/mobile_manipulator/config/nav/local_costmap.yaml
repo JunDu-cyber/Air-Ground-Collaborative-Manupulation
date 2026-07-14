@@ -5,9 +5,13 @@ local_costmap:
   publish_frequency: 5.0
   static_map: false
   rolling_window: true
-  width: 4.0
-  height: 4.0
+  # Loaded return is dynamically raised to 3.4 m/s.  Over the 1 s DWA horizon
+  # a 10 m rolling window keeps the complete Husky footprint and braking
+  # samples visible instead of clipping fast trajectories at the boundary.
+  width: 10.0
+  height: 10.0
   resolution: 0.05
   plugins:
     - {name: obstacle_layer,  type: "costmap_2d::ObstacleLayer"}
+    - {name: mine_hazard_layer, type: "mobile_manipulator::MineHazardLayer"}
     - {name: inflation_layer, type: "costmap_2d::InflationLayer"}

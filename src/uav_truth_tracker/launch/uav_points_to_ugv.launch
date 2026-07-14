@@ -15,6 +15,8 @@
   <arg name="publish_rate" default="3.0"/>
   <arg name="tf_lookup_timeout" default="0.10"/>
   <arg name="allow_latest_tf_fallback" default="true"/>
+  <!-- 永远用最新 TF 投影(忽略点云戳);合并世界里 /odom 戳可能卡住导致点云只堆一处时打开。 -->
+  <arg name="force_latest_tf" default="false"/>
 
   <arg name="enable_range_filter" default="true"/>
   <arg name="min_range" default="0.35"/>
@@ -52,6 +54,7 @@
   <arg name="lidar_mount_x" default="0.0"/>
   <arg name="lidar_mount_y" default="0.0"/>
   <arg name="lidar_mount_z" default="0.06"/>
+  <arg name="gazebo_uav_model_name" default="iris_depth_camera"/>  <!-- 真值投影器查的模型名 -->
   <arg name="local_min_z" default="-999.0"/>
   <arg name="local_max_z" default="999.0"/>
   <arg name="min_publish_interval" default="0.0"/>
@@ -130,14 +133,35 @@
     <param name="min_publish_interval" value="$(arg min_publish_interval)"/>
   </node>
 
-  <node pkg="uav_truth_tracker" type="uav_pointcloud_to_world.py"
-        name="uav_pointcloud_to_world" output="screen">
+  <!-- ★use_truth_projector：用 Gazebo 真值直接投影激光(不走 TF/odom/时间戳),彻底免疫
+       合并世界的 sim 时间抖动/TF 冻结。开时跑下面的真值投影器、不跑上面 TF 版。 -->
+  <arg name="use_truth_projector" default="false"/>
+  <arg name="truth_offset_x" default="0.0"/>   <!-- 减出生点 xy -> 输出落到 MAVROS 局部系 -->
+  <arg name="truth_offset_y" default="0.0"/>
+  <arg name="truth_max_points" default="0"/>   <!-- >0: 每帧降采样上限,控负载 -->
+  <node if="$(arg use_truth_projector)" pkg="uav_truth_tracker"
+        type="uav_truth_cloud_projector.py" name="uav_truth_cloud_projector" output="screen">
+    <param name="model_name"   value="$(arg gazebo_uav_model_name)"/>
+    <param name="input_topic"  value="$(arg input_topic)"/>
+    <param name="output_topic" value="$(arg output_topic)"/>
+    <param name="world_frame"  value="$(arg target_frame)"/>
+    <param name="mount_x"      value="$(arg lidar_mount_x)"/>
+    <param name="mount_y"      value="$(arg lidar_mount_y)"/>
+    <param name="mount_z"      value="$(arg lidar_mount_z)"/>
+    <param name="offset_x"     value="$(arg truth_offset_x)"/>
+    <param name="offset_y"     value="$(arg truth_offset_y)"/>
+    <param name="max_points"   value="$(arg truth_max_points)"/>
+  </node>
+
+  <node unless="$(arg use_truth_projector)" pkg="uav_truth_tracker"
+        type="uav_pointcloud_to_world.py" name="uav_pointcloud_to_world" output="screen">
     <param name="input_topic" value="$(arg input_topic)"/>
     <param name="output_topic" value="$(arg output_topic)"/>
     <param name="target_frame" value="$(arg target_frame)"/>
     <param name="publish_rate" value="$(arg publish_rate)"/>
     <param name="tf_lookup_timeout" value="$(arg tf_lookup_timeout)"/>
     <param name="allow_latest_tf_fallback" value="$(arg allow_latest_tf_fallback)"/>
+    <param name="force_latest_tf" value="$(arg force_latest_tf)"/>
     <param name="enable_range_filter" value="$(arg enable_range_filter)"/>
     <param name="min_range" value="$(arg min_range)"/>
     <param name="max_range" value="$(arg max_range)"/>

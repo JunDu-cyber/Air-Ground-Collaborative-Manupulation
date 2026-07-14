@@ -28,10 +28,12 @@ publish_tf: true
 predict_to_current_time: true
 
 # 给发布的 map->odom TF 盖一点提前量。否则 move_base 局部规划器按"当前时刻"查
-# map<->odom 时会落到"未来 0.02s"，抛 ExtrapolationException：
+# map<->odom 时会落到未来，抛 ExtrapolationException：
 #   "Could not transform the global plan to the frame of the controller"
-# 导致一规划就 Aborting、车不动。0.1s 足够盖住 30Hz EKF 的一两个周期延迟。
-transform_time_offset: 0.1
+# 最新完整任务在 CPU 推理负载下实测 map->odom 最迟落后当前时刻 0.052s，
+# 且 EKF 单次更新偶发需要 0.15s。提前 0.5s 覆盖这种调度抖动，避免 DWA
+# 间歇拿不到局部路径而发布零速度；TF 查询仍按共同时间插值。
+transform_time_offset: 0.5
 
 map_frame: map
 odom_frame: odom

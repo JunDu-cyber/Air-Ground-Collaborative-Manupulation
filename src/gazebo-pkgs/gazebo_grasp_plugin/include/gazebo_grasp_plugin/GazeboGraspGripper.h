@@ -6,6 +6,7 @@
 #include <gazebo/physics/physics.hh>
 #include <gazebo/common/common.hh>
 #include <gazebo/transport/TransportTypes.hh>
+#include <gazebo_version_helpers/GazeboVersionHelpers.h>
 #include <stdio.h>
 
 namespace gazebo
@@ -56,6 +57,14 @@ class GazeboGraspGripper
      * \param gripContacts contact forces on the object sorted by the link name colliding.
      */
     bool HandleAttach(const std::string &objName);
+    /**
+     * Simulator-only transport lock.  The object remains visible in Gazebo
+     * and follows the palm exactly, but it is kinematic and therefore cannot
+     * transmit terrain/contact impulses back into the mobile base.
+     */
+    bool HandleKinematicAttach(const std::string &objName);
+    void UpdateKinematicAttachment();
+    bool isKinematicAttachment() const;
     void HandleDetach(const std::string &objName);
 
   private:
@@ -78,6 +87,17 @@ class GazeboGraspGripper
     // when an object is attached, collisions with it may be disabled, in case the
     // robot still keeps wobbling.
     bool disableCollisionsOnAttach;
+
+    // A forced mission lock is represented as a visible, pose-following
+    // Gazebo model instead of a physical closed-chain joint.  This guarantees
+    // retention without allowing a mine which still touches the terrain to
+    // lever the complete UGV around the wrist joint.
+    bool kinematicAttachment;
+    physics::LinkPtr kinematicObjectLink;
+    physics::ModelPtr kinematicObjectModel;
+    GzPose3 kinematicRelativeModelPose;
+    bool kinematicOriginalGravityMode;
+    bool kinematicOriginalMode;
 
     // flag holding whether an object is attached. Object name in \e attachedObjName
     bool attached;

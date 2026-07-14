@@ -1,6 +1,17 @@
 <?xml version="1.0" ?>
 <sdf version="1.4">
   <world name="outdoor">
+    <!-- ★坐标统一：世界 GPS 原点 = UGV datum (49.9, 8.9)。Gazebo 的 GPS 传感器(PX4 的
+         gazebo_gps_plugin + Husky 的 hector GPS)都以此为参考原点。没有它时 PX4 默认用
+         苏黎世(47.39,8.54) -> 和 UGV datum(49.9) 差 ~279km -> align 报 MISALIGNED、
+         两套地图对不上。设成 datum 后两侧 GPS 一致,gazebo(0,0)=datum=UGV map 原点。 -->
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <latitude_deg>49.9</latitude_deg>
+      <longitude_deg>8.9</longitude_deg>
+      <elevation>0</elevation>
+      <heading_deg>0</heading_deg>
+    </spherical_coordinates>
     <!-- Place user camera -->
     <gui>
       <camera name="user_camera">
@@ -172,16 +183,6 @@
       <uri>model://dumpster</uri>
       <static>true</static>
       <pose>143 51.5 0 0 0 0</pose>
-    </include>
-    <include>
-      <uri>model://landmine</uri>
-      <name>landmine_1</name>
-      <pose>50 30 0.08 0 0 0</pose>
-    </include>
-    <include>
-      <uri>model://landmine</uri>
-      <name>landmine_2</name>
-      <pose>100 60 0.08 0 0 0</pose>
     </include>
     <include>
       <uri>model://house_2</uri>

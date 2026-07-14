@@ -1,0 +1,29 @@
+<launch>
+  <node pkg="mobile_manipulator" type="mine_mission_manager.py"
+        name="mine_mission_manager" output="screen" required="true">
+    <param name="auto_start" value="true"/>
+    <param name="approach_distance" value="0.67"/>
+    <param name="navigation_approach_distance" value="0.84"/>
+    <param name="coarse_arrival_distance_tolerance" value="0.07"/>
+    <param name="coarse_arrival_yaw_tolerance_deg" value="180.0"/>
+    <param name="fine_alignment_max_initial_distance_error" value="0.25"/>
+    <param name="persistence_file"
+           value="/tmp/$(anon mine_mission_server_gate).yaml"/>
+    <param name="candidate_count" value="8"/>
+    <param name="candidate_limit" value="2"/>
+    <param name="navigation_timeout" value="3.0"/>
+    <param name="navigation_stall_timeout" value="5.0"/>
+    <param name="arm_server_wait" value="0.5"/>
+    <param name="arm_timeout" value="3.0"/>
+    <param name="retry_limit" value="1"/>
+    <param name="map_settle_time" value="0.0"/>
+    <param name="retry_delay" value="0.1"/>
+    <param name="require_carry_speed_limit" value="false"/>
+    <param name="place_timeout" value="3.0"/>
+  </node>
+  <test test-name="mine_mission_server_gate"
+        pkg="mobile_manipulator" type="mine_mission_integration_test.py"
+        time-limit="35.0">
+    <param name="mode" value="server_gate"/>
+  </test>
+</launch>

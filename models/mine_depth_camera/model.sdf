@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+  <model name="mine_depth_camera">
+    <static>false</static>
+    <link name="link">
+      <inertial>
+        <mass>0.02</mass>
+        <inertia>
+          <ixx>1e-5</ixx><iyy>1e-5</iyy><izz>1e-5</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+        </inertia>
+      </inertial>
+      <visual name="housing">
+        <geometry><box><size>0.05 0.08 0.025</size></box></geometry>
+        <material><ambient>0.08 0.08 0.08 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material>
+      </visual>
+      <!-- Gazebo cameras render along local +X; +90deg pitch maps it to vehicle -Z. -->
+      <sensor name="mine_depth_camera" type="depth">
+        <pose>0 0 -0.02 0 1.57079632679 0</pose>
+        <!-- Keep both the sensor and ROS plugin alive for camera health
+             monitoring. CPU load is controlled by reversible inference
+             throttling, not by unregistering the image publisher. -->
+        <always_on>true</always_on>
+        <update_rate>4</update_rate>
+        <camera>
+          <horizontal_fov>1.5009831567</horizontal_fov>
+          <image><format>R8G8B8</format><width>960</width><height>540</height></image>
+          <clip><near>0.05</near><far>20.0</far></clip>
+        </camera>
+        <plugin name="mine_camera_controller" filename="libgazebo_ros_openni_kinect.so">
+          <cameraName>mine_camera</cameraName>
+          <!-- Explicit root namespace keeps topics stable even when this model
+               is nested inside a PX4 vehicle with a different spawn name. -->
+          <robotNamespace>/</robotNamespace>
+          <alwaysOn>true</alwaysOn>
+          <updateRate>4</updateRate>
+          <pointCloudCutoff>0.10</pointCloudCutoff>
+          <pointCloudCutoffMax>20.0</pointCloudCutoffMax>
+          <imageTopicName>rgb/image_raw</imageTopicName>
+          <cameraInfoTopicName>rgb/camera_info</cameraInfoTopicName>
+          <depthImageTopicName>depth/image_raw</depthImageTopicName>
+          <depthImageCameraInfoTopicName>depth/camera_info</depthImageCameraInfoTopicName>
+          <pointCloudTopicName>depth/points</pointCloudTopicName>
+          <frameName>mine_camera_optical_frame</frameName>
+          <distortion_k1>0</distortion_k1><distortion_k2>0</distortion_k2>
+          <distortion_k3>0</distortion_k3><distortion_t1>0</distortion_t1><distortion_t2>0</distortion_t2>
+        </plugin>
+      </sensor>
+    </link>
+  </model>
+</sdf>

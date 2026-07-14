@@ -1,0 +1,15 @@
+mine_hazard_layer:
+  enabled: true
+  mine_map_topic: /mine_detection/map
+  mission_topic: /mine_mission/status
+  disposed_topic: /mine_disposal/poses
+  reset_topic: /mine_hazard/reset
+  map_frame: map
+  # Physical forbidden disk around the mine. The normal inflation layer then
+  # expands this by the Husky footprint/safety cost, so the base cannot cross it.
+  # 0.10 m still prevents the 1.0 m Husky footprint from crossing a 0.136 m
+  # mine, but permits a controlled 0.67 m camera/gripper standoff. Previously 0.25 m
+  # made every pose inside the arm's verified workspace collision-invalid.
+  lethal_radius: 0.10
+  disposed_lethal_radius: 0.10
+  transform_tolerance: 1.0

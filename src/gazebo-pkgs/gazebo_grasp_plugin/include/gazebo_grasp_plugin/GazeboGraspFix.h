@@ -2,10 +2,18 @@
 #define GAZEBO_GAZEBOGRASPFIX_H
 
 #include <boost/bind.hpp>
+#include <boost/thread/mutex.hpp>
 #include <gazebo/gazebo.hh>
 #include <gazebo/physics/physics.hh>
 #include <gazebo/common/common.hh>
 #include <gazebo/transport/TransportTypes.hh>
+#include <ros/ros.h>
+#include <ros/callback_queue.h>
+#include <std_msgs/String.h>
+#include <atomic>
+#include <deque>
+#include <set>
+#include <thread>
 #include <stdio.h>
 #include <gazebo_grasp_plugin/GazeboGraspGripper.h>
 
@@ -152,6 +160,19 @@ class GazeboGraspFix : public ModelPlugin
      */
     void OnContact(const ConstContactsPtr &ptr);
 
+    /**
+     * Queue simulator-only lock commands from ROS.  The callbacks never touch
+     * Gazebo physics directly; OnUpdate consumes the queue on Gazebo's world
+     * update thread.
+     */
+    void OnForceAttach(const std_msgs::StringConstPtr &msg);
+    void OnForceDetach(const std_msgs::StringConstPtr &msg);
+    void ProcessForcedCommands();
+    bool ForceAttach(const std::string &objectName);
+    bool ForceDetach(const std::string &objectName);
+    bool IsAllowedForcedObject(const std::string &objectName) const;
+    void RosQueueThread();
+
 //    bool CheckGrip(const std::vector<GzVector3> &forces, float minAngleDiff,
 //                   float lengthRatio);
 
@@ -192,6 +213,32 @@ class GazeboGraspFix : public ModelPlugin
     transport::NodePtr node;
     transport::PublisherPtr eventsPub;   // publisher of grasping events
     transport::SubscriberPtr contactSub; // subscriber to contact updates
+
+    // Optional, explicitly enabled simulator fallback.  It preserves the
+    // object's current relative pose and only changes grasp-fix joint lifetime;
+    // target association and all distance gates remain the ROS executor's job.
+    bool forceLockEnabled;
+    std::string forceAttachTopic;
+    std::string forceDetachTopic;
+    std::string forceStatusTopic;
+    std::string forceArmName;
+    std::string forceObjectPrefix;
+    std::string forceCollisionSuffix;
+    boost::shared_ptr<ros::NodeHandle> rosNode;
+    ros::CallbackQueue rosQueue;
+    std::thread rosQueueThread;
+    std::atomic<bool> rosQueueRunning;
+    ros::Subscriber forceAttachSub;
+    ros::Subscriber forceDetachSub;
+    ros::Publisher forceStatusPub;
+    std::deque<std::pair<bool, std::string> > forceCommands;
+    boost::mutex mutexForceCommands;
+    std::set<std::string> forcedAttachedObjects;
+    // Objects explicitly detached by PLACE/RESET must not be re-attached by
+    // stale/opposing finger contacts. ForceAttach clears the quarantine for
+    // rollback/recovery; deletion also clears it for the optional legacy
+    // virtual-transport mode.
+    std::set<std::string> explicitlyDetachedObjects;
 
     // tolerance (in degrees) between force vectors to
     // be considered "opposing"

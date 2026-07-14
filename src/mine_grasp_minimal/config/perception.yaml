@@ -1,0 +1,117 @@
+# Wrist RGB-D topics are produced by the Gazebo OpenNI camera in
+# mobile_manipulator/urdf/husky_ur5.urdf.xacro.
+rgb_topic: /camera/color/image_raw
+depth_topic: /camera/depth/image_raw
+camera_info_topic: /camera/color/camera_info
+camera_frame: realsense_camera_optical_frame
+target_frame: ur5_base_link
+# Standalone phase-1 launch has a connected odom->base_link tree even when the
+# GPS/map EKF has not initialized. odom is gravity-aligned in this simulation.
+gravity_frame: odom
+
+# hybrid: YOLO mine mask -> yellow HSV, with bounded colour fallback.
+# color_only: skip the second CPU YOLO used by the wrist camera and locate the
+# yellow detonator only inside the gated ROI/workspace below. The integrated
+# UAV-UGV launcher selects color_only after UAV YOLO has selected the mine.
+localization_mode: hybrid
+
+# The UAV validation threshold (0.7337) is intentionally not reused for the
+# wrist viewpoint. Start lower and tune from wrist-camera measurements.
+confidence_threshold: 0.45
+iou_threshold: 0.50
+image_size: 960
+device: cpu
+torch_threads: 4
+inference_rate: 2.0
+# The aerially trained model has a strong small-object prior. In the wrist
+# view the mine occupies ~100 px, so the full frame is scaled into a canvas
+# before inference. Masks are inverse-warped before any RGB-D operation.
+inference_view_scale: 0.25
+inference_canvas_value: 48
+target_class_id: 0
+target_class_name: landmine
+maximum_detections: 4
+
+# OpenCV HSV ranges (H is 0..179). Yellow is searched only inside a YOLO mask.
+yellow_hsv_lower: [15, 80, 65]
+yellow_hsv_upper: [42, 255, 255]
+yellow_open_kernel: 3
+yellow_close_kernel: 5
+minimum_yellow_area_px: 18
+maximum_yellow_area_px: 10000
+minimum_yellow_fraction: 0.002
+maximum_yellow_fraction: 0.55
+
+# Precise positioning is HSV/depth based. YOLO normally restricts HSV to the
+# mine mask. If the aerial model misses a close wrist view, permit a bounded
+# colour-only fallback inside this image ROI. Every shape-valid yellow component
+# is checked for robust depth, timestamped TF and the configured 3-D UR5
+# workspace before the best surviving candidate can become target_valid.
+color_roi_fallback_enabled: true
+color_fallback_roi: [0.10, 0.10, 0.90, 0.99]
+color_fallback_minimum_area_px: 18
+# At pregrasp the 40 mm block is about 70 px wide (~4800 px area).  The old
+# 2500 px cap invalidated the mandatory REFINE_TARGET observation exactly when
+# the tool got close, making the arm appear to freeze before closing.
+color_fallback_maximum_area_px: 10000
+color_fallback_minimum_fill: 0.25
+color_fallback_minimum_aspect: 0.25
+color_fallback_maximum_aspect: 4.0
+color_fallback_confidence: 0.50
+expected_source_topic: /mine_grasp/expected_source_pose
+expected_source_roi_radius_px: 150
+color_fallback_minimum_planar_reach: 0.25
+color_fallback_maximum_planar_reach: 0.62
+color_fallback_minimum_target_z: -0.45
+color_fallback_maximum_target_z: -0.18
+
+sync_queue_size: 5
+sync_slop: 0.04
+maximum_frame_age: 1.0
+tf_timeout: 0.25
+
+depth_min_m: 0.05
+depth_max_m: 3.0
+depth_erode_pixels: 2
+minimum_depth_samples: 15
+mad_scale: 3.5
+minimum_mad_gate_m: 0.002
+
+# The RGB-D observation is the top surface. The published target is the
+# physical centre of the 60 mm detonator, derived from the SDF geometry.
+detonator_height_m: 0.060
+top_surface_quantile: 0.80
+top_surface_band_m: 0.006
+top_surface_minimum_samples: 12
+
+# Fit local terrain outside the complete mine footprint in the gravity frame.
+# For the colour-only fallback the ring scales with the observed 40 mm block,
+# ensuring the fit reaches beyond the 136 mm disc even at close range.
+ground_ring_inner_scale: 1.25
+ground_ring_outer_scale: 2.10
+ground_ring_min_inner_px: 8
+ground_ring_max_outer_px: 180
+ground_minimum_samples: 40
+ground_plane_residual_floor_m: 0.006
+ground_plane_mad_scale: 3.5
+ground_plane_minimum_xy_span_m: 0.04
+expected_mine_top_height_m: 0.085
+mine_top_height_tolerance_m: 0.030
+require_local_ground: true
+# At coarse approach the gripper occupies most of the terrain annulus. If that
+# current ring produces an impossible mine height, keep the current RGB-D top
+# point but validate it against the last stable direct ground fit from the same
+# PICK action. Task/attempt changes clear the reference; a >20 mm top jump or a
+# >30 s sensor-stamp age is still rejected.
+validated_ground_fallback_enabled: true
+validated_ground_fallback_max_top_shift_m: 0.020
+validated_ground_fallback_max_age_s: 30.0
+
+minimum_confirmed_frames: 3
+maximum_xy_std: 0.01
+maximum_z_std: 0.01
+maximum_confirmation_gap: 1.0
+
+debug_save_path: ""
+debug_output_directory: ""
+debug_save_interval: 1.0

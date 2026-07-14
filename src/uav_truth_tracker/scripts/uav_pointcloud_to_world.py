@@ -48,6 +48,10 @@ class UavPointCloudToWorld(object):
         )
         self.tf_lookup_timeout = float(rospy.get_param("~tf_lookup_timeout", 0.10))
         self.allow_latest_tf_fallback = bool_param("~allow_latest_tf_fallback", True)
+        # ★force_latest_tf: 永远用【最新】TF 投影,忽略点云时间戳。合并世界里激光被 relay
+        #   按 /odom 时间戳重打了戳,若 /odom 戳卡住/滞后,projection 就总按【旧位姿】投影 ->
+        #   每帧都落在同一处(点云只堆一个圆)。用最新 TF(=真值 TF 当前位姿)就跟着无人机走。
+        self.force_latest_tf = bool_param("~force_latest_tf", False)
 
         self.enable_range_filter = bool_param("~enable_range_filter", True)
         self.min_range = max(float(rospy.get_param("~min_range", 0.0)), 0.0)
@@ -164,7 +168,10 @@ class UavPointCloudToWorld(object):
             cloud_in = copy.deepcopy(msg)
             cloud_in.header.frame_id = source_frame
 
-        stamp = msg.header.stamp if msg.header.stamp != rospy.Time() else rospy.Time(0)
+        if self.force_latest_tf:
+            stamp = rospy.Time(0)   # 用最新 TF,不受 relay 用 /odom 重打的(可能卡住的)戳影响
+        else:
+            stamp = msg.header.stamp if msg.header.stamp != rospy.Time() else rospy.Time(0)
         try:
             if source_frame == self.target_frame:
                 transform = None
@@ -198,6 +205,13 @@ class UavPointCloudToWorld(object):
         else:
             origin_t = transform.transform.translation
             origin = (origin_t.x, origin_t.y, origin_t.z)
+        # 诊断：打印投影实际用的 UAV 位姿(map 系)。它若一直变 = TF 跟着无人机走(点云会铺开);
+        # 若不动 = TF 卡住(点云只堆一处) -> 上游 TF 源有问题。
+        rospy.loginfo_throttle(
+            3.0, "[UavPointCloudToWorld] proj TF %s<-%s = (%.1f, %.1f, %.1f) pub=%d",
+            self.target_frame, source_frame, origin[0], origin[1], origin[2],
+            self.published_frames,
+        )
         filtered = self.filter_cloud(cloud_world, origin)
         self.pub.publish(filtered)
         self.last_publish_time = rospy.Time.now()

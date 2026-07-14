@@ -1,6 +1,8 @@
 <launch>
   <!-- Outdoor City World - houses, gas station, lamp posts, terrain -->
   <arg name="gui" default="true"/>
+  <arg name="ur5_joint_damping" default="1.5"/>
+  <arg name="ur5_shoulder_lift_damping" default="20.0"/>
   <env name="HUSKY_LMS1XX_ENABLED" value="1"/>
 
   <!-- Model paths: collection + local Gazebo models + custom -->
@@ -22,7 +24,7 @@
 
   <!-- Robot description -->
   <param name="robot_description"
-         command="$(find xacro)/xacro '$(find mobile_manipulator)/urdf/husky_ur5.urdf.xacro'" />
+         command="$(find mobile_manipulator)/scripts/generate_husky_ur5_urdf.py --xacro '$(find mobile_manipulator)/urdf/husky_ur5.urdf.xacro' --arm-joint-damping $(arg ur5_joint_damping) --shoulder-lift-joint-damping $(arg ur5_shoulder_lift_damping)" />
 
   <node name="robot_state_publisher" pkg="robot_state_publisher"
         type="robot_state_publisher" />
@@ -46,9 +48,9 @@
   <!-- Controllers -->
   <rosparam command="load" file="$(find husky_control)/config/control.yaml" />
   <rosparam command="load" file="$(find mobile_manipulator)/config/ur5_controllers.yaml" />
-  <!-- 平地走快点：把底盘控制器线速度上限从 1.0 提到 1.5 m/s(覆盖 husky control.yaml)。
-       DWA 那边 max_vel_x 也同步提到 1.5。在控制器 spawn 之前覆盖才生效。 -->
-  <param name="husky_velocity_controller/linear/x/max_velocity" value="1.5"/>
+  <!-- 控制器预留 3.5 m/s 给刚性锁定后的平地返程；普通出程仍由 DWA
+       配置限制为 2.8 m/s。 -->
+  <param name="husky_velocity_controller/linear/x/max_velocity" value="3.5"/>
 
   <node name="base_controller_spawner" pkg="controller_manager" type="spawner"
         args="husky_joint_publisher husky_velocity_controller" output="screen" />
@@ -68,6 +70,7 @@
   <node pkg="robot_localization" type="ekf_localization_node" name="ekf_localization">
     <rosparam command="load" file="$(find husky_control)/config/localization.yaml" />
     <param name="two_d_mode" value="false"/>
+    <param name="frequency" value="30.0"/>
   </node>
 
   <!-- Global EKF: wheel odom + IMU + GPS -> map->odom (GPS-anchored) -->
@@ -86,7 +89,7 @@
 
   <!-- Twist mux -->
   <node pkg="twist_mux" type="twist_mux" name="twist_mux">
-    <rosparam command="load" file="$(find husky_control)/config/twist_mux.yaml" />
+    <rosparam command="load" file="$(find mobile_manipulator)/config/twist_mux_mine_mission.yaml" />
     <remap from="cmd_vel_out" to="husky_velocity_controller/cmd_vel"/>
   </node>
 

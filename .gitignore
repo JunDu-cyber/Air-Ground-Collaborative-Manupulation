@@ -21,6 +21,9 @@ __pycache__/
 # Hardware-specific TensorRT engines (regenerated per-GPU, not portable)
 *.engine
 
+# Runtime UAV landmine map and Gazebo-only evaluation reports
+mine_detection_output/
+
 # AWS RoboMaker indoor house world: used only by the legacy indoor demo and is
 # large (~131 MB). Kept locally but not shared; clone separately if needed:
 #   git clone https://github.com/aws-robotics/aws-robomaker-small-house-world.git

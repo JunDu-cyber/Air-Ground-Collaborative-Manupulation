@@ -1,0 +1,58 @@
+<launch>
+  <arg name="model_path"
+       default="$(find mine_grasp_minimal)/../../mine_seg_v2_delivery/weights/best.pt"/>
+  <arg name="confidence" default="0.45"/>
+  <arg name="localization_mode" default="hybrid"/> <!-- hybrid|color_only -->
+  <arg name="start_perception" default="true"/>
+  <arg name="start_executor" default="true"/>
+  <arg name="start_test_manager" default="true"/>
+  <arg name="start_move_group" default="true"/>
+  <arg name="start_grasp_event_republisher" default="true"/>
+  <arg name="physical_grasp_enabled" default="false"/>
+  <arg name="action_name" default="/mine_grasp"/>
+  <arg name="executor_status_topic" default="/mine_grasp/executor_status"/>
+  <arg name="test_count" default="10"/>
+  <arg name="result_directory" default="$(env PWD)/mine_grasp_results"/>
+  <arg name="debug_save_path"
+       default="$(env PWD)/mine_grasp_results/perception_debug.png"/>
+
+  <include if="$(arg start_move_group)"
+           file="$(find husky_ur5_moveit_config)/launch/move_group.launch"/>
+
+  <node if="$(arg start_grasp_event_republisher)"
+        pkg="gazebo_grasp_plugin_ros" type="grasp_event_republisher"
+        name="mine_grasp_event_republisher" output="screen"/>
+
+  <node if="$(arg start_perception)" pkg="mine_grasp_minimal"
+        type="wrist_mine_localizer.py" name="wrist_mine_localizer"
+        output="screen" required="true">
+    <rosparam command="load" file="$(find mine_grasp_minimal)/config/perception.yaml"/>
+    <param name="model_path" value="$(arg model_path)"/>
+    <param name="confidence_threshold" value="$(arg confidence)"/>
+    <param name="localization_mode" value="$(arg localization_mode)"/>
+    <param name="debug_save_path" value="$(arg debug_save_path)"/>
+    <param name="debug_output_directory" value="$(arg result_directory)"/>
+  </node>
+
+  <node if="$(arg start_executor)" pkg="mine_grasp_minimal"
+        type="mine_grasp_executor.py" name="mine_grasp_executor"
+        output="screen" required="true">
+    <rosparam command="load" file="$(find mine_grasp_minimal)/config/grasp.yaml"/>
+    <param name="physical_grasp_enabled" value="$(arg physical_grasp_enabled)"/>
+    <param name="action_name" value="$(arg action_name)"/>
+    <param name="executor_status_topic" value="$(arg executor_status_topic)"/>
+    <param name="attempt_output_directory" value="$(arg result_directory)"/>
+    <param name="landmine_sdf_path"
+           value="$(find mobile_manipulator)/gazebo_models/landmine/model.sdf"/>
+  </node>
+
+  <node if="$(arg start_test_manager)" pkg="mine_grasp_minimal"
+        type="grasp_test_manager.py" name="grasp_test_manager"
+        output="screen">
+    <rosparam command="load" file="$(find mine_grasp_minimal)/config/grasp.yaml"/>
+    <param name="test_count" value="$(arg test_count)"/>
+    <param name="result_directory" value="$(arg result_directory)"/>
+    <param name="landmine_sdf_path"
+           value="$(find mobile_manipulator)/gazebo_models/landmine/model.sdf"/>
+  </node>
+</launch>

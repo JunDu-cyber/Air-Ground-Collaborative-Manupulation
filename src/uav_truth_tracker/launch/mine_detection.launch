@@ -1,0 +1,184 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- UAV down-camera landmine perception and map-frame fusion. -->
+  <arg name="model_path"
+       default="$(find uav_truth_tracker)/../../mine_seg_v2_delivery/weights/best.pt"/>
+  <arg name="rgb_topic" default="/mine_camera/rgb/image_raw"/>
+  <arg name="depth_topic" default="/mine_camera/depth/image_raw"/>
+  <arg name="camera_info_topic" default="/mine_camera/rgb/camera_info"/>
+  <arg name="uav_base_frame" default="uav_base_link"/>
+  <arg name="camera_frame" default="mine_camera_optical_frame"/>
+  <arg name="map_frame" default="map"/>
+  <arg name="confidence" default="0.65"/>
+  <arg name="imgsz" default="960"/>
+  <arg name="inference_rate" default="1.0"/>
+  <arg name="manipulation_inference_rate" default="0.25"/>
+  <arg name="device" default="cpu"/>
+  <arg name="torch_threads" default="4"/>
+  <arg name="min_confirmations" default="3"/>
+  <arg name="association_radius" default="0.30"/>
+  <arg name="association_height_tolerance" default="0.25"/>
+  <arg name="confirmed_update_radius" default="0.12"/>
+  <!-- Identity-only gate: suppress split yellow tracks around one physical
+       mine; confirmed coordinates still update only inside 0.12 m. -->
+  <arg name="duplicate_suppression_radius" default="1.00"/>
+  <arg name="max_confirmation_std" default="0.10"/>
+  <!-- Normal confirmation still requires three frames.  A single fly-by may
+       promote two genuinely independent, high-confidence observations; the
+       tighter 6 cm spread, local-ground validation and time-span gate prevent
+       a lone yellow false positive from becoming a UGV task. -->
+  <arg name="fast_confirmation_count" default="2"/>
+  <arg name="fast_confirmation_confidence" default="0.75"/>
+  <arg name="fast_confirmation_std" default="0.06"/>
+  <arg name="fast_confirmation_min_span" default="0.15"/>
+  <!-- A real target may have a few noisy early depth estimates. Confirm a
+       bounded recent stable cluster without weakening the three-frame gate. -->
+  <arg name="persistent_confirmation_count" default="6"/>
+  <arg name="confirmation_window_size" default="12"/>
+  <arg name="persistent_confirmation_radius" default="0.12"/>
+  <arg name="persistent_confirmation_std" default="0.08"/>
+  <arg name="persistent_confirmation_min_span" default="0.80"/>
+  <!-- Retain yellow candidates for a survey revisit instead of deleting them
+       after one short loss of view. Confirmed tracks are never timed out. -->
+  <arg name="candidate_timeout" default="300.0"/>
+  <!-- Prevent the UAV segmenter from mapping the yellow UGV/arm as new mines
+       after the ground robot reaches a target.  The fusion node matches this
+       map-frame odometry to each image timestamp; detections outside the 3 m
+       envelope are unaffected during the initial aerial survey. -->
+  <arg name="ugv_exclusion_enabled" default="true"/>
+  <arg name="ugv_odom_topic" default="/odometry/filtered_map"/>
+  <arg name="ugv_exclusion_radius" default="1.50"/>
+  <arg name="ugv_high_object_radius" default="3.00"/>
+  <arg name="ugv_high_object_min_height" default="0.50"/>
+  <arg name="ugv_odom_match_tolerance" default="0.75"/>
+  <arg name="ugv_odom_history_duration" default="10.0"/>
+  <arg name="min_map_z" default="-1000000.0"/>
+  <arg name="max_map_z" default="1000000.0"/>
+  <arg name="output_dir"
+       default="$(find uav_truth_tracker)/../../mine_detection_output"/>
+  <arg name="reset_map_on_start" default="true"/>
+  <arg name="enable_sim_evaluator" default="false"/>
+  <arg name="pause_after_survey_complete" default="false"/>
+  <arg name="survey_status_topic" default="/mine_survey/status"/>
+  <arg name="manual_only" default="true"/>
+
+  <!-- Optical axes: x right=-base_y, y down=-base_x, z forward=-base_z.
+       This exactly matches the transform used to create the training labels. -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="tf_mine_camera_online"
+        args="0 0 -0.07 0.70710678 -0.70710678 0 0 $(arg uav_base_frame) $(arg camera_frame)"/>
+
+  <node pkg="uav_truth_tracker" type="mine_seg_localizer_node.py"
+        name="mine_seg_localizer" output="screen" required="true">
+    <param name="model_path" value="$(arg model_path)"/>
+    <param name="rgb_topic" value="$(arg rgb_topic)"/>
+    <param name="depth_topic" value="$(arg depth_topic)"/>
+    <param name="camera_info_topic" value="$(arg camera_info_topic)"/>
+    <param name="camera_frame" value="$(arg camera_frame)"/>
+    <param name="map_frame" value="$(arg map_frame)"/>
+    <param name="confidence" value="$(arg confidence)"/>
+    <param name="iou_threshold" value="0.50"/>
+    <param name="imgsz" value="$(arg imgsz)"/>
+    <param name="inference_rate" value="$(arg inference_rate)"/>
+    <param name="manipulation_inference_rate" value="$(arg manipulation_inference_rate)"/>
+    <param name="device" value="$(arg device)"/>
+    <param name="torch_threads" value="$(arg torch_threads)"/>
+    <param name="target_class_id" value="0"/>
+    <param name="target_class_name" value="landmine"/>
+    <param name="depth_min" value="0.20"/>
+    <param name="depth_max" value="20.0"/>
+    <param name="sync_slop" value="0.05"/>
+    <param name="max_rgb_depth_stamp_delta" value="0.02"/>
+    <param name="tf_cache_time" value="60.0"/>
+    <param name="min_depth_samples" value="12"/>
+    <param name="min_mask_area" value="20"/>
+    <param name="erode_pixels" value="1"/>
+    <param name="ground_ring_inner_px" value="3"/>
+    <param name="ground_ring_outer_px" value="18"/>
+    <param name="ground_min_samples" value="20"/>
+    <param name="min_height_above_ground" value="-0.06"/>
+    <param name="max_height_above_ground" value="0.18"/>
+    <!-- A mine cannot be confirmed without terrain-relative height evidence.
+         Edge-clipped detections wait for a later complete view instead of
+         becoming permanent 3 m-high navigation hazards. -->
+    <param name="require_local_ground" value="true"/>
+    <!-- Never combine a delayed CPU inference result with the UAV's newest
+         pose: at flight speed that creates metre-scale false map coordinates. -->
+    <param name="allow_latest_tf_fallback" value="false"/>
+    <param name="pause_after_survey_complete" value="$(arg pause_after_survey_complete)"/>
+    <param name="survey_status_topic" value="$(arg survey_status_topic)"/>
+    <param name="manual_goal_topic" value="/uav/manual_goal"/>
+    <param name="survey_goal_topic" value="/uav/survey_goal"/>
+    <param name="output_topic" value="/mine_detection/raw"/>
+    <param name="debug_image_topic" value="/mine_detection/debug_image"/>
+  </node>
+
+  <node pkg="uav_truth_tracker" type="mine_camera_diagnostics.py"
+        name="mine_camera_diagnostics" output="screen">
+    <param name="rgb_topic" value="$(arg rgb_topic)"/>
+    <param name="depth_topic" value="$(arg depth_topic)"/>
+    <param name="camera_info_topic" value="$(arg camera_info_topic)"/>
+    <param name="camera_frame" value="$(arg camera_frame)"/>
+    <param name="map_frame" value="$(arg map_frame)"/>
+    <param name="output_topic" value="/mine_camera/diagnostics"/>
+    <param name="maximum_frame_age_wall" value="2.0"/>
+  </node>
+
+  <node pkg="uav_truth_tracker" type="uav_goal_arbiter.py"
+        name="uav_goal_arbiter" output="screen">
+    <param name="manual_only" value="$(arg manual_only)"/>
+    <param name="manual_goal_topic" value="/uav/manual_goal"/>
+    <param name="survey_goal_topic" value="/uav/survey_goal"/>
+    <param name="output_goal_topic" value="/uav/goal"/>
+    <param name="manual_stable_duration" value="5.0"/>
+  </node>
+
+  <node pkg="uav_truth_tracker" type="mine_map_fusion_node.py"
+        name="mine_map_fusion" output="screen" required="true">
+    <param name="input_topic" value="/mine_detection/raw"/>
+    <param name="map_topic" value="/mine_detection/map"/>
+    <param name="confirmed_topic" value="/mine_detection/confirmed"/>
+    <param name="marker_topic" value="/mine_detection/markers"/>
+    <param name="suppressed_ids_topic"
+           value="/mine_mission/suppressed_detection_ids"/>
+    <param name="map_frame" value="$(arg map_frame)"/>
+    <param name="model_path" value="$(arg model_path)"/>
+    <param name="output_file" value="$(arg output_dir)/mine_map.yaml"/>
+    <param name="association_radius" value="$(arg association_radius)"/>
+    <param name="association_height_tolerance" value="$(arg association_height_tolerance)"/>
+    <param name="confirmed_update_radius" value="$(arg confirmed_update_radius)"/>
+    <param name="duplicate_suppression_radius" value="$(arg duplicate_suppression_radius)"/>
+    <param name="min_confirmations" value="$(arg min_confirmations)"/>
+    <param name="min_observation_interval" value="0.20"/>
+    <param name="max_confirmation_std" value="$(arg max_confirmation_std)"/>
+    <param name="fast_confirmation_count" value="$(arg fast_confirmation_count)"/>
+    <param name="fast_confirmation_confidence" value="$(arg fast_confirmation_confidence)"/>
+    <param name="fast_confirmation_std" value="$(arg fast_confirmation_std)"/>
+    <param name="fast_confirmation_min_span" value="$(arg fast_confirmation_min_span)"/>
+    <param name="persistent_confirmation_count" value="$(arg persistent_confirmation_count)"/>
+    <param name="confirmation_window_size" value="$(arg confirmation_window_size)"/>
+    <param name="persistent_confirmation_radius" value="$(arg persistent_confirmation_radius)"/>
+    <param name="persistent_confirmation_std" value="$(arg persistent_confirmation_std)"/>
+    <param name="persistent_confirmation_min_span" value="$(arg persistent_confirmation_min_span)"/>
+    <param name="candidate_timeout" value="$(arg candidate_timeout)"/>
+    <param name="ugv_exclusion_enabled" value="$(arg ugv_exclusion_enabled)"/>
+    <param name="ugv_odom_topic" value="$(arg ugv_odom_topic)"/>
+    <param name="ugv_exclusion_radius" value="$(arg ugv_exclusion_radius)"/>
+    <param name="ugv_high_object_radius" value="$(arg ugv_high_object_radius)"/>
+    <param name="ugv_high_object_min_height" value="$(arg ugv_high_object_min_height)"/>
+    <param name="ugv_odom_match_tolerance" value="$(arg ugv_odom_match_tolerance)"/>
+    <param name="ugv_odom_history_duration" value="$(arg ugv_odom_history_duration)"/>
+    <param name="min_map_z" value="$(arg min_map_z)"/>
+    <param name="max_map_z" value="$(arg max_map_z)"/>
+    <param name="reset_on_start" value="$(arg reset_map_on_start)"/>
+  </node>
+
+  <node if="$(arg enable_sim_evaluator)" pkg="uav_truth_tracker"
+        type="mine_detection_sim_evaluator.py" name="mine_detection_sim_evaluator"
+        output="screen">
+    <param name="truth_model_regex" value="^landmine_[0-9]+$"/>
+    <param name="map_topic" value="/mine_detection/map"/>
+    <param name="max_match_distance" value="0.75"/>
+    <param name="pass_position_error" value="0.35"/>
+    <param name="output_file" value="$(arg output_dir)/simulation_evaluation.yaml"/>
+  </node>
+</launch>

@@ -172,7 +172,12 @@ void MimicJointPlugin::UpdateChild()
   // Set mimic joint's angle based on joint's angle
   double angle = joint_->Position(0)*multiplier_+offset_;
   
-  if(abs(angle-mimic_joint_->Position(0))>=sensitiveness_)
+  // With the historical >= comparison and the default sensitiveness=0 every
+  // mimic joint was teleported on every Gazebo physics tick, even when it was
+  // already at the requested angle.  Resetting five finger links while the UR5
+  // parent is moving destroys their world velocity and is visible as persistent
+  // gripper chatter.  Update only for a real position error.
+  if(abs(angle-mimic_joint_->Position(0)) > sensitiveness_)
   {
     if(has_pid_)
     {
@@ -181,10 +186,18 @@ void MimicJointPlugin::UpdateChild()
         a = angle;
       double error = angle-a;
       double effort = ignition::math::clamp(pid_.computeCommand(error, period), -max_effort_, max_effort_);
+      mimic_joint_->SetForce(0, effort);
     }
     else
     {
       #if GAZEBO_MAJOR_VERSION >= 4
+        // Do not preserve the follower link's pre-teleport world velocity.
+        // That velocity is generally incompatible with the new joint pose and
+        // injects constraint energy into the five-link gripper mechanism.  In
+        // practice it drove the master finger through its lower limit while
+        // the gripper controller was idle.  The historical non-preserving
+        // update is stable; the error threshold above prevents needless
+        // updates when the mimic joint is already in place.
         mimic_joint_->SetPosition(0, angle);
       #else
         mimic_joint_->SetAngle(0, angle);

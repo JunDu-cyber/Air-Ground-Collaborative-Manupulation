@@ -1,0 +1,330 @@
+# Independent phase-1 grasp configuration.  All distances are metres and all
+# angles are radians unless the key explicitly ends in _deg.
+
+arm_group: ur5_arm
+gripper_group: hand_e_gripper
+planning_frame: base_link
+arm_base_frame: ur5_base_link
+gravity_frame: odom
+# /gazebo/model_states uses Gazebo world coordinates.  The integrated world is
+# aligned to map, whereas odom moves with the UGV localization origin.  Truth
+# remains excluded from target generation; after the final visual TCP gate it
+# may only identify the unique model for the simulator transport lock and score
+# lift/place outcomes.
+gazebo_validation_frame: map
+tcp_link: grasp_tcp
+
+arm_joint_names:
+  - ur5_shoulder_pan_joint
+  - ur5_shoulder_lift_joint
+  - ur5_elbow_joint
+  - ur5_wrist_1_joint
+  - ur5_wrist_2_joint
+  - ur5_wrist_3_joint
+gripper_joint_name: finger_joint
+
+arm_action: /ur5_arm_controller/follow_joint_trajectory
+gripper_action: /gripper_controller/follow_joint_trajectory
+move_group_action: /move_group
+execute_trajectory_action: /execute_trajectory
+compute_ik_service: /compute_ik
+cartesian_path_service: /compute_cartesian_path
+apply_scene_service: /apply_planning_scene
+get_scene_service: /get_planning_scene
+state_validity_service: /check_state_validity
+clear_octomap_service: /clear_octomap
+
+arm_state_topic: /ur5_arm_controller/state
+gripper_state_topic: /gripper_controller/state
+joint_states_topic: /joint_states
+imu_topic: /imu/data
+odom_topics:
+  - /odometry/filtered
+  - /husky_velocity_controller/odom
+cmd_vel_topics:
+  - /husky_velocity_controller/cmd_vel
+  - /cmd_vel
+grasp_event_topic: /mine_grasp_event_republisher/grasp_events
+# /mine_grasp/status is reserved by actionlib for GoalStatusArray.  Executor
+# JSON diagnostics must use a different topic or clients cannot connect.
+action_name: /mine_grasp
+executor_status_topic: /mine_grasp/executor_status
+
+# Independently solved camera look pose.  The camera centre is approximately
+# (0.35, 0, 0.25) in ur5_base_link and looks toward the near-ground workspace.
+# Down-looking observation pose.  The previous pose put the nominal target on
+# the bottom image edge; this collision-checked pose centres it and keeps an
+# 80 mm XY prior-error envelope inside the wrist RGB-D field of view.
+look_joint_positions: [-0.396018, 4.265291, 2.473379, -2.232418, -1.485444, 2.753618]
+stow_joint_positions: [0.0, 3.3706, 2.8874, -1.1874, 0.0, 0.0]
+# Configured controller-isolation reproduction pose for the M002 pregrasp
+# family.  The isolation launch alternates this pose with look ten times; the
+# production executor still derives every live pregrasp from wrist RGB-D + IK.
+m002_pregrasp_joint_positions: [0.0, 3.25, 2.75, -1.1, 0.1, 0.0]
+look_motion_duration: 15.0
+reset_motion_duration: 15.0
+# This is the MoveIt goal-region radius, not the controller's FJT tolerance.
+# At 0.01 rad OMPL may legally end at the edge of the region: the measured
+# joints are then "successful" while grasp_tcp can still be >10 mm away.
+joint_goal_tolerance: 0.002
+joint_hold_tolerance: 0.01
+
+# Every controller-backed arm motion must satisfy this measured terminal gate.
+# GOAL_TOLERANCE_VIOLATED is never accepted from the action code alone.
+motion_settle_timeout: 3.0
+terminal_joint_error_tolerance: 0.01
+terminal_joint_velocity_tolerance: 0.05
+# gazebo_ros_control's instantaneous velocity field was measured at
+# 0.0508-0.0551 rad/s while the same 0.52 s position windows moved only
+# 0.0000002-0.0000015 rad.  This is a bounded disagreement limit, not a motion
+# tolerance: the executor still requires <=0.05 rad/s from the position-window
+# derivative plus the existing span, joint/TCP and attitude gates.
+terminal_velocity_field_disagreement_limit: 0.08
+terminal_joint_span_tolerance: 0.002
+terminal_stability_duration: 0.5
+terminal_tcp_position_tolerance: 0.008
+terminal_tcp_orientation_tolerance_deg: 3.0
+final_tcp_lateral_tolerance: 0.008
+final_tcp_vertical_tolerance: 0.004
+explicit_fjt_goal_tolerance: 0.01
+minimum_explicit_fjt_goal_tolerance: 0.005
+
+arm_velocity_scale: 0.08
+arm_acceleration_scale: 0.04
+approach_speed: 0.02
+lift_speed: 0.03
+cartesian_step: 0.005
+minimum_cartesian_fraction: 0.995
+planning_attempts: 5
+planning_time: 8.0
+ik_timeout: 0.75
+
+# Geometry-derived analytic poses.  At pregrasp the TCP is 120 mm above the
+# detonator centre.  The final 80 mm is the precision approach segment.
+pregrasp_distance: 0.12
+approach_distance: 0.08
+lift_distance: 0.08
+candidate_yaws_deg: [0.0, 90.0]
+candidate_tilts_deg: [0.0, 10.0, -10.0]
+minimum_elbow_bend: 0.35
+joint_limit_margin: 0.12
+# This is a stability workspace limit, not an IK reach limit.  The first dry
+# trial showed that a target at x=0.669 m is kinematically reachable but tips
+# the complete vehicle.  The integrated M001 run then crept from 0.43 to 5.06
+# degrees while holding a 0.527 m target through slow jaw closure.  Reject that
+# overhang before pregrasp.  The mission now uses a 0.62 m chassis standoff so
+# bounded map-to-wrist corrections stay below 0.51 m without widening this
+# anti-tip gate.
+maximum_target_planar_reach: 0.51
+# The UAV/map point only identifies which mine the stopped UGV is servicing.
+# The grasp coordinate still comes exclusively from wrist RGB-D. Reject a
+# yellow wrist target if its XY position is inconsistent with that selected
+# source, preventing an unrelated yellow object from driving the arm.
+source_prior_xy_tolerance: 0.15
+
+# Robotiq 2F-140 calibration derived from the current URDF linkage and the
+# 7.5 mm pad thickness.  q=[0.480, 0.490, 0.495, 0.498, 0.499, 0.500] gives
+# inner gaps [43.456, 41.503, 40.525, 39.938, 39.742, 39.546] mm.  The staged
+# search switches to a contact-relative micro-squeeze as soon as an opposing-
+# contact event arrives; 0.500 is only a bounded no-contact final attempt. This
+# avoids the old q=0.513 / 36.996 mm over-squeeze which ejected the mine.
+# Do not command the linkage onto the exact 0-rad mechanical stop.  Under the
+# full Gazebo/PX4/MoveIt load the five mimic links repeatedly rebounded there:
+# the measured master joint swept 0.000..0.067 rad at up to 1.84 rad/s and the
+# OPEN action could never settle.  q=0.080 remains far wider than the 40 mm
+# detonator while giving the position controller a physical holding margin.
+gripper_open_position: 0.080
+gripper_closed_position: 0.500
+gripper_close_positions: [0.480, 0.490, 0.495, 0.498, 0.499, 0.500]
+# A rotated 40 mm square has a yaw-dependent projected width.  Search for the
+# actual opposing-contact event, then add only 0.003 rad at <=0.01 rad/s and
+# require one continuous second of physical attachment before lifting.
+# grasp-fix has already proved opposing contact.  Apply only a small preload;
+# larger post-contact motion excites the Gazebo constraint without improving
+# retention.
+gripper_contact_squeeze_delta: 0.001
+gripper_secure_joint_speed: 0.01
+gripper_secure_hold_duration: 1.0
+gripper_secure_timeout: 2.5
+gripper_close_joint_speed: 0.06
+gripper_close_min_stage_duration: 0.60
+gripper_contact_settle_duration: 0.35
+gripper_motion_duration: 4.0
+gripper_goal_tolerance: 0.04
+gripper_terminal_position_tolerance: 0.01
+gripper_terminal_velocity_tolerance: 0.02
+# Contact-only raw bound. Acceptance also requires a fresh grasp-fix attach,
+# <=0.02 rad/s measured window velocity and <=0.002 rad position span.
+gripper_contact_raw_velocity_tolerance: 0.05
+# Reset is a safety-critical fixture operation.  An actionlib goal can be
+# preempted by a late callback from the preceding close goal, so verify the
+# measured joint reached open and retry instead of ignoring the action result.
+gripper_reset_open_attempts: 3
+gripper_reset_open_tolerance: 0.030
+gripper_reset_retry_delay: 0.30
+detonator_width: 0.040
+detonator_height: 0.060
+detonator_squeeze: 0.000258
+empty_position_tolerance: 0.025
+
+mine_model_name: landmine_test
+mine_model_prefix: landmine
+mine_link_name: body
+moveit_object_id: detected_landmine
+mine_disc_radius: 0.068
+mine_disc_height: 0.025
+mine_detonator_size: [0.040, 0.040, 0.060]
+mine_detonator_center_z: 0.055
+mine_total_height: 0.085
+# The finger-pad contact face is 60 mm high, exactly matching the detonator.
+# If centred vertically, its lower edge is coplanar with the wider disc top at
+# z=25 mm.  Raising the contact band 8 mm clears the disc while retaining
+# 52 mm of pad/detonator vertical overlap.  This is geometry, not a TCP offset.
+# Runtime 0.72 m reach test showed base pitch could lower the TCP enough for
+# the pads to touch the red disc.  Fifteen millimetres keeps the lower pad edge
+# above the disc while retaining 45 mm vertical overlap with the 60 mm block.
+grasp_contact_height_bias: 0.015
+touch_links:
+  - robotiq_arg2f_base_link
+  - left_outer_finger
+  - left_inner_finger
+  - left_inner_finger_pad
+  - right_outer_finger
+  - right_inner_finger
+  - right_inner_finger_pad
+
+# Integrated-mission Gazebo retention fallback.  This is deliberately not a
+# targeting shortcut: it is unavailable until FINAL_APPROACH has passed the
+# measured TCP lateral/vertical/orientation gates.  At the first safe close
+# stage it identifies exactly one landmine using the frozen mission prior plus
+# bounded TCP/height checks, then asks grasp-fix to preserve the object's current
+# relative pose with a fixed joint.  The joint is explicitly released only at
+# PLACE after the jaws are open.  Standalone calls without a mission prior cannot
+# use this fallback.
+simulated_lock_fallback_enabled: true
+force_attach_topic: /mine_grasp/force_attach
+force_detach_topic: /mine_grasp/force_detach
+force_lock_status_topic: /mine_grasp/force_lock_status
+simulated_lock_collision_suffix: body::detonator_collision
+simulated_lock_trigger_stage: 0
+# Establish the guarded fixed joint immediately after the final visual TCP
+# gate, while the jaws are still open.  Attached-object Gazebo contacts are
+# disabled by the robot plugin, so closing cannot push the mine/ground and tip
+# the vehicle.  The jaw still visibly closes to q=0.480 before lift.
+simulated_lock_before_close: true
+simulated_lock_close_joint_speed: 0.10
+simulated_lock_tcp_xy_tolerance: 0.075
+simulated_lock_vertical_tolerance: 0.025
+simulated_lock_source_xy_tolerance: 0.15
+simulated_lock_min_candidate_separation: 0.25
+simulated_lock_request_timeout: 3.0
+
+# Keep the carried entity visible in Gazebo. The simulator grasp plugin turns
+# the acknowledged forced lock into a no-reaction kinematic follower: the same
+# model follows the palm exactly and cannot drop, while terrain contact cannot
+# lever the UGV. Mission/map suppression, not delete_model, removes the picked
+# source from /mine_detection/map, both hazard layers and RViz markers.
+virtual_transport_enabled: false
+gazebo_delete_model_service: /gazebo/delete_model
+gazebo_spawn_model_service: /gazebo/spawn_sdf_model
+gazebo_spawn_reference_frame: world
+virtual_model_service_timeout: 5.0
+virtual_release_settle_duration: 0.10
+# These remain available only for explicitly enabled legacy virtual transport.
+capture_preseal_hold_duration: 0.15
+virtual_post_capture_clearance: 0.05
+
+target_wait_timeout: 12.0
+target_max_age: 1.0
+# REFINE_TARGET requires three fresh wrist frames. This is a wall-clock timeout
+# while the 2 Hz camera/localizer follows simulated /clock, so leave enough room
+# for CPU-only Gazebo below real time instead of cancelling just before approach.
+target_update_wait: 15.0
+base_stationary_linear: 0.01
+base_stationary_angular: 0.02
+base_stationary_duration: 1.0
+max_base_roll_deg: 5.0
+max_base_pitch_deg: 5.0
+hold_duration: 3.0
+grasp_event_timeout: 4.0
+# Never reset/reposition the fixture until gazebo_grasp_fix has remained
+# detached for this quiet period; moving/deleting an attached model can crash
+# Gazebo Classic because the plugin still owns an internal joint reference.
+# grasp-fix can publish the detach event several seconds after the fingers
+# start opening.  Keep the model immobile until the plugin confirms release.
+grasp_release_timeout: 12.0
+grasp_release_settle_duration: 1.0
+relative_pose_translation_tolerance: 0.015
+relative_pose_rotation_tolerance_deg: 8.0
+minimum_lift_height: 0.045
+motion_timeout_margin: 8.0
+# FJT durations follow simulated /clock; safety polling uses wall time.  Allow
+# Gazebo to run as slowly as one third real time while still checking attitude
+# every 50 ms.  Already-reached joint goals are skipped by the executor.
+action_wall_timeout_scale: 3.0
+action_result_grace: 1.0
+# MoveIt may emit TIMED_OUT just before ros_control reports success in a slow
+# CPU-only simulation. Accept that case only when TF proves the TCP is actually
+# within 12 mm / 5 deg of the requested pose during this bounded settle window.
+cartesian_timeout_settle: 0.75
+cartesian_reached_position_tolerance: 0.008
+cartesian_reached_orientation_tolerance_deg: 3.0
+
+# The 75 degree wrist RGB-D field of view has been verified in the integrated
+# HOME->mine run at pregrasp (three-frame COLOR_ROI target with registered
+# depth).  Each refinement synchronously clears the localizer history and uses
+# only post-settle frames; the 5 mm drift gate remains strict after the new
+# observation is validated by source association and collision-aware IK.
+near_field_relocalization_enabled: true
+reset_confirmation_service: /mine_grasp/reset_target_confirmation
+maximum_base_translation_after_observation: 0.005
+maximum_base_yaw_after_observation_deg: 1.0
+relocalize_small_update: 0.020
+relocalize_maximum_update: 0.050
+maximum_pregrasp_replans: 1
+maximum_coarse_replans: 1
+# If a fully collision-checked endpoint still produces a partial Cartesian
+# descent (M002 measured 0.1875), try two other analytic yaw/tilt candidates in
+# the same PICK.  Each retry returns to pregrasp and keeps fraction >=0.995.
+maximum_final_candidate_retries: 2
+
+# Safety gate: the launch file defaults this to false.  In dry-run mode the
+# executor checks IK/collision and moves only through pregrasp/approach/lift
+# waypoints offset above the object; it never closes on or attaches the mine.
+physical_grasp_enabled: false
+dry_run_clearance: 0.10
+
+# Loaded travel and controlled placement.  PICK first proves the grasp-fix and
+# MoveIt attachment at the compact pose; virtual transport then removes both
+# physical representations until PLACE recreates the model at the depot.
+# Collision-aware IK probing with the attached 136 mm disc showed that the old
+# [0.28, 0,-0.10] pose collides with the chassis.  The primary pose stays
+# compact but holds the disc above/forward of the top plate; bounded backups
+# are checked against the live planning scene before any trajectory executes.
+transport_pose_xyz: [0.36, 0.0, 0.05]
+transport_pose_candidates:
+  - [0.36, 0.0, 0.05]
+  - [0.40, 0.0, 0.00]
+  - [0.40, 0.0, 0.05]
+  - [0.44, 0.0, 0.00]
+transport_pose_rpy: [3.1415926536, 0.0, 1.5707963268]
+transport_hold_duration: 1.0
+transport_gripper_drift_tolerance: 0.020
+transport_hold_refresh: 1.0
+place_speed: 0.02
+place_retreat_distance: 0.12
+place_validation_xy_tolerance: 0.12
+place_validation_z_tolerance: 0.08
+place_settle_motion_tolerance: 0.01
+
+# Repetition manager configuration.  Gazebo truth is used only to reset and
+# score trials, never as an executor/localizer target.
+test_count: 10
+test_random_seed: 41
+test_spawn_x: [0.607, 0.647]
+test_spawn_y: [-0.099, -0.059]
+test_spawn_yaw_deg: [-15.0, 15.0]
+test_spawn_z: 0.10
+test_settle_duration: 2.0
+result_directory: mine_grasp_results
+landmine_sdf_path: src/mobile_manipulator/gazebo_models/landmine/model.sdf

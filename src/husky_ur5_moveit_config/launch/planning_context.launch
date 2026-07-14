@@ -4,9 +4,11 @@
 
   <!-- The name of the parameter under which the URDF is loaded -->
   <arg name="robot_description" default="robot_description"/>
+  <arg name="ur5_joint_damping" default="1.5"/>
+  <arg name="ur5_shoulder_lift_damping" default="20.0"/>
 
   <!-- Load universal robot description format (URDF) -->
-  <param if="$(arg load_robot_description)" name="$(arg robot_description)" command="xacro  '$(find mobile_manipulator)/urdf/husky_ur5.urdf.xacro'"/>
+  <param if="$(arg load_robot_description)" name="$(arg robot_description)" command="$(find mobile_manipulator)/scripts/generate_husky_ur5_urdf.py --xacro '$(find mobile_manipulator)/urdf/husky_ur5.urdf.xacro' --arm-joint-damping $(arg ur5_joint_damping) --shoulder-lift-joint-damping $(arg ur5_shoulder_lift_damping)"/>
 
   <!-- The semantic description that corresponds to the URDF -->
   <param name="$(arg robot_description)_semantic" textfile="$(find husky_ur5_moveit_config)/config/husky_ur5.srdf" />

@@ -1,0 +1,35 @@
+{
+  "created_utc": "2026-07-12T05:23:01.502080+00:00",
+  "dataset": "/root/autodl-tmp/yolo_project/v2_handoff_9410/datasets/mine_yolo_dataset_v2",
+  "model": "yolo11s-seg.pt",
+  "best_checkpoint": "/root/autodl-tmp/yolo_project/runs_v2/mine_seg_v2_s_9410/weights/best.pt",
+  "exported": "/root/autodl-tmp/yolo_project/runs_v2/mine_seg_v2_s_9410/weights/best.onnx",
+  "requested_epochs": 200,
+  "actual_epochs": 164,
+  "imgsz": 960,
+  "seed": 42,
+  "smoke_test": false,
+  "optimizer": "AdamW",
+  "lr0": 0.0015,
+  "recommended_confidence_from_val": {
+    "confidence": 0.7337337337337337,
+    "f1": 0.9975850264899975,
+    "precision": 0.9951816890732461,
+    "recall": 1.0
+  },
+  "dataset_audit_sha256": "dcc99387f82a0b3580d735ebdce4900472802909127e8d044f345a97c91ed034",
+  "environment": {
+    "python": "3.8.10",
+    "torch": "2.0.0+cu118",
+    "ultralytics": "8.4.60",
+    "cuda_device": "NVIDIA GeForce RTX 4090"
+  },
+  "metrics": {
+    "box_map50": 0.9906248642878832,
+    "box_map": 0.8532486106138227,
+    "mask_map50": 0.9906248642878832,
+    "mask_map": 0.7084263084589912,
+    "mask_precision": 0.98897282925536,
+    "mask_recall": 0.9993055555555556
+  }
+}

@@ -1,0 +1,10 @@
+<launch>
+  <arg name="hold_duration" default="30.0"/>
+  <arg name="repetitions" default="10"/>
+  <node pkg="mine_grasp_minimal" type="controller_hold_test.py"
+        name="controller_hold_test" output="screen" required="true">
+    <rosparam command="load" file="$(find mine_grasp_minimal)/config/grasp.yaml"/>
+    <param name="hold_duration" value="$(arg hold_duration)"/>
+    <param name="repetitions" value="$(arg repetitions)"/>
+  </node>
+</launch>

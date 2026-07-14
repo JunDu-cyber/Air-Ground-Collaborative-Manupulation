@@ -7,9 +7,10 @@ the 3D mesh at the correct live position.
 """
 
 import rospy
+import tf2_ros
 from gazebo_msgs.msg import ModelStates
 from visualization_msgs.msg import Marker
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, TransformStamped
 from nav_msgs.msg import Path
 from tf.transformations import quaternion_from_euler
 
@@ -17,6 +18,14 @@ import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from px4_paths import default_iris_mesh_resource
+
+
+def _as_bool(value, default=False):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value) if value is not None else default
 
 
 class GazeboUavMarker:
@@ -69,6 +78,21 @@ class GazeboUavMarker:
         # --- State ---
         self.frame_id = rospy.get_param("~frame_id", "map")
         self.publish_rate = rospy.get_param("~publish_rate", 10.0)
+
+        # --- 地面真值 TF（合并世界关键）---
+        # 用 Gazebo 真值发布 map->tf_child_frame，替代会卡死的 mavros_tf_bridge TF。
+        # tf_ref = UAV 出生点：发布 (真值 - 出生点) 把 TF 放在【MAVROS 局部系】里（cloud 投影
+        # 用它 -> 点云在局部系，和 /odom、global_planner、relay 一致；z 保持真值不减）,
+        # 这样无论 mavros 桥是否死，激光点云都随真·无人机移动、不再只堆一个圆。
+        self.publish_tf = _as_bool(rospy.get_param("~publish_tf", False))
+        self.tf_child_frame = rospy.get_param("~tf_child_frame", "base_link")
+        self.tf_ref = (
+            float(rospy.get_param("~tf_ref_x", 0.0)),
+            float(rospy.get_param("~tf_ref_y", 0.0)),
+            float(rospy.get_param("~tf_ref_z", 0.0)),
+        )
+        self.tf_br = tf2_ros.TransformBroadcaster() if self.publish_tf else None
+        self._last_tf_stamp = rospy.Time(0)   # 去重:sim 时间停顿时同戳不重发,免 TF_REPEATED_DATA
 
         self._last_uav_pose = None
         self._last_ugv_pose = None
@@ -184,6 +208,23 @@ class GazeboUavMarker:
         return p
 
     def _publish(self, _event):
+        # 地面真值 TF: map -> tf_child_frame，放在 MAVROS 局部系(真值-出生点 xy, z 保持真值)。
+        # 高可靠(模型真值一直在动)，取代会卡死的 mavros 桥 TF，让激光点云随无人机铺开。
+        if self.tf_br is not None and self._last_uav_pose is not None:
+            now = rospy.Time.now()
+            if now != self._last_tf_stamp:   # 同戳跳过,免 TF_REPEATED_DATA(sim 时间停顿时)
+                self._last_tf_stamp = now
+                p = self._last_uav_pose.pose
+                t = TransformStamped()
+                t.header.stamp = now
+                t.header.frame_id = self.frame_id
+                t.child_frame_id = self.tf_child_frame
+                t.transform.translation.x = p.position.x - self.tf_ref[0]
+                t.transform.translation.y = p.position.y - self.tf_ref[1]
+                t.transform.translation.z = p.position.z - self.tf_ref[2]
+                t.transform.rotation = p.orientation
+                self.tf_br.sendTransform(t)
+
         # UAV
         if self._last_uav_pose is not None:
             m = self._make_marker(

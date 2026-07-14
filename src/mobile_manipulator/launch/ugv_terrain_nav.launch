@@ -29,6 +29,10 @@
   <arg name="ugv_gps_topic" default="navsat/fix"/>
   <arg name="resolution" default="0.25"/>          <!-- 占据图分辨率(m) -->
   <arg name="obstacle_height" default="0.4"/>      <!-- 高出地面多少算障碍(m)。0.3=连矮障碍也标，UGV 不被绊 -->
+  <!-- 障碍高度上限(m)。默认 50≈无上限:凡高出地面的结构(楼/树/路灯/指示牌/树干)都标 ->
+       高程图障碍完备、UGV 不撞细高物。调小(如 1.5=车顶高)可让 UGV 钻树冠/棚下查雷,但细高物
+       只在高处被空中扫到时会被漏标 -> 有撞树干/立柱风险。 -->
+  <arg name="ugv_clearance" default="50.0"/>
   <!-- 坡度【不再判障碍】：所有地面都可走，让车直接上坡；能不能上/稳不稳靠车本身
        (压低质心+轮摩擦+缓速DWA)解决，不靠把坡标死(否则大片地被标成走不了、车没路走)。
        下面两个 + slope_cost_max 只影响【着色/可选软代价】，不阻断通行。 -->
@@ -39,16 +43,36 @@
   <!-- 在 UAV 已建图区域外再留一圈"自由边界"(米)，未建图处=可走，靠局部 LiDAR 兜底。
        太大会让地图大半是空白(看着像没建图)。默认 15；点更远的目标再调大，如 free_border:=60。 -->
   <arg name="free_border" default="15.0"/>
+  <!-- Phase4 实时建图：非空 -> 地形投影器【订阅 UAV 在线累积点云】边飞边重投影,
+       /terrain_map + /terrain_cloud 实时长出来(不再读静态 PCD 文件)。
+       合并世界 run_air_ground.sh 传 /uav0/mapping/points_accumulated。
+       默认空 = 读静态图(use_sample_map 或 ~/pointcloud_maps 最新图),队友离线跑不受影响。 -->
+  <arg name="live_cloud_topic" default=""/>
+  <arg name="live_rebuild_period" default="3.0"/>   <!-- 实时重投影间隔(s) -->
+  <!-- 自动对齐：合并世界里 UAV 点云在 MAVROS 局部系(原点=出生点),和 UGV 的世界/datum 帧
+       差一个出生点偏移 -> 不校正就"走空地撞墙"。true 时投影器自动用 Gazebo 真值-MAVROS
+       测出该常量偏移、把云搬到 UGV 帧。单独跑 UGV(静态图)不需要,默认 false。 -->
+  <arg name="auto_align" default="false"/>
+  <!-- 非空:把对齐到世界/UGV 帧后的 UAV 点云发到此话题,供 RViz 和高程图/UGV 同帧重合显示 -->
+  <arg name="aligned_cloud_topic" default=""/>
+  <!-- 对齐偏移的【兜底值】(= UAV 出生点)。auto_align 用 Gazebo 真值实时测;万一真值取不到,
+       就用这个固定值,保证点云/高程图仍对齐到世界帧,不会整片偏 18m。合并世界传 (0,-18)。 -->
+  <arg name="align_offset_x" default="0.0"/>
+  <arg name="align_offset_y" default="0.0"/>
   <arg name="rviz" default="true"/>
   <!-- spawn_outdoor_city 已起双 EKF+navsat：终端2 必须 localization:=false 避免重名冲突 -->
   <arg name="localization" default="true"/>
+  <!-- Keep the robot_description reloaded by this launch physically identical
+       to the model spawned by air_ground_world.launch. -->
+  <arg name="ur5_joint_damping" default="1.5"/>
+  <arg name="ur5_shoulder_lift_damping" default="20.0"/>
 
   <!-- robot_description：RViz 的 RobotModel 显示需要它。spawn_outdoor_city 已设过，
        这里再设一遍（同一 xacro，幂等）保证即使 RViz 抢先启动也不报
        "Parameter [robot_description] does not exist"。不另起 robot_state_publisher
        （TF 由终端1 提供）。 -->
   <param name="robot_description"
-         command="$(find xacro)/xacro '$(find mobile_manipulator)/urdf/husky_ur5.urdf.xacro'"/>
+         command="$(find mobile_manipulator)/scripts/generate_husky_ur5_urdf.py --xacro '$(find mobile_manipulator)/urdf/husky_ur5.urdf.xacro' --arm-joint-damping $(arg ur5_joint_damping) --shoulder-lift-joint-damping $(arg ur5_shoulder_lift_damping)"/>
 
   <group if="$(arg localization)">
     <node pkg="robot_localization" type="ekf_localization_node" name="ekf_localization"
@@ -83,14 +107,35 @@
   <node pkg="mobile_manipulator" type="pcd_to_occupancy_map.py"
         name="pcd_to_occupancy_map" output="screen">
     <param name="pcd_file"            value="$(arg pcd_file)"/>
+    <!-- Phase4: 非空则走实时云模式(订阅在线累积点云),忽略 pcd_file -->
+    <param name="input_cloud_topic"   value="$(arg live_cloud_topic)"/>
+    <param name="rebuild_period"      value="$(arg live_rebuild_period)"/>
+    <param name="auto_align"          value="$(arg auto_align)"/>   <!-- 自动把 UAV 云对齐到 UGV 帧 -->
+    <param name="align_mavros_topic"  value="/mavros/local_position/odom"/>
+    <param name="aligned_cloud_topic" value="$(arg aligned_cloud_topic)"/>  <!-- 对齐后点云给RViz -->
+    <param name="offset_x"            value="$(arg align_offset_x)"/>  <!-- 真值取不到时的兜底偏移 -->
+    <param name="offset_y"            value="$(arg align_offset_y)"/>
     <param name="resolution"          value="$(arg resolution)"/>
     <param name="slope_free_deg"      value="$(arg slope_free_deg)"/> <!-- 软代价起点 -->
     <param name="slope_max_deg"       value="$(arg slope_max_deg)"/>  <!-- 着色/软代价归一化参考 -->
     <param name="slope_cost_max"      value="$(arg slope_cost_max)"/> <!-- 0=坡免代价直接上 -->
     <param name="obstacle_height"     value="$(arg obstacle_height)"/>
+    <param name="ugv_clearance"       value="$(arg ugv_clearance)"/>  <!-- 走廊上沿:高过车顶的树冠/棚顶不挡车,UGV从底下过 -->
     <param name="ground_window"       value="$(arg ground_window)"/>
     <param name="margin"              value="$(arg free_border)"/>  <!-- 建图区外的自由边界，远目标可达 -->
     <param name="min_obstacle_points" value="3"/>   <!-- 抗重叠/噪点：cell 需≥3个高点才算楼 -->
+    <!-- 累积 UAV 点云会永久保存移动 UGV 的返回。map->base_link 只提供
+         历史扫掠 XY；高度基准取每格点云的局部地面分位数，避免二维 TF 的
+         固定 z 在坡面上把真实地形删除。 -->
+    <param name="ugv_self_filter_enabled" value="true"/>
+    <param name="ugv_self_filter_base_frame" value="base_link"/>
+    <param name="ugv_self_filter_radius" value="0.72"/>
+    <param name="ugv_self_filter_cell_size" value="0.10"/>
+    <param name="ugv_self_filter_history_spacing" value="0.08"/>
+    <param name="ugv_self_filter_z_min_relative" value="0.12"/>
+    <param name="ugv_self_filter_z_max_relative" value="2.00"/>
+    <param name="ugv_self_filter_ground_percentile" value="10.0"/>
+    <param name="ugv_self_filter_sample_rate" value="5.0"/>
     <!-- GPS 锚定：把 PCD 平移到公共 datum 帧。
          origin_file 由建图时的 uav_map_origin_saver 自动写好 -> 这里开机自动读、自动对齐。 -->
     <param name="datum_lat"           value="$(arg datum_lat)"/>
@@ -112,6 +157,9 @@
     <rosparam file="$(find mobile_manipulator)/config/nav/costmap_common.yaml"  command="load" ns="local_costmap"/>
     <rosparam file="$(find mobile_manipulator)/config/nav/global_costmap.yaml"  command="load"/>
     <rosparam file="$(find mobile_manipulator)/config/nav/local_costmap.yaml"   command="load"/>
+    <!-- UAV 确认地雷是独立致命层：global/local 都加载，且必须排在 inflation 之前。 -->
+    <rosparam file="$(find mobile_manipulator)/config/nav/mine_hazard_layer.yaml" command="load" ns="global_costmap"/>
+    <rosparam file="$(find mobile_manipulator)/config/nav/mine_hazard_layer.yaml" command="load" ns="local_costmap"/>
     <!-- 让 global static_layer 指向 UAV 地图 /terrain_map（覆盖默认 /map）-->
     <rosparam file="$(find mobile_manipulator)/config/nav/terrain_layer.yaml" command="load" ns="global_costmap"/>
     <rosparam ns="global_costmap">static_map: false</rosparam>
@@ -124,10 +172,17 @@
     <param name="base_local_planner"  value="dwa_local_planner/DWAPlannerROS"/>
     <rosparam file="$(find mobile_manipulator)/config/nav/dwa_local_planner.yaml" command="load"/>
 
-    <param name="planner_frequency"         value="1.0"/>
+    <!-- Local LiDAR/DWA still reacts at 10 Hz. Recomputing the same Navfn path
+         every second reset the local plan 147 times in one loaded return and
+         amplified short TF scheduling gaps; 0.5 Hz remains responsive to the
+         slowly rebuilt UAV terrain map without inducing stop/go commands. -->
+    <param name="planner_frequency"         value="0.5"/>
     <param name="controller_frequency"      value="10.0"/>
     <param name="recovery_behavior_enabled" value="true"/>
-    <param name="clearing_rotation_allowed" value="true"/>
+    <!-- A full rotate recovery beside a live mine is unsafe and looked like an
+         endless circle. The mission manager instead cancels stalled goals and
+         tries a separately collision-checked approach pose. -->
+    <param name="clearing_rotation_allowed" value="false"/>
     <param name="conservative_reset_dist"   value="3.0"/>
   </node>
 

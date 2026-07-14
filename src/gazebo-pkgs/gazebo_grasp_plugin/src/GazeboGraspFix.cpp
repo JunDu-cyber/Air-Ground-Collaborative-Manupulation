@@ -18,6 +18,7 @@ using gazebo::GzVector3;
 #define DEFAULT_MAX_GRIP_COUNT 10
 #define DEFAULT_RELEASE_TOLERANCE 0.005
 #define DEFAULT_DISABLE_COLLISIONS_ON_ATTACH false
+#define DEFAULT_FORCE_LOCK_ENABLED false
 
 // Register this plugin with the simulator
 GZ_REGISTER_MODEL_PLUGIN(GazeboGraspFix)
@@ -37,6 +38,14 @@ GazeboGraspFix::GazeboGraspFix(physics::ModelPtr _model)
 ////////////////////////////////////////////////////////////////////////////////
 GazeboGraspFix::~GazeboGraspFix()
 {
+  this->forceAttachSub.shutdown();
+  this->forceDetachSub.shutdown();
+  this->forceStatusPub.shutdown();
+  this->rosQueueRunning.store(false);
+  this->rosQueue.disable();
+  if (this->rosQueueThread.joinable()) this->rosQueueThread.join();
+  this->rosNode.reset();
+
   // Release filter to make it safe to reload the model with plugin
   if (!filter_name.empty() && this->world)
   {
@@ -71,6 +80,13 @@ void GazeboGraspFix::InitValues()
   //this->maxGripCount=floor(graspedSecs/timeDiff);
   //this->gripCountThreshold=floor(this->maxGripCount/2);
   this->node = transport::NodePtr(new transport::Node());
+  this->forceLockEnabled = DEFAULT_FORCE_LOCK_ENABLED;
+  this->forceAttachTopic = "/mine_grasp/force_attach";
+  this->forceDetachTopic = "/mine_grasp/force_detach";
+  this->forceStatusTopic = "/mine_grasp/force_lock_status";
+  this->forceObjectPrefix = "landmine";
+  this->forceCollisionSuffix = "body::detonator_collision";
+  this->rosQueueRunning.store(false);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -180,6 +196,21 @@ void GazeboGraspFix::Load(physics::ModelPtr _parent, sdf::ElementPtr _sdf)
           this->releaseTolerance << std::endl;
   }
 
+  if (_sdf->HasElement("force_lock_enabled"))
+    this->forceLockEnabled = _sdf->Get<bool>("force_lock_enabled");
+  if (_sdf->HasElement("force_attach_topic"))
+    this->forceAttachTopic = _sdf->Get<std::string>("force_attach_topic");
+  if (_sdf->HasElement("force_detach_topic"))
+    this->forceDetachTopic = _sdf->Get<std::string>("force_detach_topic");
+  if (_sdf->HasElement("force_status_topic"))
+    this->forceStatusTopic = _sdf->Get<std::string>("force_status_topic");
+  if (_sdf->HasElement("force_arm_name"))
+    this->forceArmName = _sdf->Get<std::string>("force_arm_name");
+  if (_sdf->HasElement("force_object_prefix"))
+    this->forceObjectPrefix = _sdf->Get<std::string>("force_object_prefix");
+  if (_sdf->HasElement("force_collision_suffix"))
+    this->forceCollisionSuffix = _sdf->Get<std::string>("force_collision_suffix");
+
   // will contain all names of collision entities involved from all arms
   std::vector<std::string> collisionNames;
 
@@ -263,6 +294,16 @@ void GazeboGraspFix::Load(physics::ModelPtr _parent, sdf::ElementPtr _sdf)
     return;
   }
 
+  if (this->forceArmName.empty())
+    this->forceArmName = this->grippers.begin()->first;
+  if (this->grippers.find(this->forceArmName) == this->grippers.end())
+  {
+    gzerr << "GazeboGraspFix: force_arm_name '" << this->forceArmName
+          << "' is not a configured arm; forced lock support disabled."
+          << std::endl;
+    this->forceLockEnabled = false;
+  }
+
   // ++++++++++++ start up things +++++++++++++++
 
   physics::PhysicsEnginePtr physics = GetPhysics(this->world);
@@ -283,6 +324,34 @@ void GazeboGraspFix::Load(physics::ModelPtr _parent, sdf::ElementPtr _sdf)
 
   gzmsg << "Advertising grasping events on topic grasp_events" << std::endl;
   this->eventsPub = this->node->Advertise<msgs::GraspEvent>("~/grasp_events");
+
+  if (this->forceLockEnabled)
+  {
+    if (!ros::isInitialized())
+    {
+      gzerr << "GazeboGraspFix: ROS is not initialized; forced lock support disabled."
+            << std::endl;
+      this->forceLockEnabled = false;
+    }
+    else
+    {
+      this->rosNode.reset(new ros::NodeHandle());
+      this->rosNode->setCallbackQueue(&this->rosQueue);
+      this->forceAttachSub = this->rosNode->subscribe(
+        this->forceAttachTopic, 10, &GazeboGraspFix::OnForceAttach, this);
+      this->forceDetachSub = this->rosNode->subscribe(
+        this->forceDetachTopic, 10, &GazeboGraspFix::OnForceDetach, this);
+      this->forceStatusPub = this->rosNode->advertise<std_msgs::String>(
+        this->forceStatusTopic, 10, true);
+      this->rosQueueRunning.store(true);
+      this->rosQueueThread = std::thread(&GazeboGraspFix::RosQueueThread, this);
+      gzmsg << "GazeboGraspFix: simulator forced lock enabled on "
+            << this->forceAttachTopic << " / " << this->forceDetachTopic
+            << " (ack " << this->forceStatusTopic << ")"
+            << " for arm " << this->forceArmName << " and object prefix '"
+            << this->forceObjectPrefix << "'." << std::endl;
+    }
+  }
 
   update_connection = event::Events::ConnectWorldUpdateEnd(boost::bind(
                         &GazeboGraspFix::OnUpdate, this));
@@ -502,6 +571,31 @@ bool CheckGrip(const std::vector<GzVector3> &forces,
 ////////////////////////////////////////////////////////////////////////////////
 void GazeboGraspFix::OnUpdate()
 {
+  // ROS callbacks merely queue requests.  All joint operations must happen on
+  // Gazebo's update thread, including requests arriving between contact scans.
+  this->ProcessForcedCommands();
+
+  // Forced mission locks are visible kinematic followers.  Update them on
+  // every world tick, independently of the lower-rate contact classifier.
+  for (std::map<std::string, GazeboGraspGripper>::iterator it =
+         this->grippers.begin(); it != this->grippers.end(); ++it)
+    it->second.UpdateKinematicAttachment();
+
+  // Explicit PLACE/RESET release happens while the physical fingers may still
+  // be close. Do not let stale contacts recreate an ordinary grasp joint.
+  for (std::set<std::string>::iterator it =
+         this->explicitlyDetachedObjects.begin();
+       it != this->explicitlyDetachedObjects.end();)
+  {
+    if (!gazebo::GetEntityByName(this->world, *it))
+    {
+      std::set<std::string>::iterator removed = it++;
+      this->explicitlyDetachedObjects.erase(removed);
+    }
+    else
+      ++it;
+  }
+
   if ((common::Time::GetWallTime() - this->prevUpdateTime) < this->updateRate)
     return;
 
@@ -562,6 +656,13 @@ void GazeboGraspFix::OnUpdate()
   {
     const std::string &objName = ocIt->first;
     const ObjectContactInfo &objContInfo = ocIt->second;
+
+    if (this->explicitlyDetachedObjects.find(objName) !=
+        this->explicitlyDetachedObjects.end())
+    {
+      this->gripCounts[objName] = 0;
+      continue;
+    }
 
     // gzmsg<<"Number applied forces on "<<objName<<": "<<objContInfo.appliedForces.size()<<std::endl;
   
@@ -663,6 +764,7 @@ void GazeboGraspFix::OnUpdate()
     {
       gzerr << "GazeboGraspFix: Could not attach object " << objName << " to gripper "
             << graspingGripperName << std::endl;
+      continue;
     }
     this->OnAttach(objName, graspingGripperName);
   }  // for all objects
@@ -680,6 +782,15 @@ void GazeboGraspFix::OnUpdate()
   {
 
     const std::string &objName = gripCntIt->first;
+
+    // A forced transport lock is released only by an explicit PLACE/RESET
+    // command.  Missing finger contacts must not decrement or detach it.
+    if (this->forcedAttachedObjects.find(objName) !=
+        this->forcedAttachedObjects.end())
+    {
+      gripCntIt->second = this->maxGripCount;
+      continue;
+    }
 
     if (grippedObjects.find(objName) != grippedObjects.end())
     {
@@ -809,6 +920,159 @@ void GazeboGraspFix::OnUpdate()
   }
 
   this->prevUpdateTime = common::Time::GetWallTime();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void GazeboGraspFix::OnForceAttach(const std_msgs::StringConstPtr &msg)
+{
+  if (!this->forceLockEnabled || !msg || msg->data.empty()) return;
+  boost::mutex::scoped_lock lock(this->mutexForceCommands);
+  if (this->forceCommands.size() < 64)
+    this->forceCommands.push_back(std::make_pair(true, msg->data));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void GazeboGraspFix::RosQueueThread()
+{
+  while (this->rosQueueRunning.load() && ros::ok())
+    this->rosQueue.callAvailable(ros::WallDuration(0.01));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void GazeboGraspFix::OnForceDetach(const std_msgs::StringConstPtr &msg)
+{
+  if (!this->forceLockEnabled || !msg || msg->data.empty()) return;
+  boost::mutex::scoped_lock lock(this->mutexForceCommands);
+  if (this->forceCommands.size() < 64)
+    this->forceCommands.push_back(std::make_pair(false, msg->data));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+void GazeboGraspFix::ProcessForcedCommands()
+{
+  if (!this->forceLockEnabled) return;
+  std::deque<std::pair<bool, std::string> > commands;
+  {
+    boost::mutex::scoped_lock lock(this->mutexForceCommands);
+    commands.swap(this->forceCommands);
+  }
+  for (std::deque<std::pair<bool, std::string> >::const_iterator it =
+         commands.begin(); it != commands.end(); ++it)
+  {
+    if (it->first) this->ForceAttach(it->second);
+    else this->ForceDetach(it->second);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+bool GazeboGraspFix::IsAllowedForcedObject(const std::string &objectName) const
+{
+  if (this->forceObjectPrefix.empty() ||
+      objectName.compare(0, this->forceObjectPrefix.size(),
+                         this->forceObjectPrefix) != 0)
+    return false;
+  if (objectName.size() <= this->forceObjectPrefix.size()) return false;
+  const char boundary = objectName[this->forceObjectPrefix.size()];
+  if (boundary != '_' && boundary != ':') return false;
+  // Require the configured detonator collision rather than accepting an
+  // arbitrary link/collision below a model which happens to share the prefix.
+  const std::string requiredSuffix = "::" + this->forceCollisionSuffix;
+  return objectName.size() > requiredSuffix.size() &&
+         objectName.compare(objectName.size() - requiredSuffix.size(),
+                            requiredSuffix.size(), requiredSuffix) == 0;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+bool GazeboGraspFix::ForceAttach(const std::string &objectName)
+{
+  if (!this->IsAllowedForcedObject(objectName))
+  {
+    gzwarn << "GazeboGraspFix: rejected forced attachment of disallowed object '"
+           << objectName << "'." << std::endl;
+    return false;
+  }
+  // Explicit attach is also the rollback path for a failed delete_model
+  // transaction, so it intentionally cancels the detach quarantine.
+  this->explicitlyDetachedObjects.erase(objectName);
+  std::map<std::string, GazeboGraspGripper>::iterator it =
+    this->grippers.find(this->forceArmName);
+  if (it == this->grippers.end()) return false;
+  GazeboGraspGripper &gripper = it->second;
+  if (gripper.isObjectAttached())
+  {
+    if (gripper.attachedObject() != objectName)
+    {
+      gzwarn << "GazeboGraspFix: forced attachment rejected because arm '"
+             << this->forceArmName << "' already holds '"
+             << gripper.attachedObject() << "'." << std::endl;
+      return false;
+    }
+    // Upgrade a contact-created physical joint to a no-reaction kinematic
+    // transport lock.  The model remains visible but can no longer lever the
+    // UGV through a terrain contact while the arm lifts.
+    if (!gripper.isKinematicAttachment())
+    {
+      gripper.HandleDetach(objectName);
+      if (!gripper.HandleKinematicAttach(objectName))
+      {
+        gzerr << "GazeboGraspFix: failed to upgrade '" << objectName
+              << "' to a kinematic transport lock." << std::endl;
+        return false;
+      }
+    }
+    this->forcedAttachedObjects.insert(objectName);
+    this->gripCounts[objectName] = this->maxGripCount;
+    this->OnAttach(objectName, this->forceArmName);
+    std_msgs::String status;
+    status.data = "ATTACHED|" + objectName;
+    this->forceStatusPub.publish(status);
+    return true;
+  }
+  if (!gripper.HandleKinematicAttach(objectName))
+  {
+    gzerr << "GazeboGraspFix: failed forced kinematic attachment of '" << objectName
+          << "'." << std::endl;
+    return false;
+  }
+  this->forcedAttachedObjects.insert(objectName);
+  this->gripCounts[objectName] = this->maxGripCount;
+  this->attachGripContacts.erase(objectName);
+  gzmsg << "GazeboGraspFix: forced kinematic transport lock attached " << objectName
+        << " to " << this->forceArmName << "." << std::endl;
+  this->OnAttach(objectName, this->forceArmName);
+  std_msgs::String status;
+  status.data = "ATTACHED|" + objectName;
+  this->forceStatusPub.publish(status);
+  return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+bool GazeboGraspFix::ForceDetach(const std::string &objectName)
+{
+  if (!this->IsAllowedForcedObject(objectName)) return false;
+  std::map<std::string, GazeboGraspGripper>::iterator it =
+    this->grippers.find(this->forceArmName);
+  if (it == this->grippers.end()) return false;
+  GazeboGraspGripper &gripper = it->second;
+  if (!gripper.isObjectAttached() || gripper.attachedObject() != objectName)
+    return false;
+  if (this->forcedAttachedObjects.erase(objectName) == 0)
+  {
+    // Explicit release is intentionally scoped to locks created/upgraded by
+    // this interface; ordinary opposing-contact grasps retain legacy release.
+    return false;
+  }
+  this->explicitlyDetachedObjects.insert(objectName);
+  gripper.HandleDetach(objectName);
+  this->gripCounts[objectName] = 0;
+  this->attachGripContacts.erase(objectName);
+  gzmsg << "GazeboGraspFix: explicit transport lock released " << objectName
+        << " from " << this->forceArmName << "." << std::endl;
+  this->OnDetach(objectName, this->forceArmName);
+  std_msgs::String status;
+  status.data = "DETACHED|" + objectName;
+  this->forceStatusPub.publish(status);
+  return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

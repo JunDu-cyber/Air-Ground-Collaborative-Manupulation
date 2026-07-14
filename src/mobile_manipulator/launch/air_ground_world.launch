@@ -23,14 +23,30 @@
   <arg name="gui"   default="true"/>
   <!-- outdoor_city.world 已是 250Hz/step0.004（PX4 锁步兼容）+ 含地形heightmap+楼 -->
   <arg name="world" default="$(find mobile_manipulator)/worlds/outdoor_city.world"/>
+  <!-- run_air_ground.sh 默认打开；单独使用本 launch 时可保持原世界不加地雷。 -->
+  <arg name="spawn_mines" default="false"/>
 
-  <!-- UGV 出生点 -->
+  <!-- ★统一坐标系：UAV 从【世界原点(0,0)】起飞 -> 飞控局部系原点=世界原点 -> MAVROS
+       /odom == 世界坐标(零偏移)。于是 EGO 轨迹、UAV 模型、点云、地形图、UGV 全在【同一帧】
+       重合;之前按出生点参数化的那堆偏移(truth_offset/align_offset/fallback_off)全部自动
+       归零、系统更简单。UGV 让到 UAV 原来那片空地(0,-18)。两机相距 18m 不打架。 -->
+  <!-- UGV 出生点(挪到 UAV 原空地,让出世界原点给 UAV) -->
   <arg name="ugv_x" default="0.0"/>
-  <arg name="ugv_y" default="0.0"/>
+  <arg name="ugv_y" default="-18.0"/>
   <arg name="ugv_Y" default="0.0"/>
-  <!-- UAV 出生点（和 UGV 错开，沿用现有的 (0,-18)） -->
+  <!-- Do not spawn the 2F-140 exactly on its zero-radian hard stop.  With the
+       mimic linkage and gravity enabled, the zero target rebounds between
+       roughly -0.06 and +0.07 rad while the UGV drives.  This is the same
+       verified safe-open value used by mine_grasp_minimal. -->
+  <arg name="gripper_initial_position" default="0.08"/>
+  <!-- Project-owned URDF post-processing applies physical damping without
+       modifying /opt/ros or a generated URDF snapshot.  1.5 N*m*s/rad is the
+       value already exercised in the online integrated chain. -->
+  <arg name="ur5_joint_damping" default="1.5"/>
+  <arg name="ur5_shoulder_lift_damping" default="20.0"/>
+  <!-- UAV 出生点 = 世界原点(0,0) -->
   <arg name="uav_x" default="0.0"/>
-  <arg name="uav_y" default="-18.0"/>
+  <arg name="uav_y" default="0.0"/>
   <arg name="uav_z" default="1.5"/>
   <arg name="uav_Y" default="1.5707963"/>
 
@@ -66,13 +82,19 @@
     <arg name="use_sim_time" value="true"/>
     <arg name="gui"          value="$(arg gui)"/>
   </include>
+
+  <!-- 排雷测试场：地雷模型通过 Gazebo spawn 到 outdoor_city 的起始道路。
+       识别节点不使用这里的真值；模型名/位姿只供仿真结果评分。 -->
+  <group if="$(arg spawn_mines)">
+    <include file="$(find uav_truth_tracker)/launch/spawn_outdoor_mine_field.launch"/>
+  </group>
   <!-- TODO(Phase1 调试): 重 world 下 gzserver 可能跑不到 250Hz，PX4 锁步会等超时。
        若 PX4 起不来，参考 one_key_takeoff.sh 里 gazebo 起来后 rosservice call
        /gazebo/set_physics_properties 把 max_update_rate 显式压到 250 的做法。 -->
 
   <!-- ============ B) UGV：husky_ur5 + 控制器 + 双EKF + twist_mux（沿用 spawn_outdoor_city） ============ -->
   <param name="robot_description"
-         command="$(find xacro)/xacro '$(find mobile_manipulator)/urdf/husky_ur5.urdf.xacro'"/>
+         command="$(find mobile_manipulator)/scripts/generate_husky_ur5_urdf.py --xacro '$(find mobile_manipulator)/urdf/husky_ur5.urdf.xacro' --arm-joint-damping $(arg ur5_joint_damping) --shoulder-lift-joint-damping $(arg ur5_shoulder_lift_damping)"/>
   <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher"/>
 
   <node name="spawn_urdf" pkg="gazebo_ros" type="spawn_model"
@@ -81,12 +103,15 @@
               -J ur5_shoulder_pan_joint 0  -J ur5_shoulder_lift_joint -2.9
               -J ur5_elbow_joint 2.9  -J ur5_wrist_1_joint -1.2
               -J ur5_wrist_2_joint 0.0  -J ur5_wrist_3_joint 0
+              -J finger_joint $(arg gripper_initial_position)
               $(arg unpause_flag)"
         output="screen"/>
 
   <rosparam command="load" file="$(find husky_control)/config/control.yaml"/>
   <rosparam command="load" file="$(find mobile_manipulator)/config/ur5_controllers.yaml"/>
-  <param name="husky_velocity_controller/linear/x/max_velocity" value="1.5"/>
+  <!-- 控制器预留 3.5 m/s 给刚性锁定后的平地返程；普通出程仍由 DWA
+       配置限制为 2.8 m/s。 -->
+  <param name="husky_velocity_controller/linear/x/max_velocity" value="3.5"/>
   <node name="base_controller_spawner" pkg="controller_manager" type="spawner"
         args="husky_joint_publisher husky_velocity_controller" output="screen"/>
   <rosparam param="wheel_radius_multiplier" ns="husky_velocity_controller" subst_value="true">$(optenv HUSKY_WHEEL_MULTIPLIER 1.0)</rosparam>
@@ -96,6 +121,9 @@
   <node pkg="robot_localization" type="ekf_localization_node" name="ekf_localization">
     <rosparam command="load" file="$(find husky_control)/config/localization.yaml"/>
     <param name="two_d_mode" value="false"/>
+    <!-- 50 Hz repeatedly missed its 20 ms deadline in the CPU-only full stack.
+         30 Hz is still 3x the navigation controller rate and reduces TF bursts. -->
+    <param name="frequency" value="30.0"/>
   </node>
   <node pkg="robot_localization" type="ekf_localization_node" name="ekf_global">
     <rosparam command="load" file="$(find mobile_manipulator)/config/ekf_global.yaml"/>
@@ -108,7 +136,7 @@
     <remap from="odometry/filtered" to="odometry/filtered_map"/>
   </node>
   <node pkg="twist_mux" type="twist_mux" name="twist_mux">
-    <rosparam command="load" file="$(find husky_control)/config/twist_mux.yaml"/>
+    <rosparam command="load" file="$(find mobile_manipulator)/config/twist_mux_mine_mission.yaml"/>
     <remap from="cmd_vel_out" to="husky_velocity_controller/cmd_vel"/>
   </node>
 
@@ -134,10 +162,11 @@
     <include file="$(find uav_truth_tracker)/launch/forest_uav_mapping.launch">
       <arg name="low_altitude"         value="true"/>
       <arg name="flight_height"        value="4.0"/>
-      <arg name="max_vel"              value="1.2"/>
+      <arg name="max_vel"              value="0.8"/>   <!-- 1.2->0.8:慢点飞,EGO 轨迹更稳、激光点云不拖影(扫描内运动畸变小) -->
       <arg name="ground_filter_margin" value="0.5"/>
       <arg name="uav_child_frame"      value="$(arg uav_base_frame)"/>  <!-- map→uav_base_link，不撞 UGV -->
       <arg name="uav_goal_topic"       value="$(arg uav_goal_topic)"/>  <!-- /uav/goal，不撞 UGV move_base -->
+      <arg name="start_ugv_helper"     value="false"/>                  <!-- 已有真 UGV(B 段)，不起假 UGV 占位 -->
       <arg name="start_rviz"           value="false"/>                  <!-- 合并世界用一个总 RViz -->
     </include>
   </group>
@@ -148,6 +177,8 @@
       <arg name="localization"   value="false"/>   <!-- 复用本 launch 的双EKF -->
       <arg name="use_sample_map" value="true"/>     <!-- Phase4 改成订阅在线点云 -->
       <arg name="rviz"           value="false"/>    <!-- 合并世界用一个总 RViz -->
+      <arg name="ur5_joint_damping" value="$(arg ur5_joint_damping)"/>
+      <arg name="ur5_shoulder_lift_damping" value="$(arg ur5_shoulder_lift_damping)"/>
     </include>
   </group>
 

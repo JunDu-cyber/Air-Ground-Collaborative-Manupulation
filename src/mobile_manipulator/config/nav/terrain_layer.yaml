@@ -6,6 +6,9 @@
 static_layer:
   map_topic: /terrain_map            # static global map projected from the UAV PCD
   subscribe_to_updates: false
+  # Phase4 实时建图: /terrain_map 会随 UAV 飞行不断重发(变大/更新)。first_map_only=false
+  # 让 StaticLayer 每次都吃新图(默认即 false,这里显式写明,确保实时图能更新进 costmap)。
+  first_map_only: false
   # UAV 俯视没覆盖到的地面格(unknown=-1)当作可走，靠局部 LiDAR costmap 兜底，
   # 否则大片 unknown 会让全局规划拒绝通行、车不动。
   track_unknown_space: false

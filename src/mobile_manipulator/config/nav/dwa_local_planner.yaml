@@ -1,28 +1,31 @@
 DWAPlannerROS:
   # --- Velocity limits ---
-  # 速度调快 + 解决"大幅度转弯卡死"：之前为防翻车把角速度/角加速降得太低(0.8/0.8)，
-  # 导致 DWA 每周期只能预览极小转角、大转弯时迟迟转不过去→触发振荡保护→卡住不动。
-  # 物理稳定性已由【压低质心(压舱)+轮摩擦】保证，这里把速度恢复到平台上限、转弯给足。
-  max_vel_x:           1.5    # 平地走快点(同步把底盘控制器上限提到1.5)
+  # 空载平地出程提高到 2.8 m/s。已由 Gazebo 插件无反力锁定的携雷返程由
+  # 任务管理器动态切换到 3.4 m/s；放置区不再执行底盘厘米级精对准。
+  # 10 m 本地代价图完整覆盖 1 s DWA 预测和制动余量。
+  max_vel_x:           2.8
   min_vel_x:           0.0
   max_vel_y:           0.0
   min_vel_y:           0.0
-  max_vel_trans:       1.5
-  min_vel_trans:       0.0
-  max_vel_theta:       1.5    # 大转弯转得过去(was 0.8)
-  min_vel_theta:       0.2    # 原地转的最小角速度别太小，免得"磨"不动
+  max_vel_trans:       2.8
+  min_vel_trans:       0.15
+  max_vel_theta:       1.0
+  min_vel_theta:       0.1    # 降低末端朝向修正的过冲和左右振荡
 
   # --- Acceleration limits ---
-  # 上坡防打滑：线加速调缓(1.5->1.0)，避免在坡上猛给油把轮子打滑空转→下滑；
-  # 顶速仍是 1.5(平地够快)，只是更平缓地达到。角加速保持高，保证大转弯不卡。
-  acc_lim_x:     1.0          # was 1.5 — 缓加速上坡不空转
+  # 平地空载加速；携雷阶段由任务管理器动态保持 3.0 m/s^2。
+  acc_lim_x:     3.0
   acc_lim_y:     0.0
-  acc_lim_theta: 2.5          # 角加速给足，大转弯迅速转过去不卡
+  acc_lim_theta: 1.5
 
   # --- Goal tolerance ---
-  xy_goal_tolerance:  0.15
-  yaw_goal_tolerance: 0.1
-  latch_xy_goal_tolerance: false
+  # Wrist grasping needs the base radius error around 5 cm; the mission manager
+  # independently rechecks TF before unlocking the arm.
+  xy_goal_tolerance:  0.03
+  yaw_goal_tolerance: 0.06
+  # Once the parking position is reached, finish heading without driving out
+  # of the grasp ring again. The previous false setting caused circles.
+  latch_xy_goal_tolerance: true
 
   # --- Trajectory sampling ---
   sim_time:          1.0      # was 1.5 — faster replanning indoors
@@ -39,8 +42,12 @@ DWAPlannerROS:
   occdist_scale:         0.1
   forward_point_distance: 0.5
   stop_time_buffer:       0.2
-  scaling_speed:          0.5   # was 0.25 — start scaling later
-  max_scaling_factor:     0.5   # was 0.2 — allow 50% speed near obstacles (was 20%!)
+  # The former 0.5 factor enlarged the 0.99 x 0.68 m Husky footprint by 50%
+  # at cruise speed.  That is footprint growth, not a "50% speed allowance";
+  # it made otherwise valid lanes disappear and produced stop/go motion.  The
+  # 1.2 m inflation layer and DWA stop-time check already provide clearance.
+  scaling_speed:          1.0
+  max_scaling_factor:     0.0
 
   # --- Oscillation prevention ---
   oscillation_reset_dist:  0.05

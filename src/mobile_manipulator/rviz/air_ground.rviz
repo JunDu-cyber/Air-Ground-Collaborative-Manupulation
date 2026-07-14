@@ -3,168 +3,684 @@ Panels:
     Help Height: 0
     Name: Displays
     Property Tree Widget:
-      Expanded: ~
+      Expanded:
+        - /Planning1
+        - /Mapping1
+        - /UGV Nav1
+        - /Mine Detection1
       Splitter Ratio: 0.5
-    Tree Height: 600
+    Tree Height: 200
+  - Class: rviz/Selection
+    Name: Selection
   - Class: rviz/Tool Properties
     Expanded:
+      - /2D Pose Estimate1
       - /2D Nav Goal1
       - /2D Nav Goal2
+      - /Publish Point1
     Name: Tool Properties
-    Splitter Ratio: 0.6
+    Splitter Ratio: 0.5886790156364441
+  - Class: rviz/Views
+    Expanded:
+      - /Current View1
+    Name: Views
+    Splitter Ratio: 0.5
+  - Class: rviz/Time
+    Name: Time
+    SyncMode: 0
+    SyncSource: depth_dilated
+Preferences:
+  PromptSaveOnExit: true
+Toolbars:
+  toolButtonStyle: 2
 Visualization Manager:
   Class: ""
   Displays:
-    - Class: rviz/Grid
+    - Alpha: 1
+      Class: rviz/Axes
+      Enabled: true
+      Length: 1
+      Name: Axes
+      Radius: 0.10000000149011612
+      Reference Frame: <Fixed Frame>
+      Show Trail: false
+      Value: true
+    - Alpha: 0.5
+      Cell Size: 1
+      Class: rviz/Grid
       Color: 160; 160; 164
       Enabled: true
       Line Style:
-        Line Width: 0.03
+        Line Width: 0.029999999329447746
         Value: Lines
       Name: Grid
       Normal Cell Count: 0
-      Plane: XY
-      Plane Cell Count: 50
-      Reference Frame: <Fixed Frame>
-      Value: true
-    - Alpha: 1
-      Class: rviz/RobotModel
-      Enabled: true
-      Name: UGV RobotModel (Husky+UR5)
-      Robot Description: robot_description
-      TF Prefix: ""
-      Value: true
-      Visual Enabled: true
-    - Class: rviz/Marker
-      Enabled: true
-      Marker Topic: /drone_visual
-      Name: UAV mesh (/drone_visual)
-      Namespaces:
-        {}
-      Queue Size: 100
-      Value: true
-    - Class: rviz/TF
-      Enabled: false
-      Name: TF
-      Show Arrows: true
-      Show Axes: true
-      Show Names: true
-      Value: false
-    - Alpha: 0.7
-      Class: rviz/Map
-      Color Scheme: costmap
-      Draw Behind: true
-      Enabled: true
-      Name: UAV Terrain Map (/terrain_map)
-      Topic: /terrain_map
-      Unreliable: false
-      Use Timestamp: false
-      Value: true
-    - Alpha: 1
-      Autocompute Intensity Bounds: true
-      Class: rviz/PointCloud2
-      Color: 255; 255; 255
-      Color Transformer: RGB8
-      Decay Time: 0
-      Enabled: true
-      Name: Terrain 3D (/terrain_cloud)
-      Size (m): 0.25
-      Style: Flat Squares
-      Topic: /terrain_cloud
-      Use Fixed Frame: true
-      Value: true
-    - Alpha: 0.5
-      Class: rviz/Map
-      Color Scheme: costmap
-      Draw Behind: false
-      Enabled: true
-      Name: UGV Global Costmap
-      Topic: /move_base/global_costmap/costmap
-      Unreliable: false
-      Use Timestamp: false
-      Value: true
-    - Alpha: 1
-      Buffer Length: 1
-      Class: rviz/Path
-      Color: 0; 255; 0
-      Enabled: true
-      Head Diameter: 0.3
-      Head Length: 0.2
-      Length: 0.3
-      Line Style: Lines
-      Line Width: 0.05
-      Name: UGV Global Plan
       Offset:
         X: 0
         Y: 0
         Z: 0
-      Pose Style: None
-      Radius: 0.03
-      Shaft Diameter: 0.1
-      Shaft Length: 0.1
-      Topic: /move_base/NavfnROS/plan
-      Unreliable: false
+      Plane: XY
+      Plane Cell Count: 40
+      Reference Frame: <Fixed Frame>
       Value: true
-    - Alpha: 1
-      Autocompute Intensity Bounds: true
-      Class: rviz/PointCloud2
-      Color: 255; 255; 0
-      Color Transformer: FlatColor
-      Decay Time: 0
+    - Class: rviz/Group
+      Displays:
+        - Class: rviz/Marker
+          Enabled: true
+          Marker Topic: /ego_planner_node/goal_point
+          Name: goal_point
+          Namespaces:
+            "": true
+          Queue Size: 100
+          Value: true
+        - Class: rviz/Marker
+          Enabled: true
+          Marker Topic: /ego_planner_node/global_list
+          Name: global_path (ego)
+          Namespaces:
+            "": true
+          Queue Size: 100
+          Value: true
+        - Class: rviz/Marker
+          Enabled: true
+          Marker Topic: /ego_planner_node/optimal_list
+          Name: optimal_traj
+          Namespaces:
+            "": true
+          Queue Size: 100
+          Value: true
+        - Class: rviz/Marker
+          Enabled: true
+          Marker Topic: /ego_planner_node/a_star_list
+          Name: AStar (flight frame)
+          Namespaces:
+            "": true
+          Queue Size: 100
+          Value: true
+        - Class: rviz/Marker
+          Enabled: true
+          Marker Topic: /ego_planner_node/init_list
+          Name: InitTraj (flight frame)
+          Namespaces:
+            "": true
+          Queue Size: 100
+          Value: true
+        - Alpha: 1
+          Buffer Length: 1
+          Class: rviz/Path
+          Color: 25; 255; 0
+          Enabled: false
+          Head Diameter: 0.30000001192092896
+          Head Length: 0.20000000298023224
+          Length: 0.30000001192092896
+          Line Style: Lines
+          Line Width: 0.029999999329447746
+          Name: drone_path
+          Offset:
+            X: 0
+            Y: 0
+            Z: 0
+          Pose Color: 255; 85; 255
+          Pose Style: Axes
+          Queue Size: 10
+          Radius: 0.029999999329447746
+          Shaft Diameter: 0.10000000149011612
+          Shaft Length: 0.10000000149011612
+          Topic: /drone_path
+          Unreliable: false
+          Value: false
       Enabled: true
-      Name: UAV Mapping Cloud (/uav0/mapping/points_world)
-      Size (m): 0.05
-      Style: Points
-      Topic: /uav0/mapping/points_world
-      Use Fixed Frame: true
+      Name: Planning
+    - Class: rviz/Group
+      Displays:
+        - Class: rviz/MarkerArray
+          Enabled: false
+          Marker Topic: /forest_world_markers
+          Name: forest_world
+          Namespaces:
+            {}
+          Queue Size: 100
+          Value: false
+        - Alpha: 1
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: -9999
+            Min Value: 9999
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz/PointCloud2
+          Color: 255; 255; 255
+          Color Transformer: AxisColor
+          Decay Time: 0
+          Enabled: false
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Min Color: 0; 0; 0
+          Name: map inflate
+          Position Transformer: XYZ
+          Queue Size: 10
+          Selectable: true
+          Size (Pixels): 3
+          Size (m): 0.10000000149011612
+          Style: Flat Squares
+          Topic: /grid_map/occupancy_inflate
+          Unreliable: false
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: false
+        - Alpha: 1
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 9.618230819702148
+            Min Value: -3.7152493000030518
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz/PointCloud2
+          Color: 255; 255; 255
+          Color Transformer: AxisColor
+          Decay Time: 0
+          Enabled: true
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Min Color: 0; 0; 0
+          Name: UAV Cloud (aligned to world)
+          Position Transformer: XYZ
+          Queue Size: 10
+          Selectable: true
+          Size (Pixels): 3
+          Size (m): 0.15000000596046448
+          Style: Flat Squares
+          Topic: /uav0/mapping/points_aligned
+          Unreliable: false
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: true
+        - Alpha: 0.800000011920929
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 0.4042612910270691
+            Min Value: 0.07462956756353378
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz/PointCloud2
+          Color: 255; 255; 255
+          Color Transformer: AxisColor
+          Decay Time: 0
+          Enabled: false
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Min Color: 0; 0; 0
+          Name: uav_points_world
+          Position Transformer: XYZ
+          Queue Size: 10
+          Selectable: true
+          Size (Pixels): 3
+          Size (m): 0.07999999821186066
+          Style: Boxes
+          Topic: /uav0/mapping/points_world
+          Unreliable: false
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: false
+        - Class: rviz/MarkerArray
+          Enabled: false
+          Marker Topic: /occupied_cells_vis_array
+          Name: octomap_3d_occupied
+          Namespaces:
+            {}
+          Queue Size: 100
+          Value: false
+        - Alpha: 0.800000011920929
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 2
+            Min Value: -1
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz/PointCloud2
+          Color: 255; 170; 0
+          Color Transformer: AxisColor
+          Decay Time: 0
+          Enabled: false
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Min Color: 0; 0; 0
+          Name: octomap_centers
+          Position Transformer: XYZ
+          Queue Size: 10
+          Selectable: true
+          Size (Pixels): 3
+          Size (m): 0.12000000476837158
+          Style: Boxes
+          Topic: /octomap_point_cloud_centers
+          Unreliable: false
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: false
+      Enabled: true
+      Name: Mapping
+    - Class: rviz/Group
+      Displays:
+        - Alpha: 0.699999988079071
+          Class: rviz/Map
+          Color Scheme: costmap
+          Draw Behind: true
+          Enabled: false
+          Name: UGV Terrain Map (/terrain_map, live)
+          Topic: /terrain_map
+          Unreliable: false
+          Use Timestamp: false
+          Value: false
+        - Alpha: 1
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 10
+            Min Value: -10
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz/PointCloud2
+          Color: 255; 255; 255
+          Color Transformer: RGB8
+          Decay Time: 0
+          Enabled: true
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Min Color: 0; 0; 0
+          Name: Terrain Elevation (/terrain_cloud, live)
+          Position Transformer: XYZ
+          Queue Size: 10
+          Selectable: true
+          Size (Pixels): 3
+          Size (m): 0.25
+          Style: Flat Squares
+          Topic: /terrain_cloud
+          Unreliable: false
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: true
+        - Alpha: 0.5
+          Class: rviz/Map
+          Color Scheme: costmap
+          Draw Behind: false
+          Enabled: false
+          Name: UGV Global Costmap
+          Topic: /move_base/global_costmap/costmap
+          Unreliable: false
+          Use Timestamp: false
+          Value: false
+        - Alpha: 1
+          Buffer Length: 1
+          Class: rviz/Path
+          Color: 0; 255; 0
+          Enabled: true
+          Head Diameter: 0.30000001192092896
+          Head Length: 0.20000000298023224
+          Length: 0.30000001192092896
+          Line Style: Lines
+          Line Width: 0.05000000074505806
+          Name: UGV Global Plan
+          Offset:
+            X: 0
+            Y: 0
+            Z: 0
+          Pose Color: 255; 85; 255
+          Pose Style: None
+          Queue Size: 10
+          Radius: 0.029999999329447746
+          Shaft Diameter: 0.10000000149011612
+          Shaft Length: 0.10000000149011612
+          Topic: /move_base/NavfnROS/plan
+          Unreliable: false
+          Value: true
+      Enabled: true
+      Name: UGV Nav
+    - Class: rviz/Group
+      Displays:
+        - Class: rviz/Marker
+          Enabled: true
+          Marker Topic: /gazebo_drone_visual
+          Name: UAV mesh (world)
+          Namespaces:
+            drone: true
+          Queue Size: 100
+          Value: true
+        - Alpha: 1
+          Class: rviz/RobotModel
+          Collision Enabled: false
+          Enabled: true
+          Links:
+            All Links Enabled: true
+            Expand Joint Details: false
+            Expand Link Details: false
+            Expand Tree: false
+            Link Tree Style: Links in Alphabetic Order
+            base_ballast:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+            base_footprint:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+            base_laser:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            base_laser_mount:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+            base_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            front_bumper_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            front_left_wheel_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            front_right_wheel_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            imu_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+            inertial_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+            left_inner_finger:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            left_inner_finger_pad:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            left_inner_knuckle:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            left_outer_finger:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            left_outer_knuckle:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            realsense_camera_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            realsense_camera_optical_frame:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+            rear_bumper_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            rear_left_wheel_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            rear_right_wheel_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            right_inner_finger:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            right_inner_finger_pad:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            right_inner_knuckle:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            right_outer_finger:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            right_outer_knuckle:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            robotiq_140_base_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+            robotiq_arg2f_base_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            top_chassis_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            top_plate_front_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+            top_plate_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            top_plate_rear_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+            ur5_base:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+            ur5_base_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+            ur5_base_link_inertia:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            ur5_flange:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+            ur5_forearm_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            ur5_shoulder_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            ur5_tool0:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+            ur5_upper_arm_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            ur5_wrist_1_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            ur5_wrist_2_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            ur5_wrist_3_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+            user_rail_link:
+              Alpha: 1
+              Show Axes: false
+              Show Trail: false
+              Value: true
+          Name: UGV (Husky+UR5)
+          Robot Description: robot_description
+          TF Prefix: ""
+          Update Interval: 0
+          Value: true
+          Visual Enabled: true
+      Enabled: true
+      Name: Simulation
+    - Class: rviz/Group
+      Displays:
+        - Class: rviz/MarkerArray
+          Enabled: true
+          Marker Topic: /mine_detection/markers
+          Name: Confirmed/Candidate Mines (map)
+          Namespaces:
+            {}
+          Queue Size: 100
+          Value: true
+        - Class: rviz/MarkerArray
+          Enabled: true
+          Marker Topic: /mine_mission/markers
+          Name: UGV Disposal Mission / Standoff
+          Namespaces:
+            {}
+          Queue Size: 100
+          Value: true
+        - Class: rviz/MarkerArray
+          Enabled: true
+          Marker Topic: /mine_grasp/debug_markers
+          Name: Grasp Targets / TCP Error
+          Namespaces:
+            {}
+          Queue Size: 100
+          Value: true
+        - Alpha: 1
+          Buffer Length: 1
+          Class: rviz/Path
+          Color: 0; 255; 255
+          Enabled: true
+          Head Diameter: 0.05
+          Head Length: 0.04
+          Length: 0.05
+          Line Style: Lines
+          Line Width: 0.01
+          Name: Mine Grasp TCP Trace
+          Offset: {X: 0, Y: 0, Z: 0}
+          Pose Color: 255; 0; 255
+          Pose Style: None
+          Queue Size: 10
+          Radius: 0.01
+          Shaft Diameter: 0.01
+          Shaft Length: 0.02
+          Topic: /mine_grasp/tcp_trace
+          Unreliable: false
+          Value: true
+        - Class: rviz/Image
+          Enabled: true
+          Image Topic: /mine_camera/rgb/image_raw
+          Max Value: 1
+          Median window: 5
+          Min Value: 0
+          Name: UAV Mine Camera Raw (always-on)
+          Normalize Range: true
+          Queue Size: 2
+          Transport Hint: raw
+          Unreliable: false
+          Value: true
+        - Class: rviz/Image
+          Enabled: true
+          Image Topic: /mine_detection/debug_image
+          Max Value: 1
+          Median window: 5
+          Min Value: 0
+          Name: UAV Mine Segmentation Debug
+          Normalize Range: true
+          Queue Size: 2
+          Transport Hint: raw
+          Unreliable: false
+          Value: true
+      Enabled: true
+      Name: Mine Detection
+    - Class: rviz/Image
+      Enabled: true
+      Image Topic: /depth/image_dilated
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: depth_dilated
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: raw
+      Unreliable: false
       Value: true
     - Alpha: 1
       Buffer Length: 1
       Class: rviz/Path
       Color: 255; 170; 0
       Enabled: true
-      Head Diameter: 0.3
-      Head Length: 0.2
-      Length: 0.3
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
       Line Style: Lines
-      Line Width: 0.08
+      Line Width: 0.05000000074505806
       Name: UAV Global Path (/global_path)
       Offset:
         X: 0
         Y: 0
         Z: 0
+      Pose Color: 255; 85; 255
       Pose Style: None
-      Radius: 0.03
-      Shaft Diameter: 0.1
-      Shaft Length: 0.1
+      Queue Size: 10
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
       Topic: /global_path
-      Unreliable: false
-      Value: true
-    - Alpha: 1
-      Buffer Length: 1
-      Class: rviz/Path
-      Color: 0; 170; 255
-      Enabled: true
-      Head Diameter: 0.3
-      Head Length: 0.2
-      Length: 0.3
-      Line Style: Billboards
-      Line Width: 0.06
-      Name: UAV Flight Trace (/drone_path)
-      Offset:
-        X: 0
-        Y: 0
-        Z: 0
-      Pose Style: None
-      Radius: 0.03
-      Shaft Diameter: 0.1
-      Shaft Length: 0.1
-      Topic: /drone_path
       Unreliable: false
       Value: true
   Enabled: true
   Global Options:
-    Background Color: 48; 48; 48
+    Background Color: 255; 253; 224
     Default Light: true
     Fixed Frame: map
     Frame Rate: 30
@@ -181,13 +697,10 @@ Visualization Manager:
       Topic: /initialpose
       X std deviation: 0.5
       Y std deviation: 0.5
-    # 第一个 2D Nav Goal -> UGV (move_base)
     - Class: rviz/SetGoal
       Topic: /move_base_simple/goal
-    # 第二个 2D Nav Goal -> UAV (全局规划器)。工具栏会出现两个"2D Nav Goal"，
-    # 第1个发 UGV、第2个发 UAV(/uav/goal)；鼠标悬停可看各自话题。
     - Class: rviz/SetGoal
-      Topic: /uav/goal
+      Topic: /uav/manual_goal
     - Class: rviz/PublishPoint
       Single click: true
       Topic: /clicked_point
@@ -195,18 +708,43 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 70
+      Distance: 118.66072082519531
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Field of View: 0.7853981852531433
       Focal Point:
         X: 0
-        Y: -9
-        Z: 0
+        Y: -8
+        Z: 2.5
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05000000074505806
+      Invert Z Axis: false
       Name: Current View
-      Pitch: 1.0
+      Near Clip Distance: 0.009999999776482582
+      Pitch: 0.7549999356269836
       Target Frame: map
-      Yaw: 0.8
+      Yaw: 1.4454392194747925
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 846
-  Width: 1280
+  Height: 1016
+  Hide Left Dock: false
+  Hide Right Dock: false
+  QMainWindow State: 000000ff00000000fd0000000100000000000003bc0000039efc0200000006fb0000001a00640065007000740068005f00640069006c0061007400650064010000003d0000009b0000001600fffffffb000000100044006900730070006c00610079007301000000de00000105000000c900fffffffb0000001200530065006c0065006300740069006f006e01000001e90000007e0000005c00fffffffb0000001e0054006f006f006c002000500072006f0070006500720074006900650073010000026d0000007f0000005c00fffffffb0000000a0056006900650077007301000002f2000000a9000000a400fffffffb0000000800540069006d006501000003a10000003a0000003900ffffff000003be0000039e00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Selection:
+    collapsed: false
+  Time:
+    collapsed: false
+  Tool Properties:
+    collapsed: false
+  Views:
+    collapsed: false
+  Width: 1920
+  X: 0
+  Y: 27
+  depth_dilated:
+    collapsed: false

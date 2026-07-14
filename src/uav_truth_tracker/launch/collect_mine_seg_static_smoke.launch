@@ -1,0 +1,76 @@
+<launch>
+  <!-- Headless integration test for camera -> synchronized RGB/depth -> truth
+       projection -> YOLO segmentation files. It deliberately does not start PX4. -->
+  <arg name="dataset_dir" default="/tmp/mine_dataset_static_smoke"/>
+  <arg name="target_images" default="5"/>
+  <arg name="depth_visibility" default="true"/>
+  <arg name="session" default="static_smoke"/>
+  <arg name="domain_tag" default="smoke"/>
+  <arg name="seed" default="101"/>
+  <arg name="sample_rate" default="2.0"/>
+  <arg name="split" default="auto"/>
+  <arg name="camera_sampler" default="false"/>
+  <!-- The RGB-D sensor renders at 8 Hz. Three expensive label attempts per
+       simulation second keep the Python rasterizer ahead of the TF cache. -->
+  <arg name="camera_sampler_rate" default="3.0"/>
+  <arg name="camera_settle_time" default="0.10"/>
+  <arg name="scene_settle_time" default="0.25"/>
+  <arg name="depth_tolerance" default="0.008"/>
+  <arg name="sync_slop" default="0.04"/>
+  <arg name="positive_view_ratio" default="0.68"/>
+  <arg name="distractor_view_ratio" default="0.18"/>
+  <arg name="camera_z" default="3.0"/>
+  <arg name="mine_count" default="4"/>
+  <arg name="distractor_count" default="2"/>
+  <arg name="hard_distractor_ratio" default="0.25"/>
+  <arg name="extent" default="2.0"/>
+  <arg name="refresh_period" default="3.0"/>
+  <arg name="world" default="$(find uav_truth_tracker)/../../worlds/mine_dataset.world"/>
+  <arg name="camera_sdf" default="$(find uav_truth_tracker)/../../models/mine_depth_camera_static/model.sdf"/>
+
+  <env name="GAZEBO_MODEL_PATH"
+       value="$(find uav_truth_tracker)/../../models:$(find gazebo_models_worlds_collection)/models:$(find mobile_manipulator)/gazebo_models:/usr/share/gazebo-11/models:$(optenv GAZEBO_MODEL_PATH)"/>
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="$(arg world)"/>
+    <arg name="paused" value="false"/>
+    <arg name="gui" value="false"/>
+    <arg name="use_sim_time" value="true"/>
+  </include>
+  <node pkg="gazebo_ros" type="spawn_model" name="spawn_mine_camera"
+        args="-sdf -file $(arg camera_sdf) -model mine_camera_smoke -x 0 -y 0 -z $(arg camera_z)"/>
+  <node unless="$(arg camera_sampler)" pkg="tf2_ros" type="static_transform_publisher"
+        name="tf_smoke_mine_camera"
+        args="0 0 $(eval float(arg('camera_z')) - 0.02) 0.70710678 -0.70710678 0 0 map mine_camera_optical_frame"/>
+  <node if="$(arg camera_sampler)" pkg="uav_truth_tracker" type="mine_camera_view_sampler.py"
+        name="mine_camera_view_sampler" output="screen">
+    <param name="seed" value="$(eval int(arg('seed')) + 41)"/>
+    <param name="rate" value="$(arg camera_sampler_rate)"/>
+    <param name="extent" value="$(arg extent)"/>
+    <param name="positive_view_ratio" value="$(arg positive_view_ratio)"/>
+    <param name="distractor_view_ratio" value="$(arg distractor_view_ratio)"/>
+  </node>
+  <node pkg="uav_truth_tracker" type="mine_dataset_randomizer.py"
+        name="mine_dataset_randomizer" output="screen">
+    <param name="seed" value="$(arg seed)"/><param name="mine_count" value="$(arg mine_count)"/>
+    <param name="distractor_count" value="$(arg distractor_count)"/><param name="extent" value="$(arg extent)"/>
+    <param name="min_spacing" value="0.6"/><param name="refresh_period" value="$(arg refresh_period)"/>
+    <param name="hard_distractor_ratio" value="$(arg hard_distractor_ratio)"/>
+  </node>
+  <node pkg="uav_truth_tracker" type="collect_mine_seg_dataset_node.py"
+        name="collect_mine_seg_dataset" output="screen" required="true">
+    <param name="dataset_dir" value="$(arg dataset_dir)"/>
+    <param name="max_new_images" value="$(arg target_images)"/>
+    <param name="session" value="$(arg session)"/><param name="session_size" value="500"/>
+    <param name="split" value="$(arg split)"/>
+    <param name="sample_rate" value="$(arg sample_rate)"/><param name="negative_ratio" value="0.3"/>
+    <param name="allow_latest_tf" value="false"/><param name="world_name" value="static_smoke"/>
+    <param name="domain_tag" value="$(arg domain_tag)"/>
+    <param name="depth_visibility" value="$(arg depth_visibility)"/>
+    <param name="depth_tolerance" value="$(arg depth_tolerance)"/>
+    <param name="sync_slop" value="$(arg sync_slop)"/>
+    <param name="dedupe_hamming" value="-1"/>
+    <param name="require_camera_settle" value="$(arg camera_sampler)"/>
+    <param name="camera_settle_time" value="$(arg camera_settle_time)"/>
+    <param name="scene_settle_time" value="$(arg scene_settle_time)"/>
+  </node>
+</launch>

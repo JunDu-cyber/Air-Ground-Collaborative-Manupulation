@@ -24,22 +24,47 @@
   <arg name="forest_world_file" default="$(find mobile_manipulator)/worlds/outdoor_city.world"/>
   <arg name="gazebo_uav_model_name" default="iris_depth_camera"/>
 
+  <!-- 空地合并到一个世界时可覆盖：UAV 的 TF 子帧(默认 base_link，合并时传 uav_base_link
+       避免和 UGV base_link 撞) + 全局规划目标话题(默认 /move_base_simple/goal，合并时传
+       /uav/goal 避免和 UGV move_base 撞)。默认值保持原行为，单独跑/one_key 不受影响。
+       ★这两个 arg 必须在下面静态 TF 之前声明——相机/激光要挂在 UAV 自己的 base 帧上，
+         否则合并世界里 base_link=UGV，UAV 的激光就被挂到 UGV 上、点云跟着 UGV 跑(建图全乱)。 -->
+  <arg name="uav_child_frame" default="base_link"/>
+  <arg name="uav_goal_topic"  default="/move_base_simple/goal"/>
+  <!-- 合并世界:用户在世界/UGV 帧点 UAV 目标,但规划器/EGO 跑在 MAVROS 局部帧(原点=出生点)。
+       true 时 global_path_planner 用 Gazebo 真值把目标换算到局部帧(否则飞错地方/绕圈)。
+       单飞 false:本就同一帧。 -->
+  <arg name="uav_auto_align" default="false"/>
+  <!-- 真值取不到时世界->局部目标换算的兜底偏移(= UAV 出生点)。合并世界传 (0,-18)。 -->
+  <arg name="uav_align_off_x" default="0.0"/>
+  <arg name="uav_align_off_y" default="0.0"/>
+  <!-- 合并世界里有【真·UGV】(spawn_outdoor_city 起的带臂 Husky)，这里就别再起那个
+       给 UAV 单飞用的【假·UGV 占位模型】(ugv_robot_model_helper)——它会覆写 /robot_description
+       成 ugv_ 前缀的 URDF + 旧机械臂姿态、再起第二个 robot_state_publisher，和真 UGV 抢话题
+       → RViz 里 UGV 模型显示异常。单飞/one_key 默认 true 保持原行为。 -->
+  <arg name="start_ugv_helper" default="true"/>
+
+  <!-- ★合并世界用【Gazebo 真值】发布 map->uav_base_link，取代会卡死的 mavros_tf_bridge TF
+       (实测:UAV /pose 在动但点云只堆一个圆+地底下 -> mavros 桥的 TF 没跟上)。真值 TF 高可靠、
+       一直跟着真·无人机。tf 放在 MAVROS 局部系(真值 xy 减出生点; z 保留真值)，让点云仍在局部系、
+       和 /odom、global_planner、relay 一致，再由投影器固定偏移搬到世界帧显示。
+       use_truth_tf=true 时跑真值 TF 且不跑 mavros 桥 TF;单飞默认 false 保持原行为。 -->
+  <arg name="use_truth_tf" default="false"/>
+  <arg name="uav_spawn_x"  default="0.0"/>   <!-- UAV 出生点(局部系原点);真值TF减它落到局部系 -->
+  <arg name="uav_spawn_y"  default="0.0"/>
+
   <!-- ===== TF 静态变换 ===== -->
   <node pkg="tf2_ros" type="static_transform_publisher" name="tf_map_world"
         args="0 0 0 0 0 0 map world"/>
   <node pkg="tf2_ros" type="static_transform_publisher" name="tf_camera"
-        args="0.1 0 0 -1.5707963 0 -1.5707963 base_link camera_link"/>
+        args="0.1 0 0 -1.5707963 0 -1.5707963 $(arg uav_child_frame) camera_link"/>
   <node pkg="tf2_ros" type="static_transform_publisher" name="tf_lidar"
-        args="0 0 0.06 0 0 0 base_link uav0/velodyne_link"/>
+        args="0 0 0.06 0 0 0 $(arg uav_child_frame) uav0/velodyne_link"/>
 
   <!-- ===== 位姿 → TF + RViz marker ===== -->
-  <!-- 空地合并到一个世界时可覆盖：UAV 的 TF 子帧(默认 base_link，合并时传 uav_base_link
-       避免和 UGV base_link 撞) + 全局规划目标话题(默认 /move_base_simple/goal，合并时传
-       /uav/goal 避免和 UGV move_base 撞)。默认值保持原行为，单独跑/one_key 不受影响。 -->
-  <arg name="uav_child_frame" default="base_link"/>
-  <arg name="uav_goal_topic"  default="/move_base_simple/goal"/>
-  <node if="$(arg use_mavros)" pkg="uav_truth_tracker" type="mavros_tf_bridge.py"
-        name="mavros_tf_bridge" output="screen">
+  <!-- use_truth_tf 时不跑 mavros 桥的 TF(改用 gazebo_uav_marker 的真值 TF),避免双发冲突。 -->
+  <node if="$(eval use_mavros and not use_truth_tf)" pkg="uav_truth_tracker"
+        type="mavros_tf_bridge.py" name="mavros_tf_bridge" output="screen">
     <param name="odom_topic" value="/mavros/local_position/odom"/>
     <param name="frame_id" value="map"/>
     <param name="child_frame_id" value="$(arg uav_child_frame)"/>
@@ -61,6 +86,19 @@
     <param name="frame_id" value="map"/>
     <param name="uav_marker_topic" value="/gazebo_drone_visual"/>
     <param name="uav_path_topic" value="/gazebo_drone_path"/>
+    <!-- 灰色(同原 /drone_visual 观感)。此 marker 用 Gazebo 真值位姿 -> 永远在真实世界位置,
+         合并世界里用它显示 UAV(在世界帧),和对齐后的点云/高程图/UGV 重合。 -->
+    <param name="uav_color_r" value="0.30"/>
+    <param name="uav_color_g" value="0.30"/>
+    <param name="uav_color_b" value="0.35"/>
+    <!-- 真值 TF: map->uav_base_link 放在 MAVROS 局部系(真值 xy 减出生点; z 保留真值)。
+         use_truth_tf 时开启,30Hz,激光点云随真·无人机移动、整张图铺开。 -->
+    <param name="publish_tf"     value="$(arg use_truth_tf)"/>
+    <param name="tf_child_frame" value="$(arg uav_child_frame)"/>
+    <param name="tf_ref_x"       value="$(arg uav_spawn_x)"/>
+    <param name="tf_ref_y"       value="$(arg uav_spawn_y)"/>
+    <param name="tf_ref_z"       value="0.0"/>
+    <param name="publish_rate"   value="30.0"/>
     <param name="fallback_x" value="0.0"/>
     <param name="fallback_y" value="-18.0"/>
     <param name="fallback_z" value="1.5"/>
@@ -80,7 +118,7 @@
   <arg name="ugv_ws" default="$(env HOME)/Air-Ground-Collaborative-Manupulation"/>
   <arg name="ugv_urdf" default="$(arg ugv_ws)/src/husky_ur5_moveit_config/config/gazebo_husky_ur5.urdf"/>
   <node pkg="uav_truth_tracker" type="ugv_robot_model_helper.py" name="ugv_model_helper"
-        output="screen" if="$(eval arg('ugv_urdf') != '')">
+        output="screen" if="$(eval arg('ugv_urdf') != '' and start_ugv_helper)">
     <param name="urdf_file" value="$(arg ugv_urdf)"/>
     <param name="link_prefix" value="ugv_"/>
     <param name="root_frame" value="map"/>
@@ -103,20 +141,33 @@
     <arg name="output_topic" value="/uav0/mapping/points_world"/>
     <arg name="target_frame" value="map"/>
     <arg name="publish_rate" value="0.0"/>
+    <!-- ★合并世界(use_truth_tf)：用 Gazebo 真值直接投影激光,绕开 TF/odom/时间戳,
+         彻底免疫 sim 时间抖动导致的"点云只堆一个圆"。输出减出生点 xy -> MAVROS 局部系
+         (与下游 relay/地形/global_planner 一致)。 -->
+    <arg name="use_truth_projector" value="$(arg use_truth_tf)"/>
+    <arg name="truth_offset_x" value="$(arg uav_spawn_x)"/>
+    <arg name="truth_offset_y" value="$(arg uav_spawn_y)"/>
+    <arg name="gazebo_uav_model_name" value="$(arg gazebo_uav_model_name)"/>
     <arg name="imu_topic" value="/mavros/imu/data"/>
     <arg name="odom_topic" value="/mavros/local_position/odom"/>
     <!-- Use the odometry stamp for the filtered LiDAR cloud before TF projection.
          Gazebo LiDAR and MAVROS odom can be slightly offset in time; stamping
          with the odom used by the relay reduces map smearing while the UAV moves. -->
-    <arg name="stamp_with_odom" value="true"/>
+    <!-- use_truth_tf 时【不】按 /odom 重打戳:/odom 戳可能卡住,会让 projection 总按旧位姿投影
+         -> 点云只堆一处。改用激光自身当前戳,配合 force_latest_tf 用最新真值 TF 投影。 -->
+    <arg name="stamp_with_odom" value="$(eval 'false' if use_truth_tf else 'true')"/>
+    <!-- 永远用最新 TF 投影(忽略点云戳),彻底摆脱 /odom 戳卡住导致的"点云只堆一个圆"。 -->
+    <arg name="force_latest_tf" value="$(arg use_truth_tf)"/>
     <!-- Drop fast-turn / high-speed scans; they are the main source of smeared maps.
          放宽以"持续记录"：转弯门槛 0.8->1.5 rad/s(只有很快的自旋才丢，普通转弯照记)，
          odom 时效 0.30->1.0s(odom 偶尔抖动/滞后时也不再整片丢帧导致"建着建着不记了")。 -->
-    <arg name="max_linear_velocity" value="2.0"/>
+    <arg name="max_linear_velocity" value="3.0"/>
     <arg name="max_angular_velocity" value="0.0"/>
-    <arg name="max_odom_angular_velocity" value="1.5"/>
+    <!-- 4.0:正常巡航转弯不再丢帧(之前 1.5 一转弯就丢 -> 只在悬停处堆点、地图铺不开) -->
+    <arg name="max_odom_angular_velocity" value="$(eval '0.0' if use_truth_tf else '4.0')"/>
     <arg name="max_imu_age" value="999.0"/>
-    <arg name="max_odom_age" value="1.0"/>
+    <!-- use_truth_tf 时不靠 /odom 时效门(/odom 可能卡/老),设 999 不丢帧。 -->
+    <arg name="max_odom_age" value="$(eval '999.0' if use_truth_tf else '2.0')"/>
     <!-- Range filter: this lightweight LiDAR is 16m max. Keep a margin so max-range
          no-hit returns do not become a fake boundary shell in the map. -->
     <arg name="min_range" value="0.35"/>
@@ -137,8 +188,11 @@
     <arg name="enable_voxel_filter" value="false"/>
     <!-- Repeat the range filter after TF as a safety net. -->
     <arg name="enable_range_filter" value="true"/>
-    <arg name="allow_latest_tf_fallback" value="false"/>
-    <arg name="tf_lookup_timeout" value="0.20"/>
+    <!-- ★关键修复"地图只堆在一块、飞过去不铺开":飞行中 LiDAR 戳和 bridge 的 TF 戳难精确
+         对齐,fallback=false 会把这些帧整片丢掉 -> 只有近乎悬停的帧落进图。改 true:取最近一帧
+         TF(1.2m/s 下时差几十ms≈几厘米误差,可忽略),让飞行途中的点都铺进地图。 -->
+    <arg name="allow_latest_tf_fallback" value="true"/>
+    <arg name="tf_lookup_timeout" value="0.50"/>
     <!-- Map recorder: require repeated observations so single-frame boundary returns
          and pose jitter do not enter the saved map. -->
     <arg name="start_map_recorder" value="true"/>
@@ -163,14 +217,18 @@
     <arg name="map_ground_clearance" value="0.3"/>
     <arg name="map_obstacle_height_above_ground" value="0.45"/>
     <arg name="map_ground_xy_cell_size" value="0.25"/>
-    <arg name="map_ray_clearing_enabled" value="true"/>
+    <!-- The world/buildings/terrain are static.  Destructive ray clearing
+         removed previously saved ground when a later beam terminated on the
+         moving UGV; the downstream swept-footprint filter already removes
+         vehicle returns without making the traversability map non-monotonic. -->
+    <arg name="map_ray_clearing_enabled" value="false"/>
     <arg name="map_ray_clear_sensor_frame" value="uav0/velodyne_link"/>
     <arg name="map_ray_clear_max_range" value="15.0"/>
     <arg name="map_ray_clear_min_range" value="0.5"/>
     <arg name="map_ray_clear_step_size" value="0.20"/>
     <arg name="map_ray_clear_keep_last_voxels" value="3"/>
     <arg name="map_ray_clear_decimation" value="8"/>
-    <arg name="map_tf_lookup_timeout" value="0.20"/>
+    <arg name="map_tf_lookup_timeout" value="0.50"/>
   </include>
 
   <!-- ===== EGO-Planner (深度相机避障) ===== -->
@@ -211,9 +269,11 @@
     <arg name="cy" value="180.0"/>
     <arg name="fx" value="343.158"/>
     <arg name="fy" value="343.158"/>
-    <!-- 速度: 太快(>~1.5)点云来不及录 + 拖影(LiDAR→world 的 TF 滞后)。低空建图要稳，取 1.2 -->
+    <!-- 速度: 太快点云拖影 + EGO 轨迹易乱。低空建图要稳,max_vel 由上层给(合并世界 0.8);
+         加速度也调缓 1.5->1.0,轨迹更平顺不过冲。点云拖影靠【慢飞】压(真值投影器刻意只用最新
+         位姿、不对时间戳——这个重负载世界里 stamp 不可靠,按戳查位姿会让点云严重错位)。 -->
     <arg name="max_vel" value="$(arg max_vel)"/>
-    <arg name="max_acc" value="1.5"/>
+    <arg name="max_acc" value="1.0"/>
     <arg name="planning_horizon" value="8.0"/>
     <arg name="ground_filter_margin" value="$(arg ground_filter_margin)"/>
     <!-- 低空避障：横向感知范围 8→15m(配合深度 15m)，让 EGO 提前把楼建进障碍图、
@@ -263,17 +323,35 @@
     <param name="odom_topic"      value="$(arg odom_topic)"/>
     <param name="goal_topic"      value="$(arg uav_goal_topic)"/>
     <param name="output_topic"    value="/goal_elevated"/>   <!-- 直发 waypoint_generator，绕过 goal_elevator -->
-    <param name="goal_z"          value="$(arg flight_height)"/>
-    <param name="obstacle_height" value="1.5"/>     <!-- 高出【本地地面】>1.5m=突起(楼/树);缓坡山丘地面整体抬高、不算障碍→无人机飞越爬坡 -->
-    <!-- 既能绕楼、又能穿树林：只把占地>=此面积(m²)的大块(楼/墙)留给全局A*绕行，更小的(树)
-         滤掉、交给 EGO 局部避障穿过去。否则树林里 A* 被一堆"树墙"堵成无解、无人机原地不动。 -->
+    <param name="goal_z"          value="$(arg flight_height)"/>    <!-- 仅在无里程计高度时兜底 -->
+    <!-- 普通目标不再按沿途地面抬高：2D点击锁定当前z，显式3D目标保留原z。
+         只有目标XY本身在未膨胀障碍格内，才抬到已观测障碍顶部以上。 -->
+    <param name="zero_goal_z_epsilon" value="0.05"/>
+    <param name="goal_obstacle_clearance" value="1.5"/>
+    <param name="goal_z_reach_tolerance" value="0.5"/>
+    <!-- ★障碍判据 = 【最高点 高出本地地面 > obstacle_height】= 楼/树。用最高点对建图时楼底被
+         遮挡鲁棒(无人机在4m只扫到楼上半截,最高点仍高->照判障碍->A*绕)。曾试"结构最低面/变高度
+         钻顶"会把楼底没扫到的高楼误当高架空可飞过->不绕楼直冲撞楼,已回退。 -->
+    <param name="obstacle_height"   value="1.5"/>   <!-- 高出本地地面>1.5m=突起(楼/树),A* 水平绕 -->
+    <param name="max_z_step"        value="0.6"/>   <!-- 子目标高度每 tick 最多移这么多(m):起飞/换目标平滑升降 -->
+    <param name="obst_update_period" value="0.5"/>  <!-- 障碍图重算周期(s):tick 5Hz 复用缓存,省CPU -->
+    <!-- Robust per-cell vertical columns reject delayed/misaligned scan
+         extrema which previously joined flat terrain into a false red wall. -->
+    <param name="column_sample_capacity" value="96"/>
+    <param name="column_samples_per_frame" value="5"/>
+    <param name="column_min_samples" value="5"/>
+    <param name="column_low_quantile" value="0.10"/>
+    <param name="column_high_quantile" value="0.90"/>
+    <param name="start_clearance_radius" value="0.60"/>
+    <!-- 恢复原稳定门值：楼/墙交给全局 A*，小树与离散点交给 EGO，
+         避免林区在全局图上被连成封闭墙。 -->
     <param name="min_obstacle_area" value="10.0"/>
     <param name="ground_window"   value="2.0"/>     <!-- 本地地面估计窗口(m)，判"相对突起" -->
-    <param name="inflate"         value="1.5"/>      <!-- 障碍膨胀(m)：建图要贴近,留1.5m够避碰又能近距扫楼;太大(3)绕太远漏建图 -->
+    <param name="inflate"         value="1.5"/>      <!-- 障碍膨胀(m):回到之前能稳定绕楼的 1.5m(给无人机半径+余量,A* 路离楼够远) -->
     <param name="resolution"      value="0.5"/>
     <param name="half_extent"     value="100.0"/>    <!-- 全局图 ±100m -->
     <param name="reach_radius"    value="1.5"/>      <!-- 沿路推进的判定半径 -->
-    <param name="lookahead"       value="7.0"/>      <!-- 纯追踪萝卜点前瞻(贴着全局路喂EGO一条无碰短直线) -->
+    <param name="lookahead"       value="7.0"/>      <!-- 萝卜点前瞻(m):回到 7m,给 EGO 足够远的真目标持续往前飞(短了易在拐角退化卡死) -->
     <param name="min_replan_interval" value="0.5"/>  <!-- 重规划最小间隔，路稳定不乱变 -->
     <!-- safe_dist 必须 << inflate(1.5)，否则正常贴路飞就一直触发退后→来回飞。
          只在真危险(<0.8m, 比路的1.5m余量还近)才退后,且只退到刚好脱险,不大幅倒飞。 -->
@@ -281,9 +359,14 @@
     <param name="retreat_dist"    value="2.0"/>      <!-- 轻退2m脱险即可，别大幅倒飞 -->
     <param name="min_subgoal_z"   value="2.0"/>      <!-- 子目标最低高度(m)：地面噪点拉低估计时不把无人机往地上压 -->
     <param name="enable_retreat"  value="false"/>    <!-- 反应式贴楼退后默认关：局部避障交给 EGO，避免前进/后退来回振荡 -->
+    <param name="auto_align"      value="$(arg uav_auto_align)"/>   <!-- 世界帧目标->MAVROS局部帧 -->
+    <param name="align_model_name" value="$(arg gazebo_uav_model_name)"/>
+    <param name="fallback_off_x"  value="$(arg uav_align_off_x)"/>  <!-- 真值取不到时的兜底偏移 -->
+    <param name="fallback_off_y"  value="$(arg uav_align_off_y)"/>
   </node>
 
-  <!-- goal_elevator：仅在【不开全局规划】时用(直接把点击目标抬高发给 EGO)。
+  <!-- goal_elevator：仅在【不开全局规划】时用。2D点击保持当前高度，
+       带z的目标保留原高度，不再无条件改成 flight_height。
        开全局规划时由 global_path_planner 直发 /goal_elevated，这里不启动，避免双发冲突。 -->
   <node unless="$(arg use_global_planner)" pkg="forest_avoidance_utils"
         name="goal_elevator" type="goal_elevator.py" output="screen">

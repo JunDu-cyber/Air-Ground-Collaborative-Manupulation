@@ -8,15 +8,27 @@ add_compile_options(-std=c++17)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
+  actionlib_msgs
+  costmap_2d
   gazebo_ros
+  geometry_msgs
+  nav_msgs
+  pluginlib
+  rospy
   roscpp
   std_msgs
   sensor_msgs
+  std_srvs
+  tf2
+  tf2_geometry_msgs
+  tf2_ros
+  uav_truth_tracker
   urdf
   xacro
   actionlib
   move_base_msgs
   cv_bridge
+  dynamic_reconfigure
   image_transport
   message_generation
 )
@@ -62,6 +74,8 @@ catkin_python_setup()
 add_message_files(
   FILES
   Detection.msg
+  MineMission.msg
+  MineMissionEntry.msg
 )
 
 add_service_files(
@@ -69,8 +83,15 @@ add_service_files(
   DetectObjects.srv
 )
 
+add_action_files(
+  FILES
+  MineGrasp.action
+)
+
 generate_messages(
   DEPENDENCIES
+  actionlib_msgs
+  geometry_msgs
   std_msgs
   sensor_msgs
 )
@@ -105,7 +126,12 @@ generate_messages(
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-  CATKIN_DEPENDS gazebo_ros roscpp std_msgs sensor_msgs urdf xacro message_runtime
+  INCLUDE_DIRS include
+  LIBRARIES mine_hazard_layer
+  CATKIN_DEPENDS actionlib actionlib_msgs costmap_2d gazebo_ros geometry_msgs
+                 dynamic_reconfigure message_runtime move_base_msgs nav_msgs pluginlib roscpp rospy
+                 sensor_msgs std_msgs std_srvs tf2 tf2_geometry_msgs tf2_ros
+                 uav_truth_tracker urdf xacro
 )
 
 ###########
@@ -115,9 +141,16 @@ catkin_package(
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 include_directories(
-# include
+  include
   ${catkin_INCLUDE_DIRS}
 )
+
+add_library(mine_hazard_layer src/mine_hazard_layer.cpp)
+add_dependencies(mine_hazard_layer
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+)
+target_link_libraries(mine_hazard_layer ${catkin_LIBRARIES})
 
 ## Declare a C++ library
 # add_library(${PROJECT_NAME}
@@ -191,7 +224,24 @@ catkin_install_python(PROGRAMS
   scripts/agent.py
   scripts/terrain_costmap_bridge.py
   scripts/pcd_to_occupancy_map.py
+  scripts/generate_husky_ur5_urdf.py
+  scripts/mine_mission_manager.py
+  scripts/mock_mine_grasp_server.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+install(TARGETS mine_hazard_layer
+  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
+)
+
+install(DIRECTORY include/${PROJECT_NAME}/
+  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
+)
+
+install(FILES mine_hazard_plugins.xml
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )
 
 ## Mark executables for installation
@@ -228,6 +278,31 @@ catkin_install_python(PROGRAMS
 
 ## Add gtest based cpp test target and link libraries
 # catkin_add_gtest(${PROJECT_NAME}-test test/test_mobile_manipulator.cpp)
+if(CATKIN_ENABLE_TESTING)
+  catkin_add_nosetests(test/test_mine_mission_logic.py)
+  catkin_add_nosetests(test/test_ur5_joint_damping.py)
+  catkin_add_nosetests(test/test_wrist_camera_urdf.py)
+  find_package(rostest REQUIRED)
+  add_rostest_gtest(mine_hazard_layer_test
+    test/mine_hazard_layer.test
+    test/test_mine_hazard_layer.cpp
+  )
+  if(TARGET mine_hazard_layer_test)
+    add_dependencies(mine_hazard_layer_test
+      ${${PROJECT_NAME}_EXPORTED_TARGETS}
+      ${catkin_EXPORTED_TARGETS}
+    )
+    target_link_libraries(mine_hazard_layer_test
+      mine_hazard_layer
+      ${catkin_LIBRARIES}
+    )
+  endif()
+  add_rostest(test/mine_mission_success.test)
+  add_rostest(test/mine_mission_timeout.test)
+  add_rostest(test/mine_mission_server_gate.test)
+  add_rostest(test/mine_mission_active_at_goal.test)
+  add_rostest(test/mine_mission_safe_defer.test)
+endif()
 # if(TARGET ${PROJECT_NAME}-test)
 #   target_link_libraries(${PROJECT_NAME}-test ${PROJECT_NAME})
 # endif()
