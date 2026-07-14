@@ -1,0 +1,34 @@
+# THE DETECTOR SEAM.
+#
+# Every grasp source — analytic, GPD, GraspGen — advertises exactly this service, so
+# grasp_source:=analytic|gpd|graspgen swaps the server and the MTC task does not change
+# by one line. That is the whole point: the A/B between geometric candidate sampling
+# (GPD) and diffusion generative (GraspGen) has to run the same executor, same gripper,
+# same scene, or it measures nothing.
+
+# --- request ---
+# Coarse target position. In the mission this originates from the UAV detector (via
+# /detected_targets); in the harness it comes from the color detector. Either way it is
+# only a HINT — a 12 m-altitude detection is nowhere near grasp-accurate. The server is
+# expected to refine it from its own sensing.
+geometry_msgs/PointStamped target
+
+# Optional segmented object cloud. Leave empty and the server captures its own.
+# GPD needs this; the analytic server ignores it.
+sensor_msgs/PointCloud2 cloud
+---
+# --- response ---
+bool success
+string message
+
+# Ranked best-first. These are poses of **grasp_tcp** (the jaw center-line: +Z approach,
+# +X finger closing), NOT of ur5_tool0. Any frame conversion belongs in the server, never
+# downstream — that is exactly the mistake the legacy code made.
+geometry_msgs/PoseStamped[] grasps
+
+# Required gripper opening at each grasp, metres. The 2F-140 spans 0.136 m (open) to
+# ~0.008 m (closed); anything wider than the aperture must be filtered out by the server.
+float32[] width
+
+# Detector confidence, same order. The analytic server reports 1.0.
+float32[] score

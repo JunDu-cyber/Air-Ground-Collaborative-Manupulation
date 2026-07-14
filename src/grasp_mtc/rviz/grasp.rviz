@@ -1,0 +1,122 @@
+Panels:
+  - Class: rviz/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded: ~
+    Tree Height: 700
+  - Class: rviz/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz/Grid
+      Enabled: true
+      Name: Grid
+      Cell Size: 0.25
+      Color: 60; 60; 60
+      Plane Cell Count: 20
+      Reference Frame: base_link
+    - Class: rviz/TF
+      Enabled: true
+      Name: TF (grasp_tcp)
+      Frames:
+        All Enabled: false
+        grasp_tcp:
+          Value: true
+        realsense_camera_optical_frame:
+          Value: true
+      Marker Scale: 0.15
+      Show Arrows: false
+      Show Axes: true
+      Show Names: true
+    - Class: moveit_rviz_plugin/PlanningScene
+      Enabled: true
+      Name: Planning Scene
+      Move Group Namespace: ""
+      Planning Scene Topic: /move_group/monitored_planning_scene
+      Robot Description: robot_description
+      Scene Geometry:
+        Scene Alpha: 0.85
+        Show Scene Geometry: true
+      Scene Robot:
+        Robot Alpha: 0.5
+        Show Robot Collision: false
+        Show Robot Visual: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Name: GRASP JAWS (grasp_viz)
+      Marker Topic: /grasp_viz/jaws
+      Queue Size: 100
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Name: GPD raw markers
+      Marker Topic: /detect_grasps/plot_grasps
+      Queue Size: 100
+    - Class: rviz/MarkerArray
+      Enabled: false
+      Name: candidates (arrows, analytic)
+      Marker Topic: /analytic_grasp_server/candidates
+      Queue Size: 100
+    - Class: rviz/MarkerArray
+      Enabled: false
+      Name: candidates (arrows, gpd)
+      Marker Topic: /gpd_grasp_server/candidates
+      Queue Size: 100
+    - Class: rviz/PointCloud2
+      Enabled: true
+      Name: segmented mine cloud
+      Topic: /gpd_grasp_server/segmented_cloud
+      Alpha: 1
+      Color: 255; 200; 0
+      Color Transformer: FlatColor
+      Size (m): 0.004
+      Style: Points
+      Queue Size: 10
+    - Class: rviz/Marker
+      Enabled: true
+      Name: detected detonator
+      Marker Topic: /landmine_marker
+      Queue Size: 100
+    - Class: rviz/Image
+      Enabled: true
+      Name: landmine.onnx detections
+      Image Topic: /landmine/detections/image
+      Transport Hint: raw
+    - Class: rviz/Image
+      Enabled: false
+      Name: wrist camera
+      Image Topic: /camera/color/image_raw
+      Transport Hint: raw
+    - Class: rviz/RobotModel
+      Enabled: false
+      Name: RobotModel
+      Robot Description: robot_description
+  Enabled: true
+  Global Options:
+    Background Color: 32; 32; 36
+    Fixed Frame: base_link
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz/Interact
+    - Class: rviz/MoveCamera
+    - Class: rviz/Select
+  Value: true
+  Views:
+    Current:
+      Class: rviz/Orbit
+      Distance: 2.2
+      Focal Point:
+        X: 0.6
+        Y: 0
+        Z: 0
+      Name: Current View
+      Pitch: 0.45
+      Yaw: 3.6
+      Target Frame: base_link
+    Saved: ~
+Window Geometry:
+  Height: 1000
+  Width: 1600
+  Displays:
+    collapsed: false

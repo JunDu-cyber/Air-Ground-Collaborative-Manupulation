@@ -1,0 +1,88 @@
+<launch>
+  <!-- ====================================================================
+       Manipulation layer: perception -> grasp source -> MTC executor.
+
+       Additive. Starts no planner, no odometry, no UAV — so it drops into either
+       the standalone harness or the full air-ground mission unchanged:
+
+         roslaunch mobile_manipulator grasp_test.launch          # then this
+         roslaunch grasp_mtc manipulation.launch
+
+       THE SEAM: grasp_source swaps ONLY the server behind /get_grasps. The MTC task
+       (grasp_task.py) is identical in all three cases — which is the only way an
+       A/B between GPD and GraspGen measures the detector instead of the plumbing.
+
+         analytic : top-down pose from the landmine's known geometry. No learning.
+                    The CONTROL ARM, and the thing to get working first.
+         gpd      : Grasp Pose Detection (geometric candidate sampling + CNN scoring).
+         graspgen : NVIDIA GraspGen (diffusion generative). Gated on the Robotiq-2F-140
+                    checkpoint actually being public — verify before relying on it.
+       ==================================================================== -->
+
+  <arg name="grasp_source" default="analytic"
+       doc="analytic | gpd | graspgen"/>
+  <arg name="planning_frame" default="base_link"/>
+  <arg name="plan_only" default="false"
+       doc="plan and report the stage graph, but do not move the robot"/>
+  <arg name="detector" default="color"
+       doc="color | onnx  -- how the MINE is found. The DETONATOR is always localised the same
+            way (yellow blob -> centroid -> minAreaRect yaw -> depth), because the grasp needs
+            it to a couple of millimetres and models/landmine.onnx has a single class covering
+            the WHOLE mine. onnx simply gates the yellow search on a mine the network actually
+            found, which is what stops it grasping any yellow object in frame."/>
+
+  <!-- ===== Perception: colour mock for the (not yet built) UAV vision detector =====
+       The landmine prop is colour-coded on purpose: yellow 40x40x60 mm detonator on a red
+       136 mm disc. So an HSV threshold is an unambiguous segmentation of the exact PART we
+       must grasp. Measured 1.7 mm against Gazebo truth. -->
+  <node pkg="grasp_mtc" type="landmine_detector.py" name="landmine_detector" output="screen">
+    <param name="target_frame" value="$(arg planning_frame)"/>
+    <!-- On demand, not streaming: the grasp loop wants a detection at the moment the arm
+         is at the look pose, not a 2 Hz feed of stale viewpoints. -->
+    <param name="continuous"   value="false"/>
+    <param name="backend"      value="$(arg detector)"/>
+  </node>
+
+  <!-- The learned detector: YOLO11s-seg, models/landmine.onnx, one class "landmine".
+       TensorRT, GPU, on demand. The FIRST call builds the engine from the ONNX and caches it,
+       which takes a minute or two and looks exactly like a hang. It is not. -->
+  <node if="$(eval arg('detector')=='onnx')"
+        pkg="mobile_manipulator" type="trt_landmine_node" name="trt_landmine_node"
+        output="screen"/>
+
+  <!-- ===== The grasp source (all advertise /get_grasps) ===== -->
+  <node if="$(eval arg('grasp_source')=='analytic')"
+        pkg="grasp_mtc" type="analytic_grasp_server.py" name="analytic_grasp_server"
+        output="screen">
+    <param name="planning_frame" value="$(arg planning_frame)"/>
+  </node>
+
+  <!-- GPD: built and hand-geometry-calibrated for the 2F-140 already
+       (gpd_ros/config/husky_ur5_gpd.cfg), but NOTHING has ever launched it — the legacy
+       pipeline just timed out after 20 s and silently used a heuristic. -->
+  <include if="$(eval arg('grasp_source')=='gpd')"
+           file="$(find gpd_ros)/launch/husky_ur5_gpd.launch"/>
+  <node if="$(eval arg('grasp_source')=='gpd')"
+        pkg="grasp_mtc" type="gpd_grasp_server.py" name="gpd_grasp_server" output="screen">
+    <param name="planning_frame" value="$(arg planning_frame)"/>
+    <!-- The cloud handed to GPD is the WHOLE MINE; the samples it searches are the DETONATOR
+         only. Mine mask from colour by default: landmine.onnx cannot see this prop (best score
+         0.0012 on a frame with the mine in plain view). Set segmentation:=onnx once it can. -->
+    <param name="segmentation"   value="$(arg detector)"/>
+  </node>
+
+  <!-- NOTE: there is deliberately NO gazebo_grasp_fix event republisher here any more.
+       grasp_fix cannot detect a grasp on this gripper: it looks for two OPPOSING CONTACT
+       FORCES, and the 2F-140's mimic joints are kinematic (SetPosition), so the fingers exert
+       no force at all. Measured across 7 trials, its "attach" fired at finger_joint 0.4254,
+       0.4387, 0.4413, 0.480, 0.495 and even 0.0017 (jaws WIDE OPEN) for one and the same 40 mm
+       block. The grasp is an explicit weld instead (gazebo_link_attacher); see grasp_task.py. -->
+
+  <!-- ===== MTC executor (identical for every grasp_source) ===== -->
+  <node pkg="grasp_mtc" type="grasp_task.py" name="grasp_task" output="screen">
+    <param name="planning_frame" value="$(arg planning_frame)"/>
+    <param name="plan_only"      value="$(arg plan_only)"/>
+    <param name="detect_service" value="/landmine_detector/detect_once"/>
+  </node>
+
+</launch>

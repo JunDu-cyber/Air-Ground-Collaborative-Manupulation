@@ -6,7 +6,20 @@
   <node name="detect_grasps" pkg="gpd_ros" type="detect_grasps" output="screen">
 
     <!-- 0: PointCloud2, 1: CloudIndexed, 2: CloudSamples -->
-    <param name="cloud_type" value="2" />
+    <!-- 0 = plain sensor_msgs/PointCloud2, NOT 2 (CloudSamples).
+       CloudSamples looks like the right message , it carries the "points at which to search"
+       that we want , but gpd_ros's CloudSamples path is BROKEN and takes the node down with it.
+       Its initCloudCamera() sizes an Eigen matrix as Zero(view_points, cloud->size()) and then
+       writes camera_source(msg.camera_source[i], i) for every i in msg.camera_source; gpd's
+       Cloud constructor takes a PointCloudRGB (field "rgb", float) while gpd_ros hands it a
+       PointCloudRGBA (field "rgba", uint32). The result is an out-of-bounds write with no bounds
+       check, heap corruption, and a SIGSEGV a few frames later inside Cloud::setSamples. Verified
+       under gdb, with a message proven well-formed (17019 points, 17019 camera_source,
+       1 view_point, 204 samples, all sizes matching).
+       The plain-cloud path uses a different constructor, Cloud(cloud, 0, view_points), with no
+       camera_source at all, and does not crash. We get "search only the detonator" by simply
+       SENDING only the detonator: see grasp_mtc/scripts/gpd_grasp_server.py. -->
+    <param name="cloud_type" value="0" />
     <param name="cloud_topic" value="/gpd_cloud" />
 
     <!-- optional separate samples topic (unused: samples ride in CloudSamples) -->

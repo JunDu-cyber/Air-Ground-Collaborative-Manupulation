@@ -1,0 +1,87 @@
+<launch>
+  <!-- ====================================================================
+       THE GRASP STACK, in one command.
+
+           roslaunch grasp_mtc grasp_stack.launch                    # analytic, colour, GUI+RViz
+           roslaunch grasp_mtc grasp_stack.launch grasp_source:=gpd  # GPD instead
+           roslaunch grasp_mtc grasp_stack.launch gui:=false rviz:=false   # for trial campaigns
+
+       Then, to pick:  rosservice call /grasp/execute
+
+       This is the bench rig (grasp_test.launch: one Husky, one mine, no UAV, no tour). The
+       MISSION path is airground_takeoff.sh, which does not yet start move_group or call
+       /grasp/execute on arrival. Closing that loop is Phase 2.4/3.1, and it is still open.
+
+       TWO THINGS WORTH KNOWING BEFORE YOU WATCH IT
+
+       1. THE JAWS NEVER TOUCH THE MINE, and that is the fix, not a bug. They close to a 58.9 mm
+          gap around a block that presents ~41.7 mm, leaving ~8.6 mm of air per side. The 2F-140's
+          mimic joints are kinematic (SetPosition), so the fingers exert NO force and cannot grip
+          at any commanded angle; the mine is carried by an explicit weld. Commanding them
+          shut used to drive the pads 16.2 mm INTO the block, and the solver threw the robot
+          across the world. See grasp_task.py.
+
+       2. THE BASE IS WELDED TO THE GROUND FOR THE DURATION OF THE PICK. The Husky's wheels are
+          velocity-controlled with no position hold, so nothing resists the arm: MERELY REACHING
+          the grasp pose displaced the base 0.030 m and lifted it 26 mm, before touching
+          anything. The brake is released on every exit path.
+       ==================================================================== -->
+
+  <!-- ===== what to run ===== -->
+  <arg name="grasp_source" default="analytic"
+       doc="analytic | gpd | graspgen. Swaps ONLY the server behind /get_grasps"/>
+  <arg name="detector" default="color"
+       doc="color | onnx. How the MINE is found. onnx (models/landmine.onnx) currently CANNOT
+            see this prop: best score 0.0012 on a frame with the mine in plain view. It is a
+            domain gap, not a bug: the model was trained on photographs of real mines and ours
+            is a flat-shaded red disc with a yellow cube. The wrapper is built and correct and is
+            one word away the moment the model is fine-tuned on sim renders."/>
+  <arg name="planning_frame" default="base_link"/>
+  <arg name="plan_only" default="false"
+       doc="plan and print the MTC stage tree, but do not move the robot"/>
+
+  <!-- ===== how to show it ===== -->
+  <arg name="gui" default="true" doc="Gazebo client"/>
+  <arg name="rviz" default="true" doc="RViz, with the grasp displays"/>
+  <arg name="software_gl" default="false"
+       doc="RViz segfaults at random on this machine's OGRE 1.9 + NVIDIA combination. If it dies
+            on you, set this true."/>
+
+  <!-- ===== where the mine is ===== -->
+  <arg name="mine_x" default="0.75"
+       doc="MEASURED reachable band for a top-down ground grasp is x in [0.60, 1.05] m from
+            base_link, with a HARD CLIFF at 0.55. 0.75 is the centre of it. Move this and you
+            will get IK failures that look like planner bugs."/>
+  <arg name="mine_y" default="0.0"/>
+  <arg name="mine_z" default="0.0"/>
+
+  <!-- ===== 1. the world, the robot, the controllers, move_group ===== -->
+  <include file="$(find mobile_manipulator)/launch/grasp_test.launch">
+    <arg name="gui"          value="$(arg gui)"/>
+    <arg name="rviz"         value="false"/>   <!-- we start our own, with the grasp displays -->
+    <arg name="software_gl"  value="$(arg software_gl)"/>
+    <arg name="mine_x"       value="$(arg mine_x)"/>
+    <arg name="mine_y"       value="$(arg mine_y)"/>
+    <arg name="mine_z"       value="$(arg mine_z)"/>
+  </include>
+
+  <!-- ===== 2. perception -> grasp source -> MTC executor ===== -->
+  <include file="$(find grasp_mtc)/launch/manipulation.launch">
+    <arg name="grasp_source"   value="$(arg grasp_source)"/>
+    <arg name="detector"       value="$(arg detector)"/>
+    <arg name="planning_frame" value="$(arg planning_frame)"/>
+    <arg name="plan_only"      value="$(arg plan_only)"/>
+  </include>
+
+  <!-- ===== 3. the grasp visualiser =====
+       Draws the REAL JAWS at every candidate, not an arrow. An arrow cannot tell you whether the
+       pads straddle the detonator or close on thin air, and that distinction is exactly what the
+       legacy pipeline got wrong for months. It is also the plan's acceptance check for the GPD
+       adapter: GPD's own markers are on /detect_grasps/plot_grasps, ours on /grasp_viz/jaws, in
+       the same frame. If they do not coincide, the adapter is wrong. -->
+  <node pkg="grasp_mtc" type="grasp_viz.py" name="grasp_viz" output="screen"/>
+
+  <node if="$(arg rviz)" pkg="rviz" type="rviz" name="grasp_rviz" respawn="true"
+        args="-d $(find grasp_mtc)/rviz/grasp.rviz"/>
+
+</launch>
