@@ -57,6 +57,21 @@
   <arg name="elev_input_topic"
        value="$(eval '/uav0/mapping/velodyne_points_gated' if arg('enable_gate') else '/uav0/mapping/velodyne_points_sensor')"/>
 
+  <!-- Who owns elevation_mapping. There can be exactly ONE node by that name, and
+       cmu_planner.launch also starts one when cost_source:=elevation — running both
+       is a name collision and roslaunch silently kills one of the two maps.
+
+       start_elevation:=true  (default, standalone use): this launch owns the map, fed
+                              by the UAV cloud alone (elevation_mapping_uav_live.yaml).
+       start_elevation:=false (airground_takeoff.sh): cmu_planner owns the single map,
+                              fusing the UGV's VLP-16 AND this UAV cloud as a second
+                              input source (uav_prior:=true). That path needs the GATED
+                              topic, so pass enable_gate:=true with it. Everything else
+                              here — the anchor, the gate, uav_pose_cov_publisher (which
+                              feeds the UAV source's per-source covariance lever arm) —
+                              still runs and is still required. -->
+  <arg name="start_elevation" default="true"/>
+
   <!-- NOTE: the UGV (Husky+UR5) is spawned + localized separately by
        airground_takeoff.sh during the Gazebo paused window (so the -J arm-stow
        pose is held). It is NOT spawned here. -->
@@ -119,8 +134,10 @@
     <remap from="~output" to="/uav0/mapping/velodyne_points_gated"/>
   </node>
 
-  <!-- ===== 4. Egocentric elevation mapping (live UAV cloud + real MAVROS cov) ===== -->
-  <node pkg="elevation_mapping" type="elevation_mapping" name="elevation_mapping" output="screen">
+  <!-- ===== 4. Egocentric elevation mapping (live UAV cloud + real MAVROS cov) =====
+       Skipped when start_elevation:=false — cmu_planner.launch owns the map then. -->
+  <node if="$(arg start_elevation)"
+        pkg="elevation_mapping" type="elevation_mapping" name="elevation_mapping" output="screen">
     <rosparam command="load" file="$(find mobile_manipulator)/config/elevation_mapping_uav_live.yaml"/>
     <rosparam command="load" file="$(find mobile_manipulator)/config/elevation_postprocessor.yaml"/>
     <!-- Override the config's input topic: feed the gated cloud only when the gate

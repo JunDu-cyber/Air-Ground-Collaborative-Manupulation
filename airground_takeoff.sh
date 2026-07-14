@@ -178,30 +178,89 @@ roslaunch mobile_manipulator lidar_odometry.launch odom_source:=dlio self_filter
 echo "[airground] waiting 8s for DLIO to initialize (odom->base_link) ..."
 sleep 8
 
-# 2.6 UGV CMU local planner + target tour. Lets the UGV navigate to the targets
-#     the UAV camera detects. The UGV stays PUT until you call /ugv/start_tour
-#     (the planner is idle with no goal, target_tour waits for the trigger), so it
-#     is safe to start now during the UAV mapping epoch. cost_source=terrain_analysis
-#     uses the UGV's own LiDAR terrain (independent of the UAV map). Detected
-#     targets arrive on /detected_targets (the reserved UAV-detector seam).
+# 2.6 UGV CMU local planner + target tour, matching egocentric_nav.launch's Phase-B
+#     stack: nav=cmu, cost_source=elevation, global_planner=far.
+#
+#     This node OWNS the one and only elevation_mapping (see start_elevation:=false
+#     passed to airground_egocentric.launch below). It fuses TWO input sources into a
+#     single map: the UGV's own self-filtered VLP-16, and — with uav_prior:=true — the
+#     UAV's aerial LiDAR, each with its own covariance lever arm. The UGV only sees
+#     line of sight; the UAV at 12 m sees over the hill, which is the entire point of
+#     the air-ground stack.
+#
+#     uav_prior subscribes to /uav0/mapping/velodyne_points_gated, so airground_
+#     egocentric.launch MUST run with enable_gate:=true or that topic never exists and
+#     the aerial source stays silent. It also needs /uav/pose_cov, still published there.
+#
+#     The 40 m default map cannot even reach the hill at y=30, so the aerial prior would
+#     have nowhere to land: enlarge to 120 m and coarsen to 0.35 m (118k cells).
+#
+#     FAR (global_planner:=far) owns /way_point and needs cost_source:=elevation, whose
+#     postprocessor derives the traversability layer feeding /terrain_map_ext. The launch
+#     already refuses to start terrain_analysis_ext alongside it (they would both publish
+#     /terrain_map_ext and fight).
+#
+#     The UGV stays PUT until you call /ugv/start_tour (planner idle with no goal,
+#     target_tour waits for the trigger), so it is safe to start during the UAV mapping
+#     epoch. Detected targets arrive on /detected_targets (the UAV-detector seam).
 UGV_NAV=${UGV_NAV:-true}
+UGV_COST_SOURCE=${UGV_COST_SOURCE:-elevation}
+UGV_GLOBAL_PLANNER=${UGV_GLOBAL_PLANNER:-far}
+UGV_UAV_PRIOR=${UGV_UAV_PRIOR:-true}
+UGV_MAP_SIZE=${UGV_MAP_SIZE:-120}
+UGV_MAP_RES=${UGV_MAP_RES:-0.35}
 if [ "$UGV_NAV" = "true" ]; then
-  echo "[airground] starting UGV CMU planner + target tour ..."
+  echo "[airground] starting UGV CMU planner (cost=$UGV_COST_SOURCE global=$UGV_GLOBAL_PLANNER uav_prior=$UGV_UAV_PRIOR) + target tour ..."
   gnome-terminal --tab --title="3c_UGV_NAV" -- bash -c "
 source /opt/ros/noetic/setup.bash && \
 source '$EGO_WS/devel/setup.bash' && \
 export ROS_PACKAGE_PATH='$UGV_ROS_PACKAGE_PATH':\$ROS_PACKAGE_PATH && \
-roslaunch mobile_manipulator cmu_planner.launch cost_source:=terrain_analysis maxSpeed:=1.0; exec bash"
+roslaunch mobile_manipulator cmu_planner.launch \
+  cost_source:='$UGV_COST_SOURCE' \
+  global_planner:='$UGV_GLOBAL_PLANNER' \
+  uav_prior:='$UGV_UAV_PRIOR' \
+  map_size:='$UGV_MAP_SIZE' \
+  map_resolution:='$UGV_MAP_RES' \
+  maxSpeed:=1.0; exec bash"
   echo "[airground] UGV nav up (idle until: rosservice call /ugv/start_tour)"
 fi
+
+# 2.7 Derive who owns elevation_mapping, so the two launches cannot both start one.
+#     cmu_planner starts a node named `elevation_mapping` iff cost_source=elevation;
+#     airground_egocentric.launch starts one named `elevation_mapping` too. Exactly one
+#     may exist. Derive rather than hard-code, so UGV_NAV=false or
+#     UGV_COST_SOURCE=terrain_analysis still leaves someone owning a map.
+if [ "$UGV_NAV" = "true" ] && [ "$UGV_COST_SOURCE" = "elevation" ]; then
+  AG_START_ELEVATION=false      # cmu_planner owns the (UGV + UAV fused) map
+else
+  AG_START_ELEVATION=true       # nobody else would: fall back to the UAV-only map
+fi
+# The gate is what publishes the topic uav_prior subscribes to, so it must be on
+# whenever cmu_planner is fusing the aerial source.
+if [ "$AG_START_ELEVATION" = "false" ] && [ "$UGV_UAV_PRIOR" = "true" ]; then
+  AG_ENABLE_GATE=${AG_ENABLE_GATE:-true}
+else
+  AG_ENABLE_GATE=${AG_ENABLE_GATE:-false}
+fi
+echo "[airground] elevation map owner: $([ "$AG_START_ELEVATION" = "false" ] && echo 'cmu_planner (UGV+UAV fused)' || echo 'airground_egocentric (UAV only)') ; gate=$AG_ENABLE_GATE"
 
 # 3. MAVROS.
 gnome-terminal --tab --title="4_MAVROS" -- bash -c "source /opt/ros/noetic/setup.bash && roslaunch '$MAVROS_PX4_LAUNCH' fcu_url:=\"udp://:14540@127.0.0.1:14580\"; exec bash"
 echo "[airground] waiting ${MAVROS_WAIT}s for MAVROS ..."
 sleep "$MAVROS_WAIT"
 
-# 4. ROS layer: UAV mapping (prefixed) + egocentric elevation map (UGV already up).
-echo "[airground] starting airground_egocentric.launch (UAV mapping + UGV-centric elevation map) ..."
+# 4. ROS layer: UAV mapping (prefixed) + the anchor + the aerial cloud feed.
+#    start_elevation:=false — cmu_planner (step 2.6) owns the single elevation_mapping
+#    node. Starting one here too is a NAME COLLISION and roslaunch silently kills one of
+#    the two maps. What still runs here and is still load-bearing: the odom->uav0/map_local
+#    anchor, the altitude gate, and uav_pose_cov_publisher (/uav/pose_cov), which supplies
+#    the per-source covariance lever arm for the UAV input in cmu_planner's map.
+#
+#    enable_gate:=true — REQUIRED by uav_prior, whose config subscribes specifically to
+#    /uav0/mapping/velodyne_points_gated. With the gate off that topic never exists and the
+#    aerial prior silently contributes nothing. (This launch defaults the gate OFF for its
+#    own standalone use; the air-ground path needs it ON.)
+echo "[airground] starting airground_egocentric.launch (UAV mapping + anchor; cmu_planner owns the map) ..."
 gnome-terminal --tab --title="5_AirGround_ROS" -- bash -c "
 source /opt/ros/noetic/setup.bash && \
 source '$EGO_WS/devel/setup.bash' && \
@@ -210,6 +269,8 @@ export PYTHONPATH='$EGO_WS':\$PYTHONPATH && \
 roslaunch mobile_manipulator airground_egocentric.launch \
   egocentric:=true \
   rviz:='$START_RVIZ' \
+  start_elevation:='$AG_START_ELEVATION' \
+  enable_gate:='$AG_ENABLE_GATE' \
   uav_spawn_x:='$SPAWN_X' uav_spawn_y:='$SPAWN_Y' uav_spawn_z:='$MAP_LOCAL_Z' \
   flight_height:='$FLIGHT_H' \
   ; exec bash"
