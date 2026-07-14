@@ -79,6 +79,7 @@ add_message_files(
 add_service_files(
   FILES
   DetectObjects.srv
+  DetectLandmines.srv
 )
 
 generate_messages(
@@ -168,6 +169,23 @@ else()
         ${catkin_LIBRARIES} 
         ${OpenCV_LIBRARIES} 
         nvinfer 
+        nvonnxparser
+        ${CUDA_LIBRARIES}
+        ${Boost_LIBRARIES}
+    )
+
+    # The landmine detector: YOLO11s-seg (models/landmine.onnx, 1 class). Separate node, not a
+    # flag on trt_yolo_node, because a SEGMENTATION model has a different output contract
+    # (two tensors, mask coefficients + prototypes) and a different input size (960 vs 640).
+    add_executable(trt_landmine_node
+        src/trt_landmine_node.cc
+        src/TRT_InferenceEngine/TensorRT_InferenceEngine.cpp
+    )
+    add_dependencies(trt_landmine_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+    target_link_libraries(trt_landmine_node
+        ${catkin_LIBRARIES}
+        ${OpenCV_LIBRARIES}
+        nvinfer
         nvonnxparser
         ${CUDA_LIBRARIES}
         ${Boost_LIBRARIES}

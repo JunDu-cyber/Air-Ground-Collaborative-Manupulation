@@ -1,0 +1,22 @@
+# Landmine instance segmentation (YOLO11s-seg, models/landmine.onnx, 1 class: "landmine").
+#
+# Deliberately NOT DetectObjects.srv. That service returns bounding boxes only, and a box is
+# not enough here: the grasp needs the DETONATOR located to a couple of millimetres and its
+# YAW recovered (a 45 deg yaw error is a corner grasp). A box gives neither. The mask does.
+#
+# The model finds the WHOLE MINE (disc + detonator), not the detonator alone -- its one class
+# is "landmine". So the mask is the region of interest, and the detonator is localised inside
+# it (see grasp_mtc/scripts/landmine_detector.py). That split is the point: the learned model
+# does the robust "is there a mine, and where", and the geometry does the precise "where
+# exactly do I put the jaws".
+sensor_msgs/Image image
+---
+# One entry per detected mine, ranked by confidence.
+mobile_manipulator/Detection[] detections
+
+# One mask per detection, SAME INDEX as detections[], mono8, SAME SIZE AS THE REQUEST IMAGE
+# (the network runs at 960x960; these are already scaled back). 255 = mine, 0 = not.
+sensor_msgs/Image[] masks
+
+sensor_msgs/Image annotated_image
+float32 inference_time_ms
