@@ -13,11 +13,94 @@
         <chain base_link="ur5_base_link" tip_link="ur5_tool0"/>
     </group>
     <!-- Robotiq 2F-140: single actuated joint; all other finger joints mimic it.
-         Group name kept as hand_e_gripper to stay consistent with master_control
-         and the OMPL/STOMP planner configs that reference it. -->
-    <group name="hand_e_gripper">
+         (Renamed from the legacy "hand_e_gripper", a leftover from the Hand-E era —
+         the gripper has been a 2F-140 for a long time.) -->
+    <group name="gripper">
         <joint name="finger_joint"/>
     </group>
+
+    <!-- End effector. There was none before, so MoveIt had no EE registered and no
+         attach/detach semantics to hang a grasp on. grasp_tcp (defined in the URDF) is
+         THE grasp frame: +Z approach, +X finger-closing, origin at the jaw center-line. -->
+    <end_effector name="gripper_ee" parent_link="ur5_tool0" group="gripper" parent_group="ur5_arm"/>
+
+    <!-- ===== Named states =====
+         There were ZERO group_states before; every pose was a hardcoded float array in
+         Python. finger_joint: 0 = fully open (136 mm gap), 0.695 = closed (8 mm).
+         The gap is NOT linear in the joint angle (2F-140 four-bar linkage) — measured:
+             q=0.000 -> 136.0 mm      q=0.350 -> 75.9 mm
+             q=0.536 ->  40.0 mm      q=0.695 ->  8.3 mm
+         "closed" = 0.556 -> 36 mm, i.e. a 4 mm squeeze on the 40 mm landmine detonator. -->
+    <group_state name="open" group="gripper">
+        <joint name="finger_joint" value="0.0"/>
+    </group_state>
+    <!-- PAD GAP vs finger_joint. Computed by FK straight from this robot's URDF (mimic
+         multipliers read from the URDF, not guessed), and independently confirmed against a
+         teammate's measured table -- all six shared rows agree to three decimals:
+
+             q      0.000   0.400   0.450   0.480   0.490   0.495   0.500   0.513   0.580
+             gap   128.5    58.9    49.3    43.46   41.50   40.53   39.55   37.00   23.76  mm
+
+         READ THAT LAST COLUMN. The detonator is a 40 mm block, so the old "closed" state of
+         0.58 was commanding the pads 16.2 mm INSIDE it -- 8 mm of interpenetration per pad.
+
+         That is not a grip. This gripper CANNOT grip: every mimic joint is driven by
+         MimicJointPlugin's SetPosition() (a kinematic teleport) and right_outer_knuckle_joint
+         is itself a mimic, so the whole right finger is kinematic -- forced to its commanded
+         angle regardless of contact, exerting zero force. It never stalls; it PENETRATES.
+         Measured: finger_joint reached its commanded 0.580 with the block between the pads.
+         The penetration comes back as solver impulses that eject the mine and throw the 46 kg
+         Husky. THAT is "the roll" -- a contact-solver artefact, not a centre-of-mass effect.
+
+         (An earlier version of this comment claimed "measured: q=0.537 -> 40 mm" and reasoned
+         from it that 0.58 over-closed by a harmless ~7 mm. Both numbers were invented. 40 mm
+         is at q~0.495, and 0.58 over-closes by 16 mm. Every conclusion drawn from that curve
+         was wrong.)
+
+         So nothing plans to "closed" any more. grasp_task.py closes the jaws in RUNGS and
+         STOPS ON CONTACT (gazebo_grasp_fix's attach event), which is the only way to reach a
+         40 mm block without commanding a gap narrower than it. This state survives only so the
+         named pose stays truthful: 0.500 is the ladder's last rung, a 39.55 mm gap, i.e. the
+         0.45 mm of squeeze the ladder will settle at if it runs to the end.
+
+         There is deliberately NO "pregrasp" state. It used to hold the jaws at 0.45 (49.3 mm)
+         during the descent, to shorten the final close. But a 40 mm square yawed by theta
+         presents 40*(cos+sin) mm -- 56.6 mm at 45 deg -- so a pre-closed descent RAMS a yawed
+         block on the way down (measured: the mine jumped and the base rose 3 cm before the
+         jaws had closed at all). The approach now descends FULLY OPEN at 128.5 mm, which
+         clears any yaw. -->
+    <group_state name="closed" group="gripper">
+        <joint name="finger_joint" value="0.500"/>
+    </group_state>
+
+    <!-- Arm poses.
+         stow: the drive configuration the robot SPAWNS in (spawn_outdoor_city.launch -J).
+               Flat on the top plate, low CoG — it matters on the slopes this mission drives.
+         ready: the unstow waypoint.
+
+         *** shoulder_lift = -1.60 + 2*pi = 4.683, NOT -1.60. ***
+         These are the same physical pose, but stow sits at shoulder_lift = +3.271 (the
+         spawner's -3.0, wrapped), so a target of -1.60 makes the planner rotate 279 deg
+         THE LONG WAY — sweeping ur5_upper_arm_link and ur5_forearm_link straight through
+         the Husky chassis. RRTConnect explores >17k states and fails. Via +4.683 the same
+         pose is a 1.4 rad lift up and over, and a straight joint-space line is collision
+         free at every waypoint. Do not "simplify" this back to -1.60. -->
+    <group_state name="stow" group="ur5_arm">
+        <joint name="ur5_shoulder_pan_joint"  value="0.0"/>
+        <joint name="ur5_shoulder_lift_joint" value="3.271"/>
+        <joint name="ur5_elbow_joint"         value="2.587"/>
+        <joint name="ur5_wrist_1_joint"       value="0.557"/>
+        <joint name="ur5_wrist_2_joint"       value="1.557"/>
+        <joint name="ur5_wrist_3_joint"       value="0.0"/>
+    </group_state>
+    <group_state name="ready" group="ur5_arm">
+        <joint name="ur5_shoulder_pan_joint"  value="0.0"/>
+        <joint name="ur5_shoulder_lift_joint" value="4.683"/>
+        <joint name="ur5_elbow_joint"         value="1.20"/>
+        <joint name="ur5_wrist_1_joint"       value="-1.20"/>
+        <joint name="ur5_wrist_2_joint"       value="-1.57"/>
+        <joint name="ur5_wrist_3_joint"       value="0.0"/>
+    </group_state>
     <!--DISABLE COLLISIONS: By default it is assumed that any link of the robot could potentially come into collision with any other link in the robot. This tag disables collision checking between a specified pair of links. -->
     <disable_collisions link1="base_laser" link2="base_link" reason="Default"/>
     <disable_collisions link1="base_laser" link2="front_left_wheel_link" reason="Never"/>

@@ -1,0 +1,8 @@
+string model_name_1        # the holder, e.g. husky_ur5
+string link_name_1         # e.g. robotiq_arg2f_base_link (the palm)
+string model_name_2        # the held object, e.g. landmine
+string link_name_2         # e.g. link
+bool silence_collisions    # put the held link's collisions to sleep while welded (attach only)
+---
+bool ok
+string message

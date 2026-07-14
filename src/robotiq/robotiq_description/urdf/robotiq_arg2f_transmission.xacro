@@ -1,5 +1,28 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://ros.org/wiki/xacro">
+  <!-- PositionJointInterface, deliberately. THE GRIP COMES FROM fmax, NOT FROM THE INTERFACE.
+       Read this before "fixing" it to EffortJointInterface.
+
+       gazebo_ros_control drives a position-mode joint with SetPosition(), but it first calls
+           joint->SetParam("fmax", 0, <URDF effort limit>)
+       and that fmax bounds the force the joint may use to reach its target. With the stock
+       effort="1000" the joint has effectively unlimited authority and simply bulldozes the
+       fingers through whatever is between them. Measured on the 40 mm landmine detonator:
+       finger_joint reached its commanded 0.556 exactly (a 40 mm block should have stalled it
+       near 0.44), Gazebo's contact manager saw NOTHING, gazebo_grasp_fix (which attaches only
+       on OPPOSING CONTACT FORCES) never fired once, and the mine never moved at all.
+
+       So the fix is to BOUND the effort, not to change the interface: finger_joint's limit is
+       now effort="20" (see robotiq_140_gripper.urdf.xacro), letting the joint stall on the
+       object so real contact forces develop.
+
+       Why not EffortJointInterface, the textbook answer? Because it forces a control_toolbox
+       PID into the loop (effort_controllers/JointTrajectoryController requires `gains:`), and
+       on THIS Noetic build any control_toolbox PID instantiated inside gzserver aborts it with
+       std::bad_array_new_length. Bisected repeatedly: PID present => gzserver dies at startup
+       every time; PID absent => starts every time. The same applies to
+       /gazebo_ros_control/pid_gains/* and to the mimic plugin's <hasPID/> mode. Until that is
+       diagnosed, PID-based force control is not available in this environment. -->
   <xacro:macro name="robotiq_arg2f_transmission" params="prefix">
     <transmission name="${prefix}finger_joint_trans">
       <type>transmission_interface/SimpleTransmission</type>

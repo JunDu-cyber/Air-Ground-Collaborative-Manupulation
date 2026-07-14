@@ -162,6 +162,22 @@
     </link>
     <gazebo reference="${prefix}${fingerprefix}_inner_finger_pad">
       <material>Gazebo/Black</material>
+      <!-- These pads are the ONLY surfaces that touch the object, and without these params
+           they inherit Gazebo's default kp of about 1e13: a rigid steel pad. Closing a rigid
+           pad onto a rigid detonator makes the contact ring, which shakes the whole arm and
+           can tip the Husky. The real 2F-140 pads are rubber, so model them as such.
+             kp 1e5 / kd 100 : compliant and heavily damped, absorbing the closing impulse
+             mu 1.6          : rubber on plastic. The grip comes from FRICTION, not from
+                               crushing the object (see the effort limit below)
+             maxVel 0        : never resolve penetration by launching the object
+             minDepth 0.001  : tolerate 1 mm of penetration before reacting, so micro jitter
+                               does not generate impulses -->
+      <mu1>1.6</mu1>
+      <mu2>1.6</mu2>
+      <kp>1e5</kp>
+      <kd>100.0</kd>
+      <maxVel>0.0</maxVel>
+      <minDepth>0.001</minDepth>
     </gazebo>
   </xacro:macro>
 
@@ -213,7 +229,22 @@
       <parent link="${prefix}robotiq_arg2f_base_link" />
       <child link="${prefix}left_outer_knuckle" />
       <axis xyz="-1 0 0" />
-      <limit lower="0" upper="0.725" velocity="2.0" effort="1000" />
+      <!-- THE GRIP FORCE. gazebo_ros_control drives this position joint with SetPosition()
+           bounded by joint->SetParam("fmax", 0, <this effort limit>), so this number IS the
+           pinch force, and it must be SMALL.
+
+           Do the arithmetic before changing it. The 2F-140's four-bar gives the pad roughly a
+           0.06 m moment arm, so fingertip force ~ effort / 0.06:
+               effort=1000 (stock) -> ~17000 N. Bulldozes the object; no contact ever forms.
+               effort=20           -> ~330 N.   Still a crowbar: closing on the rigid 40 mm
+                                                detonator injects an impulse that makes the
+                                                jaws buzz and can FLIP THE 46 kg HUSKY.
+               effort=3            -> ~50 N.    What we use.
+           Holding a 0.30 kg mine needs mu*N*2 >= m*g = 2.9 N, i.e. N >= ~1.5 N at mu=1.0.
+           50 N is a 30x margin. There is nothing to buy by going higher, and stability to
+           lose: grip force here is a CONTACT IMPULSE, and the arm is bolted to a wheeled
+           base that can be pushed over by it. -->
+      <limit lower="0" upper="0.725" velocity="2.0" effort="8" />
     </joint>
     <xacro:finger_joints prefix="${prefix}" fingerprefix="left" reflect="1.0"/>
   </xacro:macro>
@@ -251,37 +282,64 @@
     <xacro:right_outer_knuckle_joint prefix="${prefix}"/>
     <xacro:robotiq_arg2f_transmission prefix="${prefix}"/>
 
-    <!-- Mimic joints -->
+    <!-- ===== Mimic joints =====
+         The plugin drives each mimic with SetPosition(), which is a KINEMATIC override, and
+         then bounds it with joint->SetParam("fmax", 0, maxEffort). fmax is what decides
+         whether the linkage can stall on a grasped object or simply drives through it, and
+         the plugin's stock default is maxEffort = 1.0 N.m, which is nowhere near enough to
+         hold the four-bar against contact. We raise it to 20 N.m to match finger_joint's
+         (also newly bounded) effort limit, so the whole linkage stalls together.
+
+         This matters because the inner_finger joints carry the finger PADS: whatever governs
+         them governs whether the pads can push on an object at all, and therefore whether
+         gazebo_grasp_fix (which attaches only on OPPOSING CONTACT FORCES) can ever fire.
+
+         The plugin also has a <hasPID/> mode that would drive the mimics with SetForce, which
+         is the more principled option. It is NOT used, for two reasons:
+           1. It was DEAD CODE in this fork: UpdateChild() computed the effort and then threw
+              it away, never calling SetForce. (Fixed anyway in
+              robotiq_gazebo/src/mimic_joint_plugin.cpp, which now applies it and reads its
+              gains from SDF <p>/<i>/<d>.)
+           2. It instantiates a control_toolbox PID inside gzserver, and on this Noetic build
+              ANY control_toolbox PID inside gzserver aborts it at startup with
+              std::bad_array_new_length. Bisected repeatedly. Same for
+              /gazebo_ros_control/pid_gains/* and for effort_controllers.
+         So hasPID stays off until that environment bug is understood. -->
     <gazebo>
       <plugin filename="libgazebo_mimic_joint_plugin.so" name="${prefix}mimic_robotiq_140_1">
         <joint>${prefix}finger_joint</joint>
         <mimicJoint>${prefix}right_outer_knuckle_joint</mimicJoint>
         <multiplier>-1.0</multiplier>
         <offset>0.0</offset>
+        <maxEffort>8.0</maxEffort>
       </plugin>
       <plugin filename="libgazebo_mimic_joint_plugin.so" name="${prefix}mimic_robotiq_140_2">
         <joint>${prefix}finger_joint</joint>
         <mimicJoint>${prefix}left_inner_knuckle_joint</mimicJoint>
         <multiplier>-1.0</multiplier>
         <offset>0.0</offset>
+        <maxEffort>8.0</maxEffort>
       </plugin>
       <plugin filename="libgazebo_mimic_joint_plugin.so" name="${prefix}mimic_robotiq_140_3">
         <joint>${prefix}finger_joint</joint>
         <mimicJoint>${prefix}right_inner_knuckle_joint</mimicJoint>
         <multiplier>-1.0</multiplier>
         <offset>0.0</offset>
+        <maxEffort>8.0</maxEffort>
       </plugin>
       <plugin filename="libgazebo_mimic_joint_plugin.so" name="${prefix}mimic_robotiq_140_4">
         <joint>${prefix}finger_joint</joint>
         <mimicJoint>${prefix}left_inner_finger_joint</mimicJoint>
         <multiplier>1.0</multiplier>
         <offset>0.0</offset>
+        <maxEffort>8.0</maxEffort>
       </plugin>
       <plugin filename="libgazebo_mimic_joint_plugin.so" name="${prefix}mimic_robotiq_140_5">
         <joint>${prefix}finger_joint</joint>
         <mimicJoint>${prefix}right_inner_finger_joint</mimicJoint>
         <multiplier>1.0</multiplier>
         <offset>0.0</offset>
+        <maxEffort>8.0</maxEffort>
       </plugin>
     </gazebo>
 

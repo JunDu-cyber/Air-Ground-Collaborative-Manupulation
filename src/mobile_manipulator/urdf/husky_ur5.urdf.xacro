@@ -147,30 +147,63 @@
     <origin xyz="0 0 0" rpy="0 -1.57 1.57"/>
   </xacro:robotiq_140_gripper>
 
-  <!-- Grasp fix: creates a virtual joint between gripper and object when both
-       fingers make opposing contact, preventing the object from flying away. -->
-  <gazebo>
-    <plugin filename="libgazebo_grasp_fix.so" name="gazebo_grasp_fix">
-      <!-- palm_link must be a link that survives Gazebo's fixed-joint lumping.
-           robotiq_arg2f_base_link is attached by a fixed joint and gets merged
-           into the UR5 wrist, so we use ur5_wrist_3_link as the palm (as the
-           Hand-E setup did). The inner_finger links are joined by revolute joints
-           and survive; they also absorb the fixed-jointed finger-pad collisions. -->
-      <arm>
-        <arm_name>robotiq_140</arm_name>
-        <palm_link>ur5_wrist_3_link</palm_link>
-        <gripper_link>left_inner_finger</gripper_link>
-        <gripper_link>right_inner_finger</gripper_link>
-      </arm>
-      <forces_angle_tolerance>100</forces_angle_tolerance>
-      <update_rate>90</update_rate>
-      <grip_count_threshold>1</grip_count_threshold>
-      <max_grip_count>8</max_grip_count>
-      <release_tolerance>0.005</release_tolerance>
-      <disable_collisions_on_attach>false</disable_collisions_on_attach>
-      <contact_topic>__default_topic__</contact_topic>
-    </plugin>
-  </gazebo>
+  <!-- ===== grasp_tcp: THE grasp frame. Every grasp pose is a pose of this link. =====
+       Parented to the gripper (not ur5_tool0) so it is a property of the hand and
+       survives a remount. Its numbers are FK, not guesses: the jaw center-line is by
+       definition the midpoint of the two inner_finger_pads, and that midpoint lies
+       exactly on robotiq_arg2f_base_link's +Z at x=y=0 —
+
+           finger_joint = 0.000 (open)   -> midpoint z = 0.1770, gap 136.0 mm
+           finger_joint = 0.350          -> midpoint z = 0.1945, gap  75.9 mm
+           finger_joint = 0.695 (closed) -> midpoint z = 0.2007, gap   8.3 mm
+
+       z = 0.177 = the OPEN jaw center, i.e. where the object sits at the instant the
+       gripper ARRIVES at the grasp (we always approach open). Note the pads then
+       ADVANCE ~21 mm further along +Z as they close — that is the 2F-140's four-bar
+       linkage arc, not an error — so a grasp aimed exactly at an object's center will
+       have the pads settle ~21 mm beyond it. Grasp code compensates by aiming high;
+       for the 60 mm landmine detonator that is comfortably inside the block.
+
+       AXES (the one convention, defined once, used everywhere):
+           +Z = approach        (out of the palm, between the fingers)
+           +X = finger closing  (== GPD's `binormal`)
+           +Y = GPD's `axis`
+       The gripper base's own axes are +Z approach / +-Y closing, so this is a pure
+       +90 deg yaw: Rz(pi/2) sends tcp_X -> base_Y (closing) and leaves tcp_Z = base_Z.
+
+       This link replaces the legacy scalars GPD_TOOL_OFFSET=0.12 and FINGER_REACH=0.18,
+       which tried to fake a grasp frame by sliding ur5_tool0 along tool0's OWN +Z — but
+       the gripper is mounted rpy="0 -1.57 1.57", so tool0's Z is not the approach axis
+       at all. Set MoveIt/MTC ik_frame to grasp_tcp and the offsets vanish.
+
+       Massless and geometry-less: Gazebo lumps it away, so it adds no physics and needs
+       no SRDF collision entry. -->
+  <link name="grasp_tcp"/>
+  <joint name="grasp_tcp_joint" type="fixed">
+    <parent link="robotiq_arg2f_base_link"/>
+    <child  link="grasp_tcp"/>
+    <origin xyz="0 0 0.177" rpy="0 0 ${pi/2}"/>
+  </joint>
+
+  <!-- gazebo_grasp_fix IS DELIBERATELY NOT LOADED. It cannot work on this gripper, and
+       leaving it running would fight the weld that does.
+
+       It attaches an object only when it sees TWO OPPOSING CONTACT FORCES on the finger links.
+       But the 2F-140's mimic joints are all driven by robotiq_gazebo's MimicJointPlugin via
+       SetPosition(), a kinematic teleport, and right_outer_knuckle_joint is itself a mimic,
+       so the ENTIRE right finger is kinematic: forced to its commanded angle regardless of what
+       it touches, exerting no force on anything. There are no opposing grip forces here for
+       grasp_fix to find, so it fires on solver noise instead. Measured across 7 trials, its
+       "attach" landed at finger_joint = 0.4254, 0.4387, 0.4413, 0.480, 0.495 and even 0.0017
+       (jaws WIDE OPEN) for one and the same 40 mm block, whose true contact angle is 0.495.
+       Raising grip_count_threshold to reject that noise stopped it firing at the real contact
+       too. Its hold is broken independently: it welds with a MODEL-LESS ZERO-LIMIT REVOLUTE,
+       which on Gazebo 11 is a free hinge. During a lift the TCP rose 120 mm while the mine
+       rose 16 mm, and the constraint reaction jacked the 46 kg base into the air.
+
+       The grasp is therefore an EXPLICIT WELD (gazebo_link_attacher, registered in
+       outdoor_city.world): the jaws close to a gap slightly WIDER than the block so they never
+       touch it, and a real fixed joint carries it. See grasp_mtc/scripts/grasp_task.py. -->
 
   <link name="realsense_camera_link">
     <visual>

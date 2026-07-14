@@ -21,6 +21,17 @@
          topic to a ROS topic (or vise versa). -->
     <!-- <plugin name="ros_interface_plugin" filename="librotors_gazebo_ros_interface_plugin.so"/>-->
 
+    <!-- Welds a grasped object to the gripper on request (/link_attacher/attach|detach).
+         Inert until called, so this changes nothing for the nav/UAV missions.
+
+         It exists because the 2F-140 CANNOT GRIP in this sim: MimicJointPlugin drives every
+         mimic joint with SetPosition() (a kinematic teleport) and right_outer_knuckle_joint
+         is itself a mimic, so the whole right finger is kinematic and exerts no force on what
+         it touches. That is why gazebo_grasp_fix -- which welds only on OPPOSING CONTACT
+         FORCES -- never fired, and why closing on the detonator either missed it or
+         penetrated it, throwing the robot. See gazebo_link_attacher/src for the full story. -->
+    <plugin name="link_attacher" filename="libgazebo_link_attacher.so"/>
+
     <physics type='ode'>
       <ode>
         <solver>
@@ -31,7 +42,33 @@
         <constraints>
           <cfm>0</cfm>
           <erp>0.2</erp>
-          <contact_max_correcting_vel>100</contact_max_correcting_vel>
+          <!-- 1.0, not the stock 100. This caps how fast ODE may push two interpenetrating
+               bodies apart. At 100 it is licensed to resolve a penetration at up to 100 m/s,
+               so the instant the gripper closes on the detonator the solver answers with an
+               impulse that shakes the arm, flings the mine, and has repeatedly TIPPED THE
+               46 kg HUSKY OVER. Nothing in this mission legitimately needs to separate at
+               more than 1 m/s, so this is the single most important physics setting here:
+               it is the difference between a grasp and an explosion.
+               Driving is unaffected; the wheels never penetrate deeply enough to care. -->
+          <!-- 1.0, not the stock 100, and NOT 10. This caps how fast ODE may push two
+               interpenetrating bodies apart, and it is the single most important physics
+               setting here.
+
+               At the stock 100 it is licensed to resolve a penetration at up to 100 m/s: the
+               moment the jaws bite, the solver answers with an impulse that shakes the arm and
+               has repeatedly thrown the 46 kg Husky metres and spun finger_joint through 2*pi.
+
+               10 is not safe either. Measured with a streaming log: while the arm sat STILL and
+               the jaws closed, the base was jacked from z=0.132 up to z=0.227 and hurled away.
+               At 1.0 the base holds to within 7 mm through the same close.
+
+               The reason we can afford 1.0 is that the task now PLACES the mine back on the
+               ground before opening the jaws instead of dropping it from 0.4 m. A dropped rigid
+               body penetrates deeply and, at 1.0, is pushed back out too slowly, so it sinks
+               through the floor. No drop, no need for a fast correction.
+
+               Driving is unaffected; the wheels never penetrate deeply enough to care. -->
+          <contact_max_correcting_vel>1.0</contact_max_correcting_vel>
           <contact_surface_layer>0.001</contact_surface_layer>
         </constraints>
       </ode>
@@ -1024,5 +1061,35 @@
       <pose>-196.95 -85.89 39.87 0 0 4.021</pose>
     </include>
     <!-- FOREST_END -->
+
+    <!-- ===== Landmines: the STEP-3 grasp targets =====
+         Baked into the world rather than spawned at runtime ON PURPOSE.
+         elevation_mapping FUSES rather than replaces, so a model that appears after the
+         robot has already mapped that ground as flat is rejected as an outlier and never
+         enters the map (the same reason egocentric_nav.launch spawns its test ramp at
+         launch, not later). A runtime-spawned mine would be invisible to the terrain
+         stack — and, more to the point, to the UAV pass that is supposed to find it.
+         (grasp_test.launch DOES spawn one at runtime; that harness runs no elevation
+         map, so nothing is there to reject it.)
+
+         Placed on the flat grass apron near spawn (the heightmap escarpment starts
+         ~30 m out). The model's disc bottom is at its own z=0, so pose z=0 rests it
+         exactly on the ground. Grasp feature = the 40x40x60 mm yellow detonator, top
+         face 85 mm up. -->
+    <include>
+      <uri>model://landmine</uri>
+      <name>landmine_1</name>
+      <pose>6.0 1.0 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://landmine</uri>
+      <name>landmine_2</name>
+      <pose>12.0 -4.0 0 0 0 0.6</pose>
+    </include>
+    <include>
+      <uri>model://landmine</uri>
+      <name>landmine_3</name>
+      <pose>18.0 3.0 0 0 0 -0.4</pose>
+    </include>
   </world>
 </sdf>

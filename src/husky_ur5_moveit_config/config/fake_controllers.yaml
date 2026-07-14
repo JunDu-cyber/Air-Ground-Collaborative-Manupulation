@@ -8,7 +8,7 @@ controller_list:
       - ur5_wrist_1_joint
       - ur5_wrist_2_joint
       - ur5_wrist_3_joint
-  - name: fake_hand_e_gripper_controller
+  - name: fake_gripper_controller
     type: $(arg fake_execution_type)
     joints:
       - finger_joint

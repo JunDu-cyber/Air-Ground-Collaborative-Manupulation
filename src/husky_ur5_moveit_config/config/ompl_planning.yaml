@@ -193,7 +193,7 @@ ur5_arm:
     - AITstar
     - ABITstar
     - BITstar
-hand_e_gripper:
+gripper:
   planner_configs:
     - AnytimePathShortening
     - SBL

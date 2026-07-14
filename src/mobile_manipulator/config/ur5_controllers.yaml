@@ -26,6 +26,21 @@ joint_state_controller:
   publish_rate: 50
 
 # 2. The Gripper Controller (Robotiq 2F-140: single actuated finger_joint)
+#
+# Position control, and NO PID anywhere. The grip does not come from the control mode; it
+# comes from BOUNDING the joint's effort so it can stall on the object:
+#
+#   gazebo_ros_control, in position mode, calls SetPosition() but first sets
+#       joint->SetParam("fmax", 0, <URDF effort limit>)
+#   With the stock effort="1000" the joint has effectively unlimited authority and drives the
+#   fingers straight through the object. finger_joint's limit is now 20 N.m (and the mimic
+#   plugins' maxEffort likewise), so the linkage stalls on contact instead.
+#
+# EffortJointInterface + effort_controllers is the textbook answer and was tried. It is NOT
+# usable here: it requires a control_toolbox PID, and on this Noetic build ANY control_toolbox
+# PID instantiated inside gzserver aborts it at startup with std::bad_array_new_length
+# (bisected repeatedly; same for /gazebo_ros_control/pid_gains/* and the mimic plugin's
+# <hasPID/>). Revisit if that environment bug is ever diagnosed.
 gripper_controller:
   type: position_controllers/JointTrajectoryController
   joints:
@@ -33,4 +48,23 @@ gripper_controller:
   constraints:
     goal_time: 2.0                  # allow the linkage time to settle
     stopped_velocity_tolerance: 0.05
-    finger_joint: {trajectory: 0.2, goal: 0.05}   # loose: grasping rarely hits exact angle
+    # A SUCCESSFUL grasp does NOT reach its commanded angle -- the object stops the fingers
+    # short. So the goal tolerance must be wide enough that a HELD object still counts as
+    # success: 'closed' commands 0.556 rad (a ~28 mm pad gap) onto a 40 mm block, which
+    # stalls the joint well short of that. With a tight tolerance every real grasp would come
+    # back GOAL_TOLERANCE_VIOLATED and MoveIt would call the pick a failure.
+    # trajectory: 0.0 DISABLES the path tolerance, and that is the whole point. A gripper
+    # that stalls on an object necessarily falls behind its commanded path -- the setpoint
+    # keeps ramping to 'closed' while the fingers are stopped by the block, and any contact
+    # transient (the block squirming, the linkage being pried back) adds to that lag. With
+    # trajectory: 0.5 the close aborted with PATH_TOLERANCE_VIOLATED (finger_joint path
+    # error 0.512), which killed the whole MTC pick MID-GRASP -- i.e. the controller was
+    # policing the one deviation that means the grasp is WORKING. Truth about the grip comes
+    # from the stall-band check in grasp_task.py, not from the trajectory controller.
+    finger_joint: {trajectory: 0.0, goal: 0.30}
+
+# NOTE: the five MIMIC joints are tuned by <p>/<i>/<d> elements INSIDE their plugin blocks in
+# robotiq_140_gripper.urdf.xacro, deliberately NOT here. Upstream read them from
+# /gazebo_ros_control/pid_gains/<joint>, but on this Noetic build the mere presence of ANY
+# parameter under /gazebo_ros_control/pid_gains/ aborts gzserver with std::bad_array_new_length
+# (bisected: with them it dies every time, without them it starts every time). Do not add them.

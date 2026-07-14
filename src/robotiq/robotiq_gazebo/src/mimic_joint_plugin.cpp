@@ -103,14 +103,26 @@ void MimicJointPlugin::Load(physics::ModelPtr _parent, sdf::ElementPtr _sdf )
   {
     has_pid_ = true;
 
-    const ros::NodeHandle nh(model_nh, std::string(robot_namespace_+"/gazebo_ros_control/pid_gains/")+mimic_joint_name_);
-    double p, i,d ;
-    // TODO: include i_clamp e.t.c.
-    nh.param("p", p, 0.0);
-    nh.param("i", i, 0.0);
-    nh.param("d", d, 0.0);
+    // Gains come from SDF elements <p>/<i>/<d>, NOT from the ROS parameter server.
+    //
+    // Upstream read them from /gazebo_ros_control/pid_gains/<mimicJoint>. That namespace is
+    // unusable here: on this Noetic + gazebo_ros_control build, the mere PRESENCE of any
+    // /gazebo_ros_control/pid_gains/* parameter makes gzserver abort at startup with
+    // std::bad_array_new_template ("std::bad_array_new_length"), whatever joint it names.
+    // Verified by bisection: with those params gzserver dies every time; without them it
+    // starts every time. gazebo_ros_control probes that namespace for every position-mode
+    // joint it owns, so we cannot populate it just for the mimics without tripping it.
+    //
+    // Reading the gains straight from the SDF keeps them next to the joint they tune and
+    // sidesteps the whole thing. Defaults match the tuned values in the 2F-140 macro.
+    double p = 20.0, i = 0.5, d = 1.0;
+    if(_sdf->HasElement("p")) p = _sdf->GetElement("p")->Get<double>();
+    if(_sdf->HasElement("i")) i = _sdf->GetElement("i")->Get<double>();
+    if(_sdf->HasElement("d")) d = _sdf->GetElement("d")->Get<double>();
 
     pid_ = control_toolbox::Pid(p,i,d);
+    ROS_INFO("MimicJointPlugin: %s follows %s with PID (%.2f, %.2f, %.2f), maxEffort clamp applied",
+             mimic_joint_name_.c_str(), joint_name_.c_str(), p, i, d);
   }
 
   // Check for multiplier element
@@ -181,6 +193,16 @@ void MimicJointPlugin::UpdateChild()
         a = angle;
       double error = angle-a;
       double effort = ignition::math::clamp(pid_.computeCommand(error, period), -max_effort_, max_effort_);
+      // UPSTREAM BUG: this fork computed `effort` and then threw it away -- there was no
+      // SetForce() call here at all, so <hasPID/> mode left the mimic joints completely
+      // unactuated and only the SetPosition (teleport) branch below ever did anything.
+      //
+      // That matters because SetPosition is a KINEMATIC override: the mimic joints, which
+      // carry the finger pads, get forced to their commanded angle regardless of contact.
+      // They exert no force on a grasped object, and once finger_joint is moved to an
+      // EffortJointInterface (so the master IS dynamic) the half-kinematic/half-dynamic
+      // linkage fights itself and the joint runs away past its limit.
+      mimic_joint_->SetForce(0, effort);
     }
     else
     {

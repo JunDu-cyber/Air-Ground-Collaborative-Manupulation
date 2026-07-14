@@ -1,0 +1,106 @@
+<launch>
+  <!-- ====================================================================
+       STANDALONE grasp test harness (STEP 3).
+
+       Everything you need to develop and test grasping, and NOTHING you don't:
+       no PX4, no UAV, no EGO-planner, no DLIO, no CMU planner, no target tour.
+       The full airground_takeoff.sh takes minutes to come up and none of it is
+       needed to close the gripper on a landmine.
+
+           roslaunch mobile_manipulator grasp_test.launch
+           roslaunch mobile_manipulator grasp_test.launch mine_x:=0.8 mine_y:=0.0
+
+       What runs:
+         Gazebo + outdoor_city + Husky/UR5/2F-140 (arm controllers, wrist RGB-D)
+         a static odom->base_link (see below)
+         MoveIt move_group
+         one landmine, spawned at (mine_x, mine_y) on the ground
+
+       WHY A STATIC odom->base_link:
+       In the real mission DLIO owns odom->base_link. DLIO needs the GPU Velodyne and
+       ~8 s to initialize, and it exists to track a MOVING base — but during
+       manipulation the base is, by requirement, stationary. So here we publish a
+       static identity instead. MoveIt is unaffected either way: the SRDF declares no
+       virtual_joint, so move_group plans in the URDF root (base_link) and never looks
+       at odom. The odom frame is here only so that grasp code which reasons about
+       gravity (the lift must go along odom +Z, not base +Z, when parked on a slope)
+       has the same frame to talk to as it will in the mission.
+       Set dlio:=true to run the real thing instead.
+
+       WHY THE LANDMINE IS SPAWNED AT RUNTIME HERE (and baked into the .world for the
+       mission): elevation_mapping FUSES rather than replaces, so a model that appears
+       after the ground was mapped flat is rejected as an outlier and never enters the
+       map. That bites the nav stack — which this harness does not run. With no
+       elevation map to pollute, runtime spawning is free, and it lets us sweep the
+       mine around to find the arm's reachable annulus.
+       ==================================================================== -->
+
+  <arg name="gui"    default="true"/>
+  <arg name="rviz"   default="true"/>
+  <arg name="dlio"   default="false"/>   <!-- real LIO instead of the static TF -->
+
+  <!-- Landmine placement. The UGV spawns at the origin with yaw 0, so these are also its
+       base_link coords: +x straight ahead.
+
+       0.75 m is the MEASURED sweet spot. A top-down grasp of the detonator is reachable
+       (collision-free IK, all 8 gripper yaws) only for x in [0.60, 1.05], |y| <= 0.3 —
+       and there is a HARD CLIFF at 0.55 m, below which nothing is reachable at all,
+       because the UR5 base sits just 0.377 m above ground and the arm has to reach ~0.31 m
+       BELOW its own base. 0.75 leaves ~0.2 m of margin on both sides.
+       Override to re-sweep. -->
+  <arg name="mine_x" default="0.75"/>
+  <arg name="mine_y" default="0.0"/>
+  <arg name="mine_z" default="0.0"/>
+
+  <arg name="software_gl" default="false"/>
+
+  <!-- ===== 1. World + Husky/UR5/2F-140 (egocentric: no EKF, no GPS, no map) ===== -->
+  <include file="$(find mobile_manipulator)/launch/spawn_outdoor_city.launch">
+    <arg name="start_gazebo" value="true"/>
+    <arg name="gui"          value="$(arg gui)"/>
+    <arg name="egocentric"   value="true"/>
+  </include>
+
+  <!-- ===== 2. odom -> base_link ===== -->
+  <node unless="$(arg dlio)" pkg="tf2_ros" type="static_transform_publisher"
+        name="static_odom_to_base" args="0 0 0 0 0 0 odom base_link"/>
+  <include if="$(arg dlio)" file="$(find mobile_manipulator)/launch/lidar_odometry.launch">
+    <arg name="odom_source" value="dlio"/>
+    <arg name="self_filter" value="true"/>
+  </include>
+
+  <!-- ===== 3. The landmine =====
+       Spawned from the SDF directly (-file), so this does not depend on
+       GAZEBO_MODEL_PATH picking up gazebo_models/. Grasp target = the 40x40x60 mm
+       yellow detonator on top; its top face sits 85 mm above ground. -->
+  <node name="spawn_landmine" pkg="gazebo_ros" type="spawn_model"
+        args="-sdf -file $(find mobile_manipulator)/gazebo_models/landmine/model.sdf
+              -model landmine
+              -x $(arg mine_x) -y $(arg mine_y) -z $(arg mine_z)"/>
+
+  <!-- ===== 4. MoveIt =====
+       load_robot_description:=false — spawn_outdoor_city.launch already set
+       robot_description from husky_ur5.urdf.xacro. Letting move_group load its own
+       would risk a divergent URDF. -->
+  <include file="$(find husky_ur5_moveit_config)/launch/move_group.launch">
+    <arg name="load_robot_description" value="false"/>
+    <arg name="allow_trajectory_execution" value="true"/>
+    <!-- 'simple' (not 'fake'): the harness runs the REAL Gazebo ros_control controllers
+         (ur5_arm_controller + gripper_controller, spawned by spawn_outdoor_city.launch),
+         which simple_moveit_controllers.yaml already maps as FollowJointTrajectory. -->
+    <arg name="moveit_controller_manager" value="simple"/>
+    <arg name="publish_monitored_planning_scene" value="true"/>
+  </include>
+
+  <!-- ===== 5. RViz (see egocentric_nav.launch for the OGRE/NVIDIA crash story) ===== -->
+  <node if="$(eval arg('rviz') and not arg('software_gl'))"
+        name="grasp_rviz" pkg="rviz" type="rviz" respawn="true"
+        args="-d $(find husky_ur5_moveit_config)/launch/moveit.rviz"/>
+  <node if="$(eval arg('rviz') and arg('software_gl'))"
+        name="grasp_rviz" pkg="rviz" type="rviz" respawn="true"
+        args="-d $(find husky_ur5_moveit_config)/launch/moveit.rviz">
+    <env name="__GLX_VENDOR_LIBRARY_NAME" value="mesa"/>
+    <env name="LIBGL_ALWAYS_SOFTWARE"     value="1"/>
+  </node>
+
+</launch>
