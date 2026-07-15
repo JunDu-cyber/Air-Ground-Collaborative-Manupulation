@@ -1,0 +1,16 @@
+# Point the UGV's wrist camera at a spot on the ground.
+#
+# The arm is owned by grasp_task (it holds the MoveGroupCommander), but the final approach
+# controller (mine_align) is the one that needs to SEARCH -- it has to sweep the camera around
+# until the mine is in frame, because nav's arrival error is bigger than the camera's footprint.
+# So the arm's owner exposes the motion and the searcher calls it. This service is that seam.
+#
+# The pose aims the CAMERA'S OPTICAL FRAME straight down at (x, y) -- not the TCP. Those are not
+# the same thing: the wrist camera's optical axis is not parallel to the gripper's approach axis,
+# so aiming the TCP down leaves the mine at the very bottom edge of the image, one bump away from
+# being out of frame entirely.
+float64 x       # ground point in base_link
+float64 y
+---
+bool ok
+string message

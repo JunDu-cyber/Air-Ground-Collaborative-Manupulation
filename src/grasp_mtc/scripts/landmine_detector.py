@@ -1,9 +1,21 @@
 #!/usr/bin/env python3
-"""Colour-based landmine detector — the MOCK standing in for the UAV vision detector.
+"""The UGV's OWN landmine detector — the wrist camera, close up, accurate enough to grasp from.
 
-The mission's real producer for /detected_targets does not exist yet: WorldTarget.msg
-calls it "the (future) UAV vision detector". This node fills that seam so grasping can be
-developed and tested now, without coupling it to a detector that has to be built first.
+THIS IS NOT THE UAV'S DETECTOR, and the distinction is the whole reason this node exists
+separately. Two detections, two topics, two jobs:
+
+    /detected_targets        THE UAV. Coarse: found from ~12 m while scanning, in a world-ish
+                             frame. ugv_target_tour COLLECTS these -- they are the list of mines
+                             to go and visit. Its producer is not our work; the seam is
+                             WorldTarget on that topic and it is already specified.
+
+    /ugv/landmine_detection  THIS NODE. The wrist RealSense at ~0.5 m, in base_link, measured to
+                             1.6 mm against Gazebo truth. It is what the final approach aligns on
+                             and what the grasp is planned from.
+
+Publishing this on /detected_targets (which it used to do) makes the tour collect the UGV's own
+close-range detections as BRAND NEW TARGETS, so it grows phantom mines at its own feet forever.
+Harmless on the bench, where nothing else publishes there. Fatal in the mission.
 
 It is a mock, not a toy: the landmine prop is deliberately colour-coded, so an HSV
 threshold is an *unambiguous* segmentation of the exact part we must grasp.
@@ -28,8 +40,10 @@ Two gotchas this node handles, both of which cost real debugging time:
     stamp-checked against a capture-time barrier.
 
 Publishes:
-    /detected_targets   mobile_manipulator/WorldTarget   (the tour's existing seam)
-    /landmine_marker    visualization_msgs/Marker        (RViz)
+    /ugv/landmine_detection  mobile_manipulator/WorldTarget  (base_link; the GRASP's input)
+    /detected_target_yaw     std_msgs/Float32                (the block's yaw; a 45 deg error
+                                                              is a corner grasp)
+    /landmine_marker         visualization_msgs/Marker       (RViz)
 Service:
     ~detect_once        std_srvs/Trigger                 (detect on demand, for the grasp loop)
 """
@@ -44,7 +58,7 @@ import tf2_geometry_msgs  # noqa: F401  registers PointStamped with tf2_ros.Buff
 from cv_bridge import CvBridge
 from geometry_msgs.msg import PointStamped
 from sensor_msgs.msg import CameraInfo, Image
-from std_srvs.srv import Trigger, TriggerResponse
+from std_srvs.srv import SetBool, SetBoolResponse, Trigger, TriggerResponse
 from visualization_msgs.msg import Marker
 
 from mobile_manipulator.msg import WorldTarget
@@ -103,17 +117,63 @@ class LandmineDetector(object):
 
         self.yaw_pub = rospy.Publisher('/detected_target_yaw', Float32,
                                        queue_size=1, latch=True)
-        self.target_pub = rospy.Publisher('/detected_targets', WorldTarget,
-                                          queue_size=10)
+        # /ugv/landmine_detection, NOT /detected_targets, AND THE DIFFERENCE IS LOAD-BEARING.
+        #
+        # Those two topics carry the same message type and mean completely different things:
+        #
+        #   /detected_targets       the UAV's seam. Coarse (detected from ~12 m), in a world-ish
+        #                           frame. ugv_target_tour COLLECTS these: they are the mines to
+        #                           go and visit.
+        #   /ugv/landmine_detection THIS. The wrist camera, at ~0.5 m, in base_link. Precise
+        #                           enough to grasp from (measured 1.6 mm). It is the input to
+        #                           the final approach and the grasp, and to NOTHING ELSE.
+        #
+        # Publishing this on /detected_targets -- which is what it used to do -- means the tour
+        # collects the UGV's own close-range detections as BRAND NEW TARGETS, and grows phantom
+        # mines at its own feet for as long as it is running. Harmless on the bench, where
+        # nothing else publishes there. Fatal in the mission.
+        self.target_pub = rospy.Publisher(
+            rospy.get_param('~output_topic', '/ugv/landmine_detection'),
+            WorldTarget, queue_size=10)
         self.marker_pub = rospy.Publisher('/landmine_marker', Marker,
                                           queue_size=1, latch=True)
         rospy.Service('~detect_once', Trigger, self._detect_once_cb)
 
+        # STREAMING, switchable at runtime.
+        #
+        # On-demand detection is right for the GRASP: it wants one detection at the instant the
+        # arm reaches the look pose, not a feed of stale viewpoints. But it is WRONG for the
+        # final approach, which is a closed loop on a MOVING robot: between two detect_once calls
+        # the aligner has nothing but a stale reading, and driving on one is driving blind.
+        # Measured: at 0.12 m/s a 1.5 s-old detection is 18 cm out of date, and the UGV drove
+        # straight over the mine and BULLDOZED IT 5.7 m across the map, still reporting it dead
+        # ahead the whole way -- because it was, being pushed along by the bumper.
+        #
+        # So the tracker can be turned on for as long as the loop is closed, and off again after.
+        self.stream_hz = float(rospy.get_param('~stream_rate', 8.0))
+        self._timer = None
+        rospy.Service('~stream', SetBool, self._stream_cb)
         if self.continuous:
-            rospy.Timer(rospy.Duration(1.0 / max(self.rate_hz, 0.1)), self._tick)
+            self._start_stream(self.rate_hz)
 
-        rospy.loginfo('[landmine_detector] up; frame=%s  continuous=%s',
-                      self.frame, self.continuous)
+        rospy.loginfo('[landmine_detector] up; frame=%s  continuous=%s  (~stream turns '
+                      'closed-loop tracking on at %.0f Hz)',
+                      self.frame, self.continuous, self.stream_hz)
+
+    def _start_stream(self, hz):
+        if self._timer is not None:
+            self._timer.shutdown()
+        self._timer = rospy.Timer(rospy.Duration(1.0 / max(hz, 0.1)), self._tick)
+
+    def _stream_cb(self, req):
+        if req.data:
+            self._start_stream(self.stream_hz)
+            return SetBoolResponse(success=True,
+                                   message='tracking at %.0f Hz' % self.stream_hz)
+        if self._timer is not None:
+            self._timer.shutdown()
+            self._timer = None
+        return SetBoolResponse(success=True, message='tracking off')
 
     # ---------- capture ----------
     def _fresh(self, topic, typ, timeout=5.0):
@@ -192,6 +252,30 @@ class LandmineDetector(object):
                          'mask -- occluded, or looking at the disc edge-on')
                 return None
 
+        # THE RED DISC IS THE GATE, and without it this detector is not safe to steer a robot
+        # with. The world is full of yellow: outdoor_city's road markings are yellow, and when
+        # the mine drifts out of the camera's view the largest yellow blob in frame becomes a
+        # ROAD LINE. The final approach then turns toward it and drives away chasing paint --
+        # measured, the UGV spun 103 degrees off the mine doing exactly this.
+        #
+        # The prop was built with the answer: the detonator is a yellow block sitting ON a red
+        # disc. Road paint is yellow but it is not on a red disc. So keep only yellow that has
+        # red around it -- dilate each candidate and require it to touch the red mask. This is
+        # the "context / disambiguation" the disc was always there to provide.
+        red = cv2.bitwise_or(cv2.inRange(hsv, RED_LO_A, RED_HI_A),
+                             cv2.inRange(hsv, RED_LO_B, RED_HI_B))
+        red = cv2.morphologyEx(red, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+        # The block stands 60 mm proud of the disc, so at a glancing view its yellow may not
+        # literally abut red; grow the neighbourhood enough to bridge that, and no further.
+        near_red = cv2.dilate(red, np.ones((25, 25), np.uint8))
+        gated = cv2.bitwise_and(mask, near_red)
+        if cv2.countNonZero(gated) == 0:
+            rospy.logwarn_throttle(
+                5.0, '[landmine_detector] yellow in frame, but none of it is on a red disc. '
+                     'That is road paint, not a landmine -- refusing it.')
+            return None
+        mask = gated
+
         n, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, 8)
         if n <= 1:
             return None
@@ -203,8 +287,21 @@ class LandmineDetector(object):
             return None
         u, v = centroids[best]
 
-        # Median depth over the blob — robust to the noisy rim pixels at the block edge.
-        ys, xs = np.nonzero(labels == best)
+        # Depth from the INTERIOR of the block only. This is the reading the whole final
+        # approach steers on, so a wrong one is not cosmetic: because x, y and z ALL scale
+        # with this depth (x = (u-cx)*z/fx), a depth that is too SMALL makes the mine read
+        # closer than the standoff, and the aligner then reverses AWAY from it. Measured: the
+        # UGV drove backward 0.44 m off a single under-read depth and lost the track.
+        #
+        # The rim pixels are where it goes wrong: the block edge, and any few-pixel mismatch
+        # between the colour mask and the depth frame while the robot is moving, let the depth
+        # "see past" the 40 mm block to the disc 25 mm lower or the ground 85 mm lower. So
+        # sample only pixels well INSIDE the blob -- erode it first.
+        blob = (labels == best).astype(np.uint8)
+        interior = cv2.erode(blob, np.ones((5, 5), np.uint8))
+        if cv2.countNonZero(interior) < 10:
+            interior = blob                       # tiny blob: keep what we have
+        ys, xs = np.nonzero(interior)
         d = dep[ys, xs]
         d = d[np.isfinite(d) & (d > 0.05) & (d < 5.0)]
         if d.size < 10:
@@ -264,10 +361,20 @@ class LandmineDetector(object):
                     # the same grip as t+90, and the server offers both anyway.
                     yaw = math.atan2(dy, dx) % (math.pi / 2.0)
 
-        # Apparent width of the block, from its pixel extent — a sanity check on the
-        # detection, and a width hint for the gripper.
+        # Apparent width of the block, from its pixel extent — and it is a DEPTH VALIDATOR, not
+        # just a hint. apparent = w_px * z / fx, so if the depth z is wrong the apparent width
+        # is wrong by the same factor -- and the detonator's true 40 mm is a fact we can check
+        # against. A face-on block is 40 mm; a 45 deg-yawed one projects 40*sqrt(2) = 56.6 mm.
+        # Anything outside [28, 64] mm means the depth is not measuring the top face, so the 3-D
+        # point is garbage. REJECT IT: a dropped detection just makes the aligner wait for the
+        # next frame, whereas a wrong one drives the robot the wrong way.
         w_px = float(stats[best, cv2.CC_STAT_WIDTH])
         gap = w_px * z / fx
+        if not (0.028 <= gap <= 0.064):
+            rospy.logwarn_throttle(
+                2.0, '[landmine_detector] apparent width %.0f mm is not a 40 mm block: the '
+                     'depth (%.3f m) is wrong, dropping this detection', gap * 1000.0, z)
+            return None
         return out, area, gap, yaw
 
     # ---------- outputs ----------

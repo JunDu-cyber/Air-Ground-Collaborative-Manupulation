@@ -149,10 +149,36 @@ private:
     // * "fixed", not gazebo_grasp_plugin's zero-limit "revolute": that plugin predates the
     //   fixed joint, and on a runtime-created joint the limits silently fail to bind, leaving
     //   the object swinging on a free hinge (measured 80 mm of carry error).
-    h.joint = world_->Physics()->CreateJoint("fixed", m1);
+    // * THE JOINT MUST BE OWNED BY A MODEL THAT IS NOT STATIC, and that is NOT always model_1.
+    //
+    //   The two things get conflated easily, because usually model_1 is both: the parent link of
+    //   the joint, AND the model that owns it. For a gripper holding an object they are the same
+    //   and everything works. For pinning the ROBOT TO THE GROUND they are not:
+    //
+    //     parent MUST be the ground  -- a static link cannot be a joint's CHILD.
+    //     owner  MUST be the robot   -- a joint owned by a STATIC model can never be undone.
+    //
+    //   Own it with the static model and the weld is permanent: Detach() returns cleanly, the
+    //   caller is told "released", and the robot stays bolted to the world forever. Measured, and
+    //   it is vicious, because nothing anywhere reports an error: a fresh sim drives 0.509 m on a
+    //   cmd_vel; the same sim after ONE brake cycle drives 0.000 m -- even when the command is
+    //   published straight to husky_velocity_controller, bypassing every mux. It presents as a
+    //   dead velocity controller and it is nothing of the kind.
+    //
+    //   So: keep model_1's link as the parent, and give the joint to whichever model can actually
+    //   own it.
+    physics::ModelPtr owner = m1->IsStatic() ? m2 : m1;
+    if (m1->IsStatic() && m2->IsStatic())
+    {
+      res.ok = false;
+      res.message = "both models are static; a joint between them could never be released";
+      return true;
+    }
+
+    h.joint = world_->Physics()->CreateJoint("fixed", owner);
     h.joint->Attach(holder, obj);
     h.joint->Load(holder, obj, diff);
-    h.joint->SetModel(m1);
+    h.joint->SetModel(owner);
     h.joint->Init();
 
     held_.push_back(h);
@@ -175,10 +201,18 @@ private:
       res.message = "not held";
       return true;
     }
-    // Detach ONLY. Do not destroy the joint: dropping the last reference to a live ODE joint
-    // mid-step is a segfault, and Gazebo has no safe runtime joint deletion. The detached
-    // husk is inert; park it so nothing frees it.
+    // Detach(), THEN TEAR THE JOINT DOWN. Detach() alone is not enough when the parent is the
+    // static world: the ODE constraint survives it, and the "released" child stays welded in
+    // place. Measured with a parking brake pinning the Husky to the terrain -- brake off, service
+    // says "released", and the robot still drives 0.000 m on a direct velocity command, forever.
+    //
+    // Fini() is what actually dismantles the constraint. It must come AFTER Detach(): tearing
+    // down a joint that is still attached to two live bodies mid-step is a segfault.
+    //
+    // The husk is still parked rather than freed. Gazebo has no safe runtime joint DELETION, and
+    // dropping the last reference to one is its own crash; an inert JointPtr costs a pointer.
     it->joint->Detach();
+    it->joint->Fini();
     graveyard_.push_back(it->joint);
     held_.erase(it);
     res.ok = true;

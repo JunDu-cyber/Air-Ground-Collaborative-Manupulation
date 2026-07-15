@@ -80,6 +80,7 @@ add_service_files(
   FILES
   DetectObjects.srv
   DetectLandmines.srv
+  LookAt.srv
 )
 
 generate_messages(

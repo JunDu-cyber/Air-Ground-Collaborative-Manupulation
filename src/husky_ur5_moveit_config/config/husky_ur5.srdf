@@ -93,6 +93,37 @@
         <joint name="ur5_wrist_2_joint"       value="1.557"/>
         <joint name="ur5_wrist_3_joint"       value="0.0"/>
     </group_state>
+    <!-- "carry": hold a grasped mine while the UGV DRIVES to the drop-off.
+         NOT "stow", and that distinction is the point. Stow folds the arm back OVER THE CHASSIS,
+         which is exactly where a 136 mm disc welded to the gripper has the robot's own top plate
+         and the arm's own links to hit. Restowing with a mine held is asking for it.
+
+         And NOT "ready" either: ready puts the TCP 0.641 m out in front (FK), which cantilevers
+         the payload and the arm's mass forward on a robot whose CoG is already high enough to
+         tip on the slopes this mission drives. Merely REACHING that far is what levers the base
+         off its spot when it is not braked (measured: 0.030 m of displacement, 26 mm of lift,
+         before touching anything).
+
+         So carry pulls the payload IN and holds it UP (FK from the URDF):
+
+             pose     tcp (base_link)          reach    mine bottom above ground
+             stow     0.362, 0.113, 0.423      0.379    0.45 m   (over the chassis: no)
+             ready    0.632, 0.109, 0.655      0.641    0.68 m   (cantilevered: no)
+             carry    0.261, 0.109, 0.368      0.283    0.41 m   (in close, and clear)
+
+         0.283 m of reach is the smallest lever arm we can hold this thing at, and 0.41 m of
+         ground clearance survives the terrain. VERIFY IT IN RVIZ WITH THE MINE ATTACHED before
+         trusting it: MoveIt checks the attached object against the robot, so if the disc fouls
+         the forearm here the plan to carry will simply fail, which is the loud failure we want
+         rather than a mine dragged through the chassis. -->
+    <group_state name="carry" group="ur5_arm">
+        <joint name="ur5_shoulder_pan_joint"  value="0.0"/>
+        <joint name="ur5_shoulder_lift_joint" value="4.10"/>
+        <joint name="ur5_elbow_joint"         value="2.30"/>
+        <joint name="ur5_wrist_1_joint"       value="-1.10"/>
+        <joint name="ur5_wrist_2_joint"       value="-1.57"/>
+        <joint name="ur5_wrist_3_joint"       value="0.0"/>
+    </group_state>
     <group_state name="ready" group="ur5_arm">
         <joint name="ur5_shoulder_pan_joint"  value="0.0"/>
         <joint name="ur5_shoulder_lift_joint" value="4.683"/>

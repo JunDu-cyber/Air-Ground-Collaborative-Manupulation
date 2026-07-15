@@ -74,12 +74,13 @@ from moveit.core.planning_scene import PlanningScene  # noqa: F401
 from moveit_msgs.msg import CollisionObject
 from sensor_msgs.msg import JointState
 from shape_msgs.msg import SolidPrimitive
-from std_srvs.srv import Trigger, TriggerResponse
+from std_srvs.srv import SetBool, SetBoolResponse, Trigger, TriggerResponse
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 from gazebo_link_attacher.srv import Attach
 from grasp_mtc.srv import GetGrasps, GetGraspsRequest
 from mobile_manipulator.msg import WorldTarget
+from mobile_manipulator.srv import LookAt, LookAtResponse
 
 # Every link of the 2F-140 that can touch the object. An INCOMPLETE touch_links list is
 # the classic cause of "attach succeeded but the lift won't plan": the instant the object
@@ -570,12 +571,36 @@ def build_release_task():
     return task
 
 
-def build_restow_task():
-    """Carry mode (release_after_lift:=false): keep the mine in the jaws, tuck the arm."""
-    task = core.Task('restow_with_mine')
+def build_carry_task():
+    """Carry mode: the mine stays welded to the palm, and the arm holds it for the DRIVE.
+
+    It goes to "carry", NOT to "stow", and that is not a detail. Stow folds the arm back OVER
+    THE CHASSIS -- which is precisely where a 136 mm disc welded to the gripper would meet the
+    top plate and the arm's own links. Restowing while holding a mine is asking to drag it
+    through the robot.
+
+    "carry" instead pulls the payload in to a 0.283 m reach (the smallest lever arm we can hold
+    it at, on a robot whose CoG is already high enough to tip on slopes) and keeps the mine
+    0.41 m off the ground. See the SRDF for the FK that picked it.
+
+    If MoveIt refuses to plan this, BELIEVE IT: it checks the attached mine against the robot,
+    so a failure here means the disc fouls the arm, and that is exactly the loud failure we want
+    instead of a mine dragged through the chassis.
+    """
+    task = core.Task('carry_mine')
     sampling, interp, _cartesian, _gripper = make_planners()
     task.add(stages.CurrentState('current'))
-    _add_go_home(task, sampling, interp)
+
+    # The mine is attached to grasp_tcp in the scene, so re-assert what it is allowed to touch:
+    # without this every gripper link holding it reads as a collision and nothing plans.
+    allow = stages.ModifyPlanningScene('allow landmine contacts')
+    allow.allowCollisions(OBJECT, GRIPPER_LINKS, True)
+    task.add(allow)
+
+    hold = stages.MoveTo('to carry', sampling)
+    hold.group = ARM
+    hold.setGoal('carry')
+    task.add(hold)
     return task
 
 
@@ -626,10 +651,27 @@ class GraspNode(object):
         self.grip_pub = rospy.Publisher('/gripper_controller/command',
                                         JointTrajectory, queue_size=1)
         rospy.Subscriber('/joint_states', JointState, self._js_cb, queue_size=5)
-        rospy.Subscriber('/detected_targets', WorldTarget, self._target_cb, queue_size=5)
+        # The WRIST camera's detection (base_link, grasp-accurate), NOT the UAV's coarse seam.
+        # See landmine_detector.py: /detected_targets is what the TOUR collects, and a grasp must
+        # never be planned from a 12 m aerial fix.
+        rospy.Subscriber(rospy.get_param('~detection_topic', '/ugv/landmine_detection'),
+                         WorldTarget, self._target_cb, queue_size=5)
         if not self.grip_ac.wait_for_server(rospy.Duration(10.0)):
             rospy.logwarn('[grasp_task] %s did not come up; the close will fail', GRIP_ACTION)
         rospy.Service('/grasp/execute', Trigger, self._execute_cb)
+        # The arm is owned here, but the SEARCH sweep is driven by the final-approach controller
+        # (mine_align), which has to aim the camera around until the mine is in frame. Hence a
+        # service rather than a private method: the searcher asks, the arm's owner moves.
+        rospy.Service('/grasp/look', LookAt, self._look_cb)
+        # Put the mine DOWN. In carry mode (release_after_lift:=false) the pick ends with the
+        # mine still welded to the palm, so the mission can haul it somewhere; this is how it
+        # gets let go of once it is there. Without it, carry mode is a one-way trip.
+        rospy.Service('/grasp/place', Trigger, self._place_cb)
+        # The brake, exposed. The SEARCH sweep moves the ARM while the base is free, and a 20 kg
+        # UR5 swinging around levers a 46 kg Husky whose wheels have no position hold: measured,
+        # the base drifted 0.16 m during a single sweep, which moves the very frame the visual
+        # alignment is closing the loop in. Whoever moves the arm must be able to pin the base.
+        rospy.Service('/grasp/brake', SetBool, self._brake_cb)
         rospy.loginfo('[grasp_task] ready; call /grasp/execute')
 
     def _target_cb(self, msg):
@@ -704,6 +746,13 @@ class GraspNode(object):
         See GROUND_MODEL: without this the arm levers the robot off its parking spot before it
         has touched anything, because the wheels have no position hold.
         """
+        # THE GROUND IS model_1 (the joint's PARENT) and the robot is model_2 (its CHILD). That
+        # is the only correct topology: a STATIC link cannot be a joint's child.
+        #
+        # Which model OWNS the joint is a different question, and getting it wrong makes the weld
+        # PERMANENT -- Detach() returns cleanly, the service says "released", and the robot stays
+        # bolted to the world. link_attacher now sorts that out itself (it gives the joint to
+        # whichever model is not static), so this call just has to describe the geometry.
         srv = WELD_SRV if on else UNWELD_SRV
         try:
             rospy.wait_for_service(srv, timeout=5.0)
@@ -774,11 +823,24 @@ class GraspNode(object):
         (What the mine did is measured independently, from Gazebo, by the trial harness.)
         """
         rospy.sleep(0.5)                     # let the last trajectory point settle
-        try:
-            tcp_z = self.arm.get_current_pose(TCP).pose.position.z
-        except Exception as exc:  # noqa: BLE001
-            rospy.logwarn('[grasp_task] cannot read the TCP pose (%s); treating the pick '
-                          'as failed', exc)
+        # RETRY the pose read. get_current_pose() occasionally returns an all-zero pose when the
+        # TF for grasp_tcp is momentarily unavailable right after a trajectory, and a spurious
+        # z=0.000 then reads as "the lift silently aborted" and kills a pick that actually
+        # succeeded (mine lifted, base stable). The TCP is never truly at odom z=0 during a lift,
+        # so treat an exact zero as a failed read and try again.
+        tcp_z = 0.0
+        for _ in range(5):
+            try:
+                tcp_z = self.arm.get_current_pose(TCP).pose.position.z
+            except Exception as exc:  # noqa: BLE001
+                rospy.logwarn('[grasp_task] TCP pose read raised (%s); retrying', exc)
+                tcp_z = 0.0
+            if abs(tcp_z) > 1e-6:
+                break
+            rospy.sleep(0.3)
+        if abs(tcp_z) < 1e-6:
+            rospy.logwarn('[grasp_task] could not read a valid TCP pose after 5 tries; '
+                          'treating the pick as failed')
             return False, float('nan')
         min_up = aim_z + 0.06                # lift.min is 0.10; generous margin
         if tcp_z < min_up:
@@ -849,12 +911,78 @@ class GraspNode(object):
                 break
             self.arm.stop()
 
-    def _look(self):
-        """Unstow, then put the CAMERA above the target looking straight down.
+    def _brake_cb(self, req):
+        """/grasp/brake -- pin the base to the ground, or let it go."""
+        ok = self._brake(bool(req.data))
+        return SetBoolResponse(success=ok,
+                               message='braked' if req.data else 'released')
+
+    def _look_cb(self, req):
+        """/grasp/look -- aim the wrist camera at a ground point. Used by the SEARCH sweep."""
+        ok = self._look(aim=(req.x, req.y))
+        return LookAtResponse(ok=ok,
+                              message='looking at (%.2f, %.2f)' % (req.x, req.y) if ok
+                              else 'could not reach a look pose over (%.2f, %.2f)'
+                                   % (req.x, req.y))
+
+    def _place_cb(self, _req):
+        """/grasp/place -- put the mine down, here, and let go of it.
+
+        The counterpart to carry mode. /grasp/execute with release_after_lift:=false ends with
+        the mine WELDED to the palm and the arm tucked, so the UGV can drive it somewhere; this
+        is how it gets released once it has arrived. Without this, carry mode is a one-way trip
+        and the robot drives around with a landmine bolted to its wrist forever.
+
+        The order is not negotiable, and each step exists because the other order broke something:
+          1. brake  -- the arm is about to reach down and out again, and an unbraked base gets
+                       levered off its spot by that alone (0.030 m before anything is touched).
+          2. lower  -- capped at lift.min, so it can never descend below the height it grasped at.
+          3. unweld -- FIRST, so the mine is a free physical object again BEFORE the jaws move.
+                       Opening first would leave a welded mine hanging off the palm.
+          4. open + detach + retreat + restow.
+        """
+        if not self.welded:
+            return TriggerResponse(success=False,
+                                   message='nothing is held; there is nothing to place')
+        try:
+            self._brake(True)
+
+            lower = build_place_task()
+            if not lower.plan(1):
+                # Holding a mine mid-air with no plan to set it down. Unwelding drops it ~10 cm
+                # onto flat ground: not pretty, but bounded and known, unlike improvising.
+                rospy.logerr('[grasp_task] no lower plan; releasing where we are')
+                self._unweld()
+                self._open_jaws()
+                return TriggerResponse(success=False, message='lower planning failed; dropped')
+            lower.execute(lower.solutions[0])
+
+            self._unweld()
+            rospy.sleep(0.5)
+
+            rel = build_release_task()
+            if not rel.plan(1):
+                rospy.logerr('[grasp_task] no release plan; opening the jaws in place')
+                self._open_jaws()
+                return TriggerResponse(success=False, message='release planning failed')
+            rel.execute(rel.solutions[0])
+            rospy.loginfo('[grasp_task] placed')
+            return TriggerResponse(success=True, message='placed')
+        finally:
+            self._brake(False)
+
+    def _look(self, aim=None):
+        """Unstow, then put the CAMERA above `aim` (a ground point in base_link), looking down.
 
         Perception needs a viewpoint. Stowed, the camera stares forward along the chassis
         and cannot see a mine on the ground at all -- the detector just reports "no
-        detonator visible", which is easy to misread as a detection bug."""
+        detonator visible", which is easy to misread as a detection bug.
+
+        `aim` exists for the SEARCH sweep. On arrival the mine can be anywhere within nav's
+        error, which is LARGER than the camera's ground footprint, so the final approach has to
+        be able to point the camera somewhere other than dead ahead and try again. With aim=None
+        this keeps its old behaviour: the last known target, else the nominal standoff.
+        """
         import math
         import numpy as np
         from tf.transformations import quaternion_from_matrix
@@ -865,9 +993,9 @@ class GraspNode(object):
             return False
         self.arm.stop(); self.arm.clear_pose_targets()
 
-        # Aim at the coarse target if we have one (in the mission this is the UAV's
-        # detection), else at the nominal standoff straight ahead.
-        if self.last_target is not None:
+        if aim is not None:
+            x, y = aim
+        elif self.last_target is not None:
             x, y = self.last_target.point.x, self.last_target.point.y
         else:
             x, y = self.standoff, 0.0
@@ -1080,7 +1208,7 @@ class GraspNode(object):
         rospy.loginfo('[grasp_task] lifted: mine held, TCP at z=%.3f', tcp_z)
 
         if not self.release:
-            second = build_restow_task()        # carry mode: the mine stays in the jaws
+            second = build_carry_task()         # carry mode: the mine stays in the jaws
             if second.plan(1):
                 second.execute(second.solutions[0])
                 return TriggerResponse(success=True, message='picked (carrying)')
