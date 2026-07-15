@@ -63,6 +63,18 @@ class TargetTour(object):
         self.terrain_sample_radius = float(rospy.get_param('~terrain_sample_radius', 0.5))
         self.republish_period = float(rospy.get_param('~republish_period', 1.0))
 
+        # ARRIVED -> GRASP. Default OFF, so a nav-only tour is byte-for-byte unchanged.
+        # When on, the tour calls the grasp service on arrival and only advances afterwards.
+        # NOTE: this is the NO-ALIGNMENT path -- it drives to the coarse target and grasps from
+        # wherever nav parked, so it only succeeds when the mine happens to land in the arm's
+        # reachable band (x in [0.60, 1.05] from base_link). The visual fine-alignment that would
+        # guarantee that (mine_align) is a separate, not-yet-working stage; this wires the full
+        # air-ground pipeline end to end without waiting on it.
+        self.grasp_on_arrival = bool(rospy.get_param('~grasp_on_arrival', False))
+        self.grasp_srv = rospy.get_param('~grasp_service', '/grasp/execute')
+        self.grasp_wait = float(rospy.get_param('~grasp_wait', 180.0))
+        self.grasping = False
+
         self.lock = threading.Lock()
         self.targets = []          # collected, in odom
         self.state = self.COLLECT
@@ -214,16 +226,41 @@ class TargetTour(object):
             t = self.targets[idx]
             d = math.hypot(t.x - self.odom[0], t.y - self.odom[1])
             now = rospy.Time.now().to_sec()
+            if self.grasping:
+                return                                   # a grasp is running; do not re-trigger
             if d < self.reach_tolerance:
                 rospy.loginfo('[target_tour] reached %d/%d %s (d=%.2f)',
                               self.cur + 1, len(self.order), t.cls, d)
-                self._advance(now)
+                if self.grasp_on_arrival:
+                    # Grasp in a THREAD: /grasp/execute blocks for the whole look-plan-pick, and
+                    # this runs on a 5 Hz timer holding self.lock -- calling it inline would stall
+                    # the tour and every callback. The grasp's own parking brake pins the base, so
+                    # the planner cannot drive off mid-pick even though its goal is still live.
+                    self.grasping = True
+                    threading.Thread(target=self._grasp_then_advance, daemon=True).start()
+                else:
+                    self._advance(now)
             elif now - self.goal_start > self.goal_timeout:
                 rospy.logwarn('[target_tour] %d/%d timeout (d=%.2f) -> skip',
                               self.cur + 1, len(self.order), d)
                 self._advance(now)
             elif now - self.last_pub > self.republish_period:
                 self._publish_goal(idx)
+
+    def _grasp_then_advance(self):
+        """Call the grasp service, then advance -- WHATEVER the outcome. A failed grasp must
+        never strand the tour; we log it and move to the next mine."""
+        ok, msg = False, 'no service'
+        try:
+            rospy.wait_for_service(self.grasp_srv, timeout=10.0)
+            res = rospy.ServiceProxy(self.grasp_srv, Trigger)()
+            ok, msg = bool(res.success), res.message
+        except Exception as exc:  # noqa: BLE001
+            msg = str(exc)
+        rospy.loginfo('[target_tour] grasp %s: %s', 'OK' if ok else 'FAILED', msg)
+        with self.lock:
+            self.grasping = False
+            self._advance(rospy.Time.now().to_sec())
 
     def _advance(self, now):
         self.cur += 1

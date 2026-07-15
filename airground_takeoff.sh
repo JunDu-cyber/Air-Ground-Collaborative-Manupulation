@@ -26,7 +26,11 @@ pkill -9 -f "roslaunch .*airground_egocentric.launch" 2>/dev/null || true
 pkill -9 -f "roslaunch .*lidar_odometry.launch" 2>/dev/null || true
 pkill -9 -f "roslaunch .*cmu_planner.launch" 2>/dev/null || true
 pkill -9 -f "dlio_odom_node" 2>/dev/null || true
-pkill -9 -f "ugv_target_tour" 2>/dev/null || true
+pkill -9 -f "ugv_target_tour" 2>/dev/null
+pkill -9 -f "roslaunch .*move_group.launch" 2>/dev/null
+pkill -9 -f "roslaunch .*manipulation.launch" 2>/dev/null
+pkill -9 -f "roslaunch .*husky_ur5_gpd.launch" 2>/dev/null
+pkill -9 -f "grasp_task.py|gpd_grasp_server.py|landmine_detector.py|detect_grasps|mine_align.py" 2>/dev/null || true
 pkill -9 -f "airground_anchor_latch" 2>/dev/null || true
 pkill -9 -f "roslaunch .*spawn_outdoor_city.launch" 2>/dev/null || true
 pkill -9 -f "roslaunch .*forest_uav_mapping.launch" 2>/dev/null || true
@@ -209,6 +213,14 @@ UGV_GLOBAL_PLANNER=${UGV_GLOBAL_PLANNER:-far}
 UGV_UAV_PRIOR=${UGV_UAV_PRIOR:-true}
 UGV_MAP_SIZE=${UGV_MAP_SIZE:-120}
 UGV_MAP_RES=${UGV_MAP_RES:-0.35}
+# GRASP: on arrival at a detected mine, the tour calls /grasp/execute (which does its own
+# look + detect + GPD) and advances after. This is the NO-ALIGNMENT path -- it grasps from
+# wherever nav parks, so it only lands the pick when the mine falls in the arm's reachable band
+# (x in [0.60, 1.05] from base_link). The visual fine-alignment that would guarantee that is a
+# separate, not-yet-working stage; this wires the whole air-ground pipeline end to end anyway.
+UGV_GRASP=${UGV_GRASP:-true}
+GRASP_SOURCE=${GRASP_SOURCE:-gpd}
+GRASP_DETECTOR=${GRASP_DETECTOR:-color}
 if [ "$UGV_NAV" = "true" ]; then
   echo "[airground] starting UGV CMU planner (cost=$UGV_COST_SOURCE global=$UGV_GLOBAL_PLANNER uav_prior=$UGV_UAV_PRIOR) + target tour ..."
   gnome-terminal --tab --title="3c_UGV_NAV" -- bash -c "
@@ -221,6 +233,7 @@ roslaunch mobile_manipulator cmu_planner.launch \
   uav_prior:='$UGV_UAV_PRIOR' \
   map_size:='$UGV_MAP_SIZE' \
   map_resolution:='$UGV_MAP_RES' \
+  grasp_on_arrival:='$UGV_GRASP' \
   maxSpeed:=1.0; exec bash"
   echo "[airground] UGV nav up (idle until: rosservice call /ugv/start_tour)"
 fi
@@ -243,6 +256,39 @@ else
   AG_ENABLE_GATE=${AG_ENABLE_GATE:-false}
 fi
 echo "[airground] elevation map owner: $([ "$AG_START_ELEVATION" = "false" ] && echo 'cmu_planner (UGV+UAV fused)' || echo 'airground_egocentric (UAV only)') ; gate=$AG_ENABLE_GATE"
+
+# 2.8 MANIPULATION: MoveIt move_group + the grasp pipeline (perception -> GPD -> MTC pick).
+#     Started here because the pick needs the spawned robot + its ros_control controllers (up
+#     since the unpause) and DLIO's odom frame (the lift goes along odom +Z). move_group loads
+#     NO robot_description of its own -- the spawner already owns it; a second one could diverge.
+#     grasp_source:=gpd runs GPD behind the /get_grasps seam; detector:=color because
+#     landmine.onnx cannot see this flat-shaded prop (a domain gap, not a bug).
+#     The tour drives /grasp/execute on arrival (grasp_on_arrival above).
+if [ "$UGV_GRASP" = "true" ]; then
+  echo "[airground] starting MoveIt move_group ..."
+  gnome-terminal --tab --title="7a_MoveGroup" -- bash -c "
+source /opt/ros/noetic/setup.bash && \
+source '$EGO_WS/devel/setup.bash' && \
+export ROS_PACKAGE_PATH='$UGV_ROS_PACKAGE_PATH':\$ROS_PACKAGE_PATH && \
+roslaunch husky_ur5_moveit_config move_group.launch \
+  load_robot_description:=false \
+  allow_trajectory_execution:=true \
+  moveit_controller_manager:=simple \
+  publish_monitored_planning_scene:=true; exec bash"
+  echo "[airground] waiting 12s for move_group ..."
+  sleep 12
+
+  echo "[airground] starting grasp pipeline (grasp_source=$GRASP_SOURCE detector=$GRASP_DETECTOR) ..."
+  gnome-terminal --tab --title="7b_Grasp" -- bash -c "
+source /opt/ros/noetic/setup.bash && \
+source '$EGO_WS/devel/setup.bash' && \
+export ROS_PACKAGE_PATH='$UGV_ROS_PACKAGE_PATH':\$ROS_PACKAGE_PATH && \
+roslaunch grasp_mtc manipulation.launch \
+  grasp_source:='$GRASP_SOURCE' \
+  detector:='$GRASP_DETECTOR' \
+  planning_frame:=base_link; exec bash"
+  echo "[airground] grasp pipeline up (tour will call /grasp/execute on arrival)"
+fi
 
 # 3. MAVROS.
 gnome-terminal --tab --title="4_MAVROS" -- bash -c "source /opt/ros/noetic/setup.bash && roslaunch '$MAVROS_PX4_LAUNCH' fcu_url:=\"udp://:14540@127.0.0.1:14580\"; exec bash"
@@ -288,6 +334,9 @@ echo "  elevation map: /elevation_mapping/elevation_map_postprocessed (frame=odo
 echo "  UAV pose error: /uav/pose_cov (real MAVROS covariance -> Sigma_{odom->uav}, world_frame=odom)"
 echo "  UGV nav: detected targets -> /detected_targets (mobile_manipulator/WorldTarget)"
 echo "           after the UAV finishes: rosservice call /ugv/start_tour  (UGV tours the targets)"
+echo "  UGV grasp on arrival: $UGV_GRASP  (grasp_source=$GRASP_SOURCE, detector=$GRASP_DETECTOR)"
+echo "           the tour calls /grasp/execute at each mine; NO fine-alignment yet, so the pick"
+echo "           only lands when nav parks the mine inside x in [0.60, 1.05] of base_link"
 echo "  checks: rostopic echo -n1 /mavros/state ; rosrun rqt_tf_tree rqt_tf_tree"
 echo "          rosrun tf2_ros tf2_echo odom uav0/map_local   # anchor latched"
 echo "          rosrun tf2_ros tf2_echo odom base_link        # DLIO (no map frame in tree)"

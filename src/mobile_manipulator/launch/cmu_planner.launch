@@ -239,6 +239,11 @@
        /ugv/start_tour service drives the UGV through them (distance/terrain order)
        via $(arg ugv_goal_topic). RViz markers on /target_tour_markers. -->
   <arg name="target_tour" default="true"/>
+  <!-- ARRIVED -> GRASP. When true the tour calls /grasp/execute on arrival and advances after.
+       Requires move_group + manipulation.launch to be running (airground_takeoff.sh starts
+       them). Default false: a nav-only run needs no arm. This is the NO-ALIGNMENT path: it
+       grasps from wherever nav parks. -->
+  <arg name="grasp_on_arrival" default="false"/>
   <node if="$(arg target_tour)"
         pkg="mobile_manipulator" type="ugv_target_tour.py"
         name="ugv_target_tour" output="screen">
@@ -251,6 +256,7 @@
     <param name="reach_tolerance"     value="0.6"/>
     <param name="goal_timeout"        value="60.0"/>
     <param name="obstacle_cost_thre"  value="0.3"/>
+    <param name="grasp_on_arrival"    value="$(arg grasp_on_arrival)"/>
   </node>
 
 </launch>
