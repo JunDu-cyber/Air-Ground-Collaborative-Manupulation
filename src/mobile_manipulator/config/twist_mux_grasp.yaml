@@ -1,0 +1,56 @@
+# twist_mux inputs for the Husky, PLUS the grasp aligner.
+#
+# This is husky_control/config/twist_mux.yaml with one extra input. It is copied rather than
+# included because twist_mux takes the whole `topics` list from one rosparam load; there is no
+# way to append to it.
+#
+# WHY THE ALIGNER NEEDS ITS OWN INPUT AT ALL
+# ------------------------------------------
+# Navigation cannot park the UGV well enough to grasp. The arm's reachable band for a ground
+# grasp is x in [0.60, 1.05] m from base_link (measured; hard cliff at 0.55) -- a window 0.45 m
+# wide -- while the tour's arrival tolerance is 0.6 m and the UAV's fix comes from 12 m up. So
+# after arriving we re-acquire the mine with the wrist camera and drive a short closed-loop
+# correction. That controller has to be able to command the base WITHOUT fighting the CMU
+# planner, which is still running and still holds a waypoint.
+#
+# The mux makes that clean: the planner reaches the base through `external` at priority 1
+# (pathFollower -> /cmd_vel_stamped -> twiststamped_to_twist -> /cmd_vel), so an input at a
+# higher priority simply wins for as long as it is publishing, and the planner resumes by itself
+# the moment we stop (timeout 0.5 s). No planner surgery, no mode flag, nothing to reset.
+#
+# PRIORITY 7 IS DELIBERATE, and it is a safety property, not an arbitrary number:
+#
+#     joy (10) > kb (9) > interactive_marker (8) > GRASP ALIGN (7) > planner (1)
+#
+# The aligner outranks the planner but is still outranked by every HUMAN input. If this thing
+# ever drives the robot somewhere stupid, the joystick takes it back instantly. Do not "simplify"
+# this above 8.
+topics:
+- name    : joy
+  topic   : joy_teleop/cmd_vel
+  timeout : 0.5
+  priority: 10
+- name    : kb
+  topic   : kb_teleop/cmd_vel
+  timeout : 0.5
+  priority: 9
+- name    : interactive_marker
+  topic   : twist_marker_server/cmd_vel
+  timeout : 0.5
+  priority: 8
+# The final visual approach to a landmine (mine_align.py). Also used to HOLD the base still at
+# zero velocity during the grasp itself, so the planner cannot drive out from under the arm
+# while it is reaching for the ground.
+- name    : grasp_align
+  topic   : grasp/cmd_vel
+  timeout : 0.5
+  priority: 7
+- name    : external
+  topic   : cmd_vel
+  timeout : 0.5
+  priority: 1
+locks:
+- name    : e_stop
+  topic   : e_stop
+  timeout : 0.0
+  priority: 255

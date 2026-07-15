@@ -109,8 +109,14 @@
   </node>
 
   <!-- Twist mux -->
+  <!-- Our own mux config, not husky_control's. Identical to it, plus one input: grasp/cmd_vel
+       at priority 7, which the final visual approach to a landmine uses to correct the base
+       after nav has parked it (nav cannot hit the 0.45 m-wide reachable band on its own), and
+       which also HOLDS the base at zero velocity during the grasp. It outranks the CMU planner
+       (external, priority 1) and is outranked by every human input, so the joystick always wins.
+       See config/twist_mux_grasp.yaml. -->
   <node pkg="twist_mux" type="twist_mux" name="twist_mux">
-    <rosparam command="load" file="$(find husky_control)/config/twist_mux.yaml" />
+    <rosparam command="load" file="$(find mobile_manipulator)/config/twist_mux_grasp.yaml" />
     <remap from="cmd_vel_out" to="husky_velocity_controller/cmd_vel"/>
   </node>
 

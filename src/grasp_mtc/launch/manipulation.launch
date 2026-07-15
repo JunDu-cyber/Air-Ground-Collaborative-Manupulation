@@ -78,6 +78,17 @@
        0.4387, 0.4413, 0.480, 0.495 and even 0.0017 (jaws WIDE OPEN) for one and the same 40 mm
        block. The grasp is an explicit weld instead (gazebo_link_attacher); see grasp_task.py. -->
 
+  <!-- ===== The final approach =====
+       Nav cannot park the UGV well enough to grasp: the reachable band is 0.45 m wide
+       (x in [0.60, 1.05] from base_link) and the tour arrives within 0.6 m, from a UAV fix taken
+       at 12 m. So after arriving we LOOK for the mine with the wrist camera and drive a short
+       closed-loop correction on what we see. It commands the base through grasp/cmd_vel, a
+       twist_mux input at priority 7: it outranks the CMU planner and is outranked by every human
+       input. See mine_align.py and config/twist_mux_grasp.yaml. -->
+  <node pkg="mobile_manipulator" type="mine_align.py" name="mine_align" output="screen">
+    <param name="standoff" value="0.75"/>
+  </node>
+
   <!-- ===== MTC executor (identical for every grasp_source) ===== -->
   <node pkg="grasp_mtc" type="grasp_task.py" name="grasp_task" output="screen">
     <param name="planning_frame" value="$(arg planning_frame)"/>

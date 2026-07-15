@@ -64,12 +64,22 @@ Visualization Manager:
       Queue Size: 100
     - Class: rviz/PointCloud2
       Enabled: true
-      Name: segmented mine cloud
-      Topic: /gpd_grasp_server/segmented_cloud
+      Name: cloud SENT TO GPD (detonator)
+      Topic: /gpd_grasp_server/cloud_to_gpd
       Alpha: 1
-      Color: 255; 200; 0
+      Color: 0; 255; 80
       Color Transformer: FlatColor
-      Size (m): 0.004
+      Size (m): 0.005
+      Style: Points
+      Queue Size: 10
+    - Class: rviz/PointCloud2
+      Enabled: true
+      Name: cloud (whole mine, context only)
+      Topic: /gpd_grasp_server/cloud_mine
+      Alpha: 0.35
+      Color: 200; 60; 60
+      Color Transformer: FlatColor
+      Size (m): 0.003
       Style: Points
       Queue Size: 10
     - Class: rviz/Marker

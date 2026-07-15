@@ -127,8 +127,17 @@ class GpdGraspServer(object):
         # we get "search only the detonator" by SENDING only the detonator.
         self.cloud_pub = rospy.Publisher('/gpd_cloud', PointCloud2, queue_size=1, latch=True)
         self.viz = rospy.Publisher('~candidates', MarkerArray, queue_size=1, latch=True)
-        self.cloud_viz = rospy.Publisher('~segmented_cloud', PointCloud2, queue_size=1,
-                                         latch=True)
+        # TWO CLOUDS, AND ONLY ONE OF THEM IS REAL, so name them for what they are. The old
+        # single '~segmented_cloud' showed the whole mine and looked, reasonably enough, like
+        # the thing being handed to GPD. It is not.
+        #
+        #   ~cloud_to_gpd : THE DETONATOR POINTS. This is the cloud GPD actually receives, and
+        #                   the reason it can never propose a grasp across the disc.
+        #   ~cloud_mine   : the whole mine (red disc + yellow block). CONTEXT ONLY. Nothing
+        #                   consumes it; it exists so you can see what the segmentation found.
+        self.cloud_to_gpd = rospy.Publisher('~cloud_to_gpd', PointCloud2, queue_size=1,
+                                            latch=True)
+        self.cloud_mine = rospy.Publisher('~cloud_mine', PointCloud2, queue_size=1, latch=True)
 
         # /detect_grasps/clustered_grasps, NOT /clustered_grasps.
         #
@@ -329,11 +338,13 @@ class GpdGraspServer(object):
         # the mine as disc + detonator, so ComputeIK rejects any GPD grasp whose gripper would hit
         # the disc. GPD proposes; MoveIt disposes.
         cloud_msg = self._cloud_msg(sample_pts, self.frame, rgb.header.stamp)
-        self.cloud_viz.publish(self._cloud_msg(cloud_pts, self.frame, rgb.header.stamp))
+        self.cloud_to_gpd.publish(cloud_msg)                                   # what GPD gets
+        self.cloud_mine.publish(self._cloud_msg(cloud_pts, self.frame,         # context only
+                                                rgb.header.stamp))
         self._grasps = None
         self.cloud_pub.publish(cloud_msg)
-        rospy.loginfo('[gpd_grasp] sent GPD %d DETONATOR points (the %d-point whole-mine cloud '
-                      'is on ~segmented_cloud for eyeballing); waiting...',
+        rospy.loginfo('[gpd_grasp] sent GPD %d DETONATOR points on ~cloud_to_gpd (the %d-point '
+                      'whole-mine cloud is on ~cloud_mine, for eyeballing only); waiting...',
                       len(sample_pts), len(cloud_pts))
 
         deadline = rospy.Time.now() + rospy.Duration(self.timeout)
