@@ -27,11 +27,11 @@ robot_pose_cache_size:            200
 output_topic: "elevation_map_postprocessed"
 postprocessor_pipeline_name: "postprocessor_pipeline"
 
-# --- Input: the UGV's self-filtered Velodyne cloud, in the sensor frame ---
+# --- Input: the UGV cloud after the elevation-only 20 m XY gate ---
 input_sources:
   lidar:
     type: pointcloud
-    topic: /velodyne_points_filtered        # arm-removed VLP-16 cloud, frame velodyne
+    topic: /velodyne_points_elevation       # DLIO still consumes /velodyne_points_filtered
     queue_size: 1
     publish_on_update: true
     sensor_processor:

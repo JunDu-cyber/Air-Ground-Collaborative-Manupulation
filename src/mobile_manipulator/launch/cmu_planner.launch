@@ -64,6 +64,9 @@
        (with enable_gate:=true, which is what publishes the gated cloud this subscribes to).
        Off by default: with no UAV the extra source simply never receives a message. -->
   <arg name="uav_prior" default="false"/>
+  <!-- Keep the UGV LiDAR out of elevation_mapping when the UAV is the sole
+       terrain mapper. Navigation/DLIO clouds remain untouched. -->
+  <arg name="ugv_elevation_update" default="true"/>
 
   <!-- Map geometry, overridable. The default 40 x 40 m patch is sized for LOCAL planning
        and is deliberately small; it cannot even reach the hill at y=30. Enlarge it when
@@ -74,14 +77,36 @@
        so this stays cheap, but do not go to 200 m at 0.25 (640k cells) without checking. -->
   <arg name="map_size"       default="40.0"/>
   <arg name="map_resolution" default="0.25"/>
+  <!-- Only elevation_mapping sees this range-limited branch. DLIO and both
+       CMU/FAR scan inputs remain connected to their original full clouds. -->
+  <arg name="ugv_elevation_max_xy_range" default="20.0"/>
 
   <group if="$(eval arg('cost_source')=='elevation')">
+    <node if="$(arg ugv_elevation_update)" pkg="sensor_filters" type="pointcloud2_filter_chain"
+          name="ugv_elevation_range_filter" output="screen">
+      <rosparam param="cloud_filter_chain" subst_value="true">
+        - name: ugv_elevation_horizontal_range
+          type: mobileManipulator/HorizontalRangeFilterPointCloud2
+          params:
+            target_frame: base_link
+            max_xy_distance: $(arg ugv_elevation_max_xy_range)
+      </rosparam>
+      <remap from="~input"  to="/velodyne_points_filtered"/>
+      <remap from="~output" to="/velodyne_points_elevation"/>
+    </node>
     <node pkg="elevation_mapping" type="elevation_mapping" name="elevation_mapping" output="screen">
-      <rosparam command="load" file="$(find mobile_manipulator)/config/elevation_mapping_ugv.yaml"/>
+      <!-- Hybrid mode uses the UGV as the node-wide base. UAV-only mode must
+           instead use the dedicated UAV config: merely black-holing the lidar
+           topic leaves robot_base_frame_id=base_link and gives the sole UAV
+           source the wrong pose/height reference. -->
+      <rosparam if="$(arg ugv_elevation_update)" command="load"
+                file="$(find mobile_manipulator)/config/elevation_mapping_ugv.yaml"/>
+      <rosparam unless="$(arg ugv_elevation_update)" command="load"
+                file="$(find mobile_manipulator)/config/elevation_mapping_uav_live.yaml"/>
       <!-- Loaded AFTER the UGV config, and ADDITIVE: rosparam flattens each file into the
            node's private namespace, so input_sources/lidar/* and input_sources/uav/* coexist
            and InputSourceManager subscribes to both. -->
-      <rosparam if="$(arg uav_prior)" command="load"
+      <rosparam if="$(eval arg('uav_prior') and arg('ugv_elevation_update'))" command="load"
                 file="$(find mobile_manipulator)/config/elevation_mapping_uav_prior.yaml"/>
       <rosparam command="load" file="$(find mobile_manipulator)/config/elevation_postprocessor.yaml"/>
       <!-- After the rosparam files, so these win. -->
@@ -239,7 +264,8 @@
        /ugv/start_tour service drives the UGV through them (distance/terrain order)
        via $(arg ugv_goal_topic). RViz markers on /target_tour_markers. -->
   <arg name="target_tour" default="true"/>
-  <!-- ARRIVED -> GRASP. When true the tour calls /grasp/execute on arrival and advances after.
+  <!-- ARRIVED -> ALIGN -> GRASP -> HOME -> PLACE. When true, the tour carries each
+       successfully picked mine back to its latched starting pose before advancing.
        Requires move_group + manipulation.launch to be running (airground_takeoff.sh starts
        them). Default false: a nav-only run needs no arm. This is the NO-ALIGNMENT path: it
        grasps from wherever nav parks. -->
@@ -257,6 +283,13 @@
     <param name="goal_timeout"        value="60.0"/>
     <param name="obstacle_cost_thre"  value="0.3"/>
     <param name="grasp_on_arrival"    value="$(arg grasp_on_arrival)"/>
+    <param name="align_before_grasp"  value="true"/>
+    <param name="align_service"       value="/ugv/align_to_mine"/>
+    <param name="grasp_service"       value="/grasp/execute"/>
+    <param name="place_service"       value="/grasp/place"/>
+    <param name="auto_start_status_topic" value="/mine_survey/status"/>
+    <param name="auto_start_status_token" value="COMPLETE"/>
+    <param name="home_tolerance"      value="0.6"/>
   </node>
 
 </launch>

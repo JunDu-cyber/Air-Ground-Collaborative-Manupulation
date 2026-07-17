@@ -1,0 +1,6 @@
+cloud_filter_chain:
+  - name: ugv_elevation_horizontal_range
+    type: mobileManipulator/HorizontalRangeFilterPointCloud2
+    params:
+      target_frame: base_link
+      max_xy_distance: 20.0

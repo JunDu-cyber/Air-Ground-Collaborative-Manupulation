@@ -4,6 +4,7 @@ project(uav_truth_tracker)
 find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
   mavros_msgs
+  message_generation
   nav_msgs
   rospy
   sensor_msgs
@@ -15,7 +16,23 @@ find_package(catkin REQUIRED COMPONENTS
   visualization_msgs
 )
 
-catkin_package()
+add_message_files(
+  FILES
+  MineDetection.msg
+  MineDetectionArray.msg
+  MineMapEntry.msg
+  MineMap.msg
+)
+
+generate_messages(
+  DEPENDENCIES
+  geometry_msgs
+  std_msgs
+)
+
+catkin_package(
+  CATKIN_DEPENDS geometry_msgs message_runtime std_msgs
+)
 
 catkin_install_python(PROGRAMS
   scripts/coordinate_align_checker.py
@@ -54,6 +71,11 @@ catkin_install_python(PROGRAMS
   scripts/uav_elevation_cloud_projector.py
   scripts/uav1_motion_node.py
   scripts/uav_model_markers.py
+  scripts/mine_seg_localizer_node.py
+  scripts/mine_map_fusion_node.py
+  scripts/mine_camera_diagnostics.py
+  scripts/mine_survey_waypoints.py
+  scripts/uav_goal_arbiter.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

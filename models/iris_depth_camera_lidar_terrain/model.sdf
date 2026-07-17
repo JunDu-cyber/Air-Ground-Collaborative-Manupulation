@@ -31,6 +31,26 @@
       </axis>
     </joint>
 
+    <!-- Down-facing RGB-D for landmine detection (grafted from the
+         uav-mine-to-ugv branch). The forward depth_camera above is for EGO
+         obstacle avoidance; this one looks straight down (pitched inside the
+         sensor) and feeds the airborne YOLO detector on /mine_camera/*. -->
+    <include>
+      <uri>model://mine_depth_camera</uri>
+      <pose>0 0 -0.05 0 0 0</pose>
+    </include>
+    <joint name="mine_camera_joint" type="revolute">
+      <child>mine_depth_camera::link</child>
+      <parent>iris::base_link</parent>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <upper>0</upper>
+          <lower>0</lower>
+        </limit>
+      </axis>
+    </joint>
+
     <link name="velodyne_link">
       <pose>0 0 0.06 0 0 0</pose>
       <inertial>

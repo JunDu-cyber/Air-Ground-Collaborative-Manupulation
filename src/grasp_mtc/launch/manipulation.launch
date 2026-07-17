@@ -24,6 +24,8 @@
   <arg name="planning_frame" default="base_link"/>
   <arg name="plan_only" default="false"
        doc="plan and report the stage graph, but do not move the robot"/>
+  <arg name="release_after_lift" default="true"
+       doc="true for bench picks; false keeps the mine attached for mission carry mode"/>
   <arg name="detector" default="color"
        doc="color | onnx  -- how the MINE is found. The DETONATOR is always localised the same
             way (yellow blob -> centroid -> minAreaRect yaw -> depth), because the grasp needs
@@ -94,6 +96,7 @@
     <param name="planning_frame" value="$(arg planning_frame)"/>
     <param name="plan_only"      value="$(arg plan_only)"/>
     <param name="detect_service" value="/landmine_detector/detect_once"/>
+    <param name="release_after_lift" value="$(arg release_after_lift)"/>
   </node>
 
 </launch>

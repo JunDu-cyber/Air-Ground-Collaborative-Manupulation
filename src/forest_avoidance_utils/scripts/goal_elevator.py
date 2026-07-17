@@ -20,6 +20,7 @@ def main():
     rospy.init_node('goal_elevator')
     goal_z = rospy.get_param("~goal_z", 1.0)
     input_topic = rospy.get_param("~input_topic", "/move_base_simple/goal")
+    legacy_input_topic = rospy.get_param("~legacy_input_topic", "/goal")
     output_topic = rospy.get_param("~output_topic", "/goal_elevated")
     # When set, clicked goals are TF-transformed into this frame before being sent
     # to EGO (which reads the x,y numerically in its MAVROS-local frame).
@@ -64,10 +65,15 @@ def main():
 
     rospy.Subscriber('/mavros/local_position/pose', PoseStamped, odom_cb)
     rospy.Subscriber(input_topic, PoseStamped, goal_cb)
+    # Some saved RViz sessions use rviz/SetGoal's legacy /goal topic. Accept it
+    # too so removing the survey arbiter cannot silently break manual flight.
+    if legacy_input_topic and legacy_input_topic != input_topic:
+        rospy.Subscriber(legacy_input_topic, PoseStamped, goal_cb)
 
     rospy.logwarn(
-        "[GoalElevator] Ready (sub=%s, pub=%s, fixed_goal_z=%.2f, target_frame=%s)",
-        input_topic, output_topic, goal_z, target_frame or "(none, pass-through)")
+        "[GoalElevator] Ready (sub=%s + %s, pub=%s, fixed_goal_z=%.2f, target_frame=%s)",
+        input_topic, legacy_input_topic, output_topic, goal_z,
+        target_frame or "(none, pass-through)")
     rospy.spin()
 
 

@@ -41,6 +41,10 @@
 
   <arg name="flight_height" default="12.0"/>
   <arg name="low_altitude"  default="false"/>
+  <!-- Manual RViz goals need goal_elevator's odom->UAV-local transform. The
+       low-altitude global planner currently assumes its input is already in
+       MAVROS-local coordinates, so keep it off in this egocentric integration. -->
+  <arg name="use_global_planner" default="false"/>
   <!-- Altitude gate: drop the degenerate on-ground LiDAR scan, fuse only when
        airborne. DEFAULT OFF (enable_gate:=false) — in practice it performs poorly
        (it just hard-drops everything below min_altitude, so it both loses low
@@ -94,6 +98,8 @@
     <param name="uav_spawn_x"     value="$(arg uav_spawn_x)"/>
     <param name="uav_spawn_y"     value="$(arg uav_spawn_y)"/>
     <param name="uav_spawn_z"     value="$(arg uav_spawn_z)"/>
+    <!-- Ground truth is used only to place this fixed map centre in odom.
+         No UAV truth pose or truth orientation is used. -->
     <param name="num_samples"     value="30"/>
   </node>
 
@@ -121,6 +127,7 @@
     <arg name="relay_max_odom_age" value="0.0"/>
     <arg name="flight_height"  value="$(arg flight_height)"/>
     <arg name="low_altitude"   value="$(arg low_altitude)"/>
+    <arg name="use_global_planner" value="$(arg use_global_planner)"/>
   </include>
 
   <!-- ===== 3. Altitude gate (OPTIONAL, default OFF): drop the on-ground scan ===== -->

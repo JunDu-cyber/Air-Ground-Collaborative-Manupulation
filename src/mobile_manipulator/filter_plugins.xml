@@ -9,5 +9,13 @@
         collision-mesh self-filter cannot remove.
       </description>
     </class>
+    <class name="mobileManipulator/HorizontalRangeFilterPointCloud2"
+           type="mobile_manipulator::HorizontalRangeFilterPointCloud2"
+           base_class_type="filters::FilterBase&lt;sensor_msgs::PointCloud2&gt;">
+      <description>
+        Keeps finite points within a configurable horizontal distance of the UGV.
+        Intended only for the elevation-mapping input branch.
+      </description>
+    </class>
   </library>
 </class_libraries>

@@ -8,14 +8,12 @@ origin `uav0/map_local`, which must be tied to the UGV `odom` so the aerial clou
 lands in the elevation map. This node establishes that tie ONCE, during the UAV
 mapping epoch, using a global snapshot the UGV is permitted to read only then:
 
-  * the UGV's TRUE world pose  T_world_base  (from /ground_truth/state; full pose,
-    so the anchor yaw is observable -- a single GPS fix would leave yaw ambiguous)
-  * the UGV's odom pose        T_odom_base   (from /state_estimation, DLIO)
+  * the UGV's TRUE world position (from /ground_truth/state)
+  * the UGV's odom position       (from /state_estimation, DLIO)
 
-  => world->odom :  T_world_odom = T_world_base * inv(T_odom_base)
-  The UAV MAVROS-local origin sits at a known offset in the world (its spawn XY,
-  ground Z), identity rotation:  T_world_uavlocal = trans(uav_spawn), I.
-  => odom->uav0/map_local :  T_odom_uavlocal = inv(T_world_odom) * T_world_uavlocal
+Only the fixed UAV-map centre is translated into odom. Truth orientations and
+the UAV truth pose are deliberately not used; the simulation world and odom
+axes are configured aligned, so the anchor rotation remains identity.
 
 After averaging N stable samples it LATCHES that transform and republishes it as a
 fixed static TF indefinitely; the global snapshot inputs are then dropped, so the
@@ -101,15 +99,20 @@ class AnchorLatch:
                     rospy.loginfo('[anchor] motion detected; resetting sample buffer')
                 self.samples = []
                 return
-            # world->odom = T_world_base * inv(T_odom_base)
-            T_world_base = _mat_from_odom(self.truth)
-            T_odom_base = _mat_from_odom(self.odom)
-            T_world_odom = T_world_base.dot(tft.inverse_matrix(T_odom_base))
-            self.samples.append(T_world_odom)
+            # Ground truth is used ONLY for the map-centre translation. Do not
+            # consume either vehicle's truth orientation: odom and Gazebo world
+            # are axis-aligned in this simulation, so the anchor rotation is I.
+            pw = self.truth.pose.pose.position
+            po = self.odom.pose.pose.position
+            centre_in_odom = np.array([
+                po.x + self.uav_spawn[0] - pw.x,
+                po.y + self.uav_spawn[1] - pw.y,
+                po.z + self.uav_spawn[2] - pw.z,
+            ])
+            self.samples.append(centre_in_odom)
             if len(self.samples) >= self.n_samples:
-                T_world_odom_avg = self._average(self.samples)
-                T_world_uavlocal = tft.translation_matrix(self.uav_spawn)
-                T_odom_uavlocal = tft.inverse_matrix(T_world_odom_avg).dot(T_world_uavlocal)
+                T_odom_uavlocal = np.identity(4)
+                T_odom_uavlocal[:3, 3] = np.mean(self.samples, axis=0)
                 self.latched_T = T_odom_uavlocal
                 t = T_odom_uavlocal[:3, 3]
                 yaw = tft.euler_from_matrix(T_odom_uavlocal)[2]

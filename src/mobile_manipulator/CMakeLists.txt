@@ -214,7 +214,9 @@ target_link_libraries(navigation_client ${catkin_LIBRARIES})
 # sensor_filters plugin: removes self-returns off links that carry no collision
 # geometry, which robot_body_filter cannot touch. Loaded by the
 # pointcloud2_filter_chain in config/robot_body_filter.yaml.
-add_library(mobile_manipulator_filters src/self_box_filter.cpp)
+add_library(mobile_manipulator_filters
+  src/self_box_filter.cpp
+  src/horizontal_range_filter.cpp)
 target_link_libraries(mobile_manipulator_filters ${catkin_LIBRARIES})
 
 install(TARGETS mobile_manipulator_filters
@@ -244,6 +246,7 @@ catkin_install_python(PROGRAMS
   scripts/goal_to_waypoint.py
   scripts/ugv_goal_to_far_goal.py
   scripts/verify_nav_pipeline.py
+  scripts/mine_map_to_worldtarget.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
@@ -287,3 +290,7 @@ catkin_install_python(PROGRAMS
 
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
+if(CATKIN_ENABLE_TESTING)
+  find_package(rostest REQUIRED)
+  add_rostest(test/elevation_range_filter.test)
+endif()

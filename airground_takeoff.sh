@@ -31,8 +31,12 @@ pkill -9 -f "roslaunch .*move_group.launch" 2>/dev/null
 pkill -9 -f "roslaunch .*manipulation.launch" 2>/dev/null
 pkill -9 -f "roslaunch .*husky_ur5_gpd.launch" 2>/dev/null
 pkill -9 -f "grasp_task.py|gpd_grasp_server.py|landmine_detector.py|detect_grasps|mine_align.py" 2>/dev/null || true
+pkill -9 -f "roslaunch .*uav_mine_detection.launch" 2>/dev/null || true
+pkill -9 -f "mine_seg_localizer_node.py|mine_map_fusion_node.py|mine_map_to_worldtarget.py|mine_survey_waypoints.py|uav_goal_arbiter.py|mine_camera_diagnostics.py" 2>/dev/null || true
 pkill -9 -f "airground_anchor_latch" 2>/dev/null || true
 pkill -9 -f "roslaunch .*spawn_outdoor_city.launch" 2>/dev/null || true
+pkill -9 -f "roslaunch .*spawn_outdoor_mine_field.launch" 2>/dev/null || true
+pkill -9 -f "spawn_landmine_0[1-5]" 2>/dev/null || true
 pkill -9 -f "roslaunch .*forest_uav_mapping.launch" 2>/dev/null || true
 pkill -9 -f "roslaunch .*px4_spawn_existing_gazebo.launch" 2>/dev/null || true
 pkill -9 -f "roslaunch .*mavros.*/px4.launch" 2>/dev/null || true
@@ -77,7 +81,11 @@ SPAWN_YAW=${SPAWN_YAW:-1.5707963}
 # sits in odom. PX4's local-z origin is the GROUND (= UGV ground plane, odom 0), so
 # this is 0, NOT the spawn altitude. A nonzero value floats the terrain above the UGV.
 MAP_LOCAL_Z=${MAP_LOCAL_Z:-0.0}
-FLIGHT_H=${FLIGHT_H:-12.0}
+# The shared EGO goal elevator otherwise forces the survey to this height. The
+# delivery model was validated from the down camera at 4 m; operators can set
+# FLIGHT_H=12 (or another value) when prioritising broad aerial terrain mapping.
+FLIGHT_H=${FLIGHT_H:-2.0}
+LOW_ALTITUDE=${LOW_ALTITUDE:-true}
 PHYSICS_STEP=${PHYSICS_STEP:-0.005}
 PHYSICS_RATE=${PHYSICS_RATE:-200.0}
 
@@ -110,6 +118,18 @@ roslaunch gazebo_ros empty_world.launch world_name:='$GAZEBO_WORLD' paused:=true
 
 echo "[airground] waiting ${GAZEBO_LOAD_WAIT}s for Gazebo to load ..."
 sleep "$GAZEBO_LOAD_WAIT"
+
+# Spawn the detector-branch mine field while Gazebo is still paused. The
+# feature branch intentionally keeps these as launch-time models so the UAV
+# and elevation map see them from the first frame; do not use the old baked
+# three-mine block from outdoor_city.world.
+echo "[airground] spawning five-mine UAV/UGV delivery field ..."
+gnome-terminal --tab --title="1b_Mine_Field" -- bash -c "
+source /opt/ros/noetic/setup.bash && \
+source '$EGO_WS/devel/setup.bash' && \
+export ROS_PACKAGE_PATH='$UGV_ROS_PACKAGE_PATH':\$ROS_PACKAGE_PATH && \
+roslaunch uav_truth_tracker spawn_outdoor_mine_field.launch; exec bash"
+sleep 3
 
 # 1.4 Physics step for non-lockstep SITL EKF convergence (RTF~1.0). Set BEFORE PX4.
 echo "[airground] setting physics step=$PHYSICS_STEP rate=$PHYSICS_RATE (non-lockstep SITL) ..."
@@ -211,6 +231,7 @@ UGV_NAV=${UGV_NAV:-true}
 UGV_COST_SOURCE=${UGV_COST_SOURCE:-elevation}
 UGV_GLOBAL_PLANNER=${UGV_GLOBAL_PLANNER:-far}
 UGV_UAV_PRIOR=${UGV_UAV_PRIOR:-true}
+UGV_ELEVATION_UPDATE=${UGV_ELEVATION_UPDATE:-false}
 UGV_MAP_SIZE=${UGV_MAP_SIZE:-120}
 UGV_MAP_RES=${UGV_MAP_RES:-0.35}
 # GRASP: on arrival at a detected mine, the tour calls /grasp/execute (which does its own
@@ -221,6 +242,21 @@ UGV_MAP_RES=${UGV_MAP_RES:-0.35}
 UGV_GRASP=${UGV_GRASP:-true}
 GRASP_SOURCE=${GRASP_SOURCE:-gpd}
 GRASP_DETECTOR=${GRASP_DETECTOR:-color}
+UAV_DETECT_DEVICE=${UAV_DETECT_DEVICE:-cpu}
+# Inference backend: tensorrt uses the C++ TensorRT runtime and landmine.onnx;
+# cpu keeps the Ultralytics fallback for machines without an NVIDIA device.
+UAV_DETECT_BACKEND=${UAV_DETECT_BACKEND:-tensorrt}
+if [ "$UAV_DETECT_BACKEND" = "tensorrt" ]; then
+  UAV_TRT_RUNTIME=true
+else
+  UAV_TRT_RUNTIME=false
+fi
+# UAV DETECTION: the airborne landmine detector (YOLO11s-seg on the down camera, grafted from
+# the uav-mine-to-ugv branch) + multi-frame fusion + the bridge that turns confirmed mines into
+# WorldTarget on /detected_targets (the tour's input). Automatic survey is disabled
+# by default; fly the UAV with the normal EGO/manual goal interface.
+UAV_DETECT=${UAV_DETECT:-true}
+UAV_SURVEY=${UAV_SURVEY:-false}
 if [ "$UGV_NAV" = "true" ]; then
   echo "[airground] starting UGV CMU planner (cost=$UGV_COST_SOURCE global=$UGV_GLOBAL_PLANNER uav_prior=$UGV_UAV_PRIOR) + target tour ..."
   gnome-terminal --tab --title="3c_UGV_NAV" -- bash -c "
@@ -231,11 +267,12 @@ roslaunch mobile_manipulator cmu_planner.launch \
   cost_source:='$UGV_COST_SOURCE' \
   global_planner:='$UGV_GLOBAL_PLANNER' \
   uav_prior:='$UGV_UAV_PRIOR' \
+  ugv_elevation_update:='$UGV_ELEVATION_UPDATE' \
   map_size:='$UGV_MAP_SIZE' \
   map_resolution:='$UGV_MAP_RES' \
   grasp_on_arrival:='$UGV_GRASP' \
   maxSpeed:=1.0; exec bash"
-  echo "[airground] UGV nav up (idle until: rosservice call /ugv/start_tour)"
+  echo "[airground] UGV nav up (idle until UAV survey COMPLETE; /ugv/start_tour remains available)"
 fi
 
 # 2.7 Derive who owns elevation_mapping, so the two launches cannot both start one.
@@ -255,7 +292,16 @@ if [ "$AG_START_ELEVATION" = "false" ] && [ "$UGV_UAV_PRIOR" = "true" ]; then
 else
   AG_ENABLE_GATE=${AG_ENABLE_GATE:-false}
 fi
-echo "[airground] elevation map owner: $([ "$AG_START_ELEVATION" = "false" ] && echo 'cmu_planner (UGV+UAV fused)' || echo 'airground_egocentric (UAV only)') ; gate=$AG_ENABLE_GATE"
+if [ "$AG_START_ELEVATION" = "false" ]; then
+  if [ "$UGV_ELEVATION_UPDATE" = "true" ]; then
+    ELEVATION_MODE="cmu_planner (UGV+UAV fused)"
+  else
+    ELEVATION_MODE="cmu_planner (UAV only)"
+  fi
+else
+  ELEVATION_MODE="airground_egocentric (UAV only)"
+fi
+echo "[airground] elevation map owner: $ELEVATION_MODE ; gate=$AG_ENABLE_GATE"
 
 # 2.8 MANIPULATION: MoveIt move_group + the grasp pipeline (perception -> GPD -> MTC pick).
 #     Started here because the pick needs the spawned robot + its ros_control controllers (up
@@ -263,7 +309,7 @@ echo "[airground] elevation map owner: $([ "$AG_START_ELEVATION" = "false" ] && 
 #     NO robot_description of its own -- the spawner already owns it; a second one could diverge.
 #     grasp_source:=gpd runs GPD behind the /get_grasps seam; detector:=color because
 #     landmine.onnx cannot see this flat-shaded prop (a domain gap, not a bug).
-#     The tour drives /grasp/execute on arrival (grasp_on_arrival above).
+#     The tour aligns, grasps in carry mode, returns home, and places each mine.
 if [ "$UGV_GRASP" = "true" ]; then
   echo "[airground] starting MoveIt move_group ..."
   gnome-terminal --tab --title="7a_MoveGroup" -- bash -c "
@@ -286,6 +332,7 @@ export ROS_PACKAGE_PATH='$UGV_ROS_PACKAGE_PATH':\$ROS_PACKAGE_PATH && \
 roslaunch grasp_mtc manipulation.launch \
   grasp_source:='$GRASP_SOURCE' \
   detector:='$GRASP_DETECTOR' \
+  release_after_lift:=false \
   planning_frame:=base_link; exec bash"
   echo "[airground] grasp pipeline up (tour will call /grasp/execute on arrival)"
 fi
@@ -319,6 +366,8 @@ roslaunch mobile_manipulator airground_egocentric.launch \
   enable_gate:='$AG_ENABLE_GATE' \
   uav_spawn_x:='$SPAWN_X' uav_spawn_y:='$SPAWN_Y' uav_spawn_z:='$MAP_LOCAL_Z' \
   flight_height:='$FLIGHT_H' \
+  low_altitude:='$LOW_ALTITUDE' \
+  use_global_planner:=false \
   ; exec bash"
 
 echo "[airground] waiting ${ROS_WAIT}s for ROS nodes ..."
@@ -327,16 +376,40 @@ sleep "$ROS_WAIT"
 # 5. Takeoff bridge - arm + OFFBOARD so EGO can fly the UAV.
 gnome-terminal --tab --title="6_Takeoff" -- bash -c "source /opt/ros/noetic/setup.bash && source '$EGO_WS/devel/setup.bash' && python3 -u '$EGO_WS/px4_bridge.py' _require_depth_before_takeoff:=false; exec bash"
 
+# 5.5 UAV LANDMINE DETECTION. Needs the down camera (Gazebo), the odom->uav0/map_local anchor
+#     (from airground_egocentric, step 4), and MAVROS (step 3) all up -- so it starts last. The
+#     detector NODES are the uav-mine-to-ugv branch verbatim; only the frame (map_frame:=
+#     uav0/map_local) and handoff (bridge -> /detected_targets) are adapted. survey:=true flies
+#     confirmed mines land on /detected_targets while the UAV is flown manually.
+if [ "$UAV_DETECT" = "true" ]; then
+  echo "[airground] starting UAV landmine detection (YOLO seg + fusion + bridge; survey=$UAV_SURVEY) ..."
+  gnome-terminal --tab --title="8_UAV_Detect" -- bash -c "
+source /opt/ros/noetic/setup.bash && \
+source '$EGO_WS/devel/setup.bash' && \
+export ROS_PACKAGE_PATH='$UGV_ROS_PACKAGE_PATH':\$ROS_PACKAGE_PATH && \
+roslaunch uav_truth_tracker uav_mine_detection.launch \
+  survey:='$UAV_SURVEY' \
+  survey_flight_height:='$FLIGHT_H' \
+  device:='$UAV_DETECT_DEVICE' \
+  trt_runtime:='$UAV_TRT_RUNTIME' \
+  uav_spawn_x:='$SPAWN_X' uav_spawn_y:='$SPAWN_Y' \
+  expected_mines:=5; exec bash"
+  echo "[airground] UAV detection up: /mine_detection/map -> bridge -> /detected_targets"
+fi
+
 echo "[airground] startup sequence done (EGOCENTRIC framework)."
 echo "  UAV spawn=($SPAWN_X,$SPAWN_Y,$SPAWN_Z) flight_height=${FLIGHT_H}m ; UGV egocentric (DLIO odom)"
 echo "  egocentric: NO map frame; DLIO owns odom->base_link; anchor latches odom->uav0/map_local"
 echo "  elevation map: /elevation_mapping/elevation_map_postprocessed (frame=odom)"
 echo "  UAV pose error: /uav/pose_cov (real MAVROS covariance -> Sigma_{odom->uav}, world_frame=odom)"
+echo "  UAV detect: $UAV_DETECT backend=$UAV_DETECT_BACKEND  (down-cam YOLO seg -> /mine_detection/raw -> fusion -> /mine_detection/map)"
+echo "           bridge: confirmed mines -> /detected_targets ; survey=$UAV_SURVEY (auto-scan the field)"
+echo "           checks: rostopic hz /mine_camera/rgb/image_raw ; rostopic echo /mine_detection/map"
+echo "                   rostopic echo /detected_targets   # confirmed mines the tour will collect"
 echo "  UGV nav: detected targets -> /detected_targets (mobile_manipulator/WorldTarget)"
-echo "           after the UAV finishes: rosservice call /ugv/start_tour  (UGV tours the targets)"
-echo "  UGV grasp on arrival: $UGV_GRASP  (grasp_source=$GRASP_SOURCE, detector=$GRASP_DETECTOR)"
-echo "           the tour calls /grasp/execute at each mine; NO fine-alignment yet, so the pick"
-echo "           only lands when nav parks the mine inside x in [0.60, 1.05] of base_link"
+echo "           after manual scanning: rosservice call /ugv/start_tour  (UGV tours the targets)"
+echo "  UGV mine cycle: $UGV_GRASP  (align -> grasp/carry -> home -> place; source=$GRASP_SOURCE detector=$GRASP_DETECTOR)"
+echo "           auto-survey disabled; start explicitly with: rosservice call /ugv/start_tour"
 echo "  checks: rostopic echo -n1 /mavros/state ; rosrun rqt_tf_tree rqt_tf_tree"
 echo "          rosrun tf2_ros tf2_echo odom uav0/map_local   # anchor latched"
 echo "          rosrun tf2_ros tf2_echo odom base_link        # DLIO (no map frame in tree)"

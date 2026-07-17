@@ -1,0 +1,234 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- ====================================================================
+       Airborne landmine detection, grafted from origin/agent/uav-mine-to-ugv
+       onto THIS (egocentric) framework.
+
+       The detector NODES are used verbatim; everything framework-specific is
+       done here in params. Two adaptations only:
+
+         1. FRAME. Those nodes assume a `map` frame. We have none — the root is
+            `odom` (DLIO), and the UAV's world is `uav0/map_local` (the latched
+            odom->uav0/map_local anchor from airground_anchor_latch.py). So
+            map_frame:=uav0/map_local, and the static camera TF is parented to
+            uav0/base_link. Mines come out in uav0/map_local; the tour's
+            _to_odom() transforms them into odom.
+
+         2. HANDOFF. mine_map_fusion publishes uav_truth_tracker/MineMap; the
+            tour wants mobile_manipulator/WorldTarget on /detected_targets.
+            mine_map_to_worldtarget.py bridges the CONFIRMED entries.
+
+       Flow: mine_camera -> mine_seg_localizer -> /mine_detection/raw
+             -> mine_map_fusion -> /mine_detection/map -> bridge
+             -> /detected_targets -> ugv_target_tour (COLLECT).
+       ==================================================================== -->
+
+  <arg name="model_path"
+       default="$(find uav_truth_tracker)/../../mine_seg_v2_delivery/weights/best.pt"/>
+  <arg name="rgb_topic" default="/mine_camera/rgb/image_raw"/>
+  <arg name="depth_topic" default="/mine_camera/depth/image_raw"/>
+  <arg name="camera_info_topic" default="/mine_camera/rgb/camera_info"/>
+
+  <!-- OUR frames (renamed from his uav_base_link / map). -->
+  <arg name="uav_base_frame" default="uav0/base_link"/>
+  <arg name="camera_frame" default="mine_camera_optical_frame"/>
+  <arg name="map_frame" default="uav0/map_local"/>
+
+  <arg name="confidence" default="0.65"/>
+  <arg name="imgsz" default="960"/>
+  <arg name="inference_rate" default="1.0"/>
+  <arg name="manipulation_inference_rate" default="0.25"/>
+  <!-- CPU is the safe default: this machine currently has no working NVIDIA
+       driver. Set device:=cuda only after torch.cuda.is_available() succeeds. -->
+  <arg name="device" default="cpu"/>
+  <arg name="torch_threads" default="4"/>
+  <!-- The TensorRT C++ runtime is the preferred inference path when an NVIDIA
+       driver is present.  The existing Python localizer remains available as
+       a fallback because this host may be deployed without CUDA. -->
+  <arg name="trt_runtime" default="false"/>
+  <arg name="trt_model_path" default="$(find mobile_manipulator)/models/landmine.onnx"/>
+
+  <arg name="min_confirmations" default="3"/>
+  <arg name="output_dir"
+       default="$(find uav_truth_tracker)/../../mine_detection_output"/>
+  <arg name="reset_map_on_start" default="true"/>
+
+  <!-- Run the UAV auto-survey (mine_survey_waypoints + goal arbiter). Turn off
+       to test detection alone against a manually-flown UAV. -->
+  <arg name="survey" default="true"/>
+  <arg name="survey_flight_height" default="4.0"/>
+  <arg name="uav_spawn_x" default="0.0"/>
+  <arg name="uav_spawn_y" default="-18.0"/>
+  <arg name="expected_mines" default="5"/>
+  <arg name="survey_x_min" default="$(eval 0.0 - float(arg('uav_spawn_x')))"/>
+  <arg name="survey_x_max" default="$(eval 14.0 - float(arg('uav_spawn_x')))"/>
+  <arg name="survey_y_low" default="$(eval -5.0 - float(arg('uav_spawn_y')))"/>
+  <arg name="survey_y_mid" default="$(eval -1.0 - float(arg('uav_spawn_y')))"/>
+  <arg name="survey_y_high" default="$(eval 3.0 - float(arg('uav_spawn_y')))"/>
+  <arg name="survey_loiter_x" default="$(eval 0.0 - float(arg('uav_spawn_x')))"/>
+  <arg name="survey_loiter_y" default="$(eval -6.0 - float(arg('uav_spawn_y')))"/>
+
+  <!-- Optical axes: x right=-base_y, y down=-base_x, z forward=-base_z. Matches
+       the transform used to create the training labels. Parent renamed to our
+       uav0/base_link. -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="tf_mine_camera_online"
+        args="0 0 -0.07 0.70710678 -0.70710678 0 0 $(arg uav_base_frame) $(arg camera_frame)"/>
+
+  <!-- ===== Detector: YOLO11s-seg on the down camera -> /mine_detection/raw ===== -->
+  <node pkg="uav_truth_tracker" type="mine_seg_localizer_node.py"
+        name="mine_seg_localizer" output="screen" required="true">
+    <param name="model_path" value="$(arg model_path)"/>
+    <param name="rgb_topic" value="$(arg rgb_topic)"/>
+    <param name="depth_topic" value="$(arg depth_topic)"/>
+    <param name="camera_info_topic" value="$(arg camera_info_topic)"/>
+    <param name="camera_frame" value="$(arg camera_frame)"/>
+    <param name="map_frame" value="$(arg map_frame)"/>
+    <param name="confidence" value="$(arg confidence)"/>
+    <param name="iou_threshold" value="0.50"/>
+    <param name="imgsz" value="$(arg imgsz)"/>
+    <param name="inference_rate" value="$(arg inference_rate)"/>
+    <param name="manipulation_inference_rate" value="$(arg manipulation_inference_rate)"/>
+    <param name="device" value="$(arg device)"/>
+    <param name="inference_backend" value="$(eval 'tensorrt' if arg('trt_runtime') else 'ultralytics')"/>
+    <param name="torch_threads" value="$(arg torch_threads)"/>
+    <param name="target_class_id" value="0"/>
+    <param name="target_class_name" value="landmine"/>
+    <param name="depth_min" value="0.20"/>
+    <param name="depth_max" value="20.0"/>
+    <param name="sync_slop" value="0.05"/>
+    <param name="max_rgb_depth_stamp_delta" value="0.02"/>
+    <param name="tf_cache_time" value="60.0"/>
+    <param name="min_depth_samples" value="12"/>
+    <param name="min_mask_area" value="20"/>
+    <param name="erode_pixels" value="1"/>
+    <param name="ground_ring_inner_px" value="3"/>
+    <param name="ground_ring_outer_px" value="18"/>
+    <param name="ground_min_samples" value="20"/>
+    <param name="min_height_above_ground" value="-0.06"/>
+    <param name="max_height_above_ground" value="0.18"/>
+    <!-- A valid mask+depth centroid is sufficient to publish a location. The
+         surrounding depth ring is a useful rejection test when available, but
+         thin/partly occluded mines must not disappear solely because that ring
+         has too few valid pixels. -->
+    <param name="require_local_ground" value="false"/>
+    <!-- Never fuse a delayed inference with the newest pose. -->
+    <param name="allow_latest_tf_fallback" value="false"/>
+    <param name="manual_goal_topic" value="/uav/manual_goal"/>
+    <param name="survey_goal_topic" value="/uav/survey_goal"/>
+    <param name="output_topic" value="/mine_detection/raw"/>
+    <param name="debug_image_topic" value="/mine_detection/debug_image"/>
+  </node>
+
+  <!-- TensorRT engine service (C++).  It is intentionally opt-in until the
+       UAV stream adapter is selected; this node is also used by the grasp
+       pipeline and must not create a second competing detector by default. -->
+  <node if="$(arg trt_runtime)" pkg="mobile_manipulator" type="trt_landmine_node"
+        name="uav_trt_landmine" output="screen">
+    <param name="model_path" value="$(arg trt_model_path)"/>
+  </node>
+
+  <node pkg="uav_truth_tracker" type="mine_camera_diagnostics.py"
+        name="mine_camera_diagnostics" output="screen">
+    <param name="rgb_topic" value="$(arg rgb_topic)"/>
+    <param name="depth_topic" value="$(arg depth_topic)"/>
+    <param name="camera_info_topic" value="$(arg camera_info_topic)"/>
+    <param name="camera_frame" value="$(arg camera_frame)"/>
+    <param name="map_frame" value="$(arg map_frame)"/>
+    <param name="output_topic" value="/mine_camera/diagnostics"/>
+    <param name="maximum_frame_age_wall" value="2.0"/>
+  </node>
+
+  <!-- ===== Multi-frame confirmation -> /mine_detection/map (MineMap) ===== -->
+  <node pkg="uav_truth_tracker" type="mine_map_fusion_node.py"
+        name="mine_map_fusion" output="screen" required="true">
+    <param name="input_topic" value="/mine_detection/raw"/>
+    <param name="map_topic" value="/mine_detection/map"/>
+    <param name="confirmed_topic" value="/mine_detection/confirmed"/>
+    <param name="marker_topic" value="/mine_detection/markers"/>
+    <param name="suppressed_ids_topic" value="/mine_mission/suppressed_detection_ids"/>
+    <param name="map_frame" value="$(arg map_frame)"/>
+    <param name="model_path" value="$(arg model_path)"/>
+    <param name="output_file" value="$(arg output_dir)/mine_map.yaml"/>
+    <param name="min_confirmations" value="$(arg min_confirmations)"/>
+    <param name="association_radius" value="0.30"/>
+    <param name="association_height_tolerance" value="0.25"/>
+    <param name="confirmed_update_radius" value="0.12"/>
+    <param name="duplicate_suppression_radius" value="1.00"/>
+    <param name="min_observation_interval" value="0.20"/>
+    <param name="max_confirmation_std" value="0.10"/>
+    <param name="fast_confirmation_count" value="2"/>
+    <param name="fast_confirmation_confidence" value="0.75"/>
+    <param name="fast_confirmation_std" value="0.06"/>
+    <param name="fast_confirmation_min_span" value="0.15"/>
+    <param name="persistent_confirmation_count" value="6"/>
+    <param name="confirmation_window_size" value="12"/>
+    <param name="persistent_confirmation_radius" value="0.12"/>
+    <param name="persistent_confirmation_std" value="0.08"/>
+    <param name="persistent_confirmation_min_span" value="0.80"/>
+    <param name="candidate_timeout" value="300.0"/>
+    <!-- His UGV self-exclusion assumes a map-frame /odometry/filtered_map. Our
+         UGV sits parked at origin during the aerial scan and looks nothing like
+         the red-disc prop, so exclusion is off here (see plan Risks). -->
+    <param name="ugv_exclusion_enabled" value="false"/>
+    <param name="reset_on_start" value="$(arg reset_map_on_start)"/>
+  </node>
+
+  <!-- ===== Bridge: confirmed MineMap -> WorldTarget on /detected_targets ===== -->
+  <node pkg="mobile_manipulator" type="mine_map_to_worldtarget.py"
+        name="mine_map_to_worldtarget" output="screen">
+    <param name="map_topic" value="/mine_detection/map"/>
+    <param name="output_topic" value="/detected_targets"/>
+    <param name="map_frame" value="$(arg map_frame)"/>
+  </node>
+
+  <!-- ===== UAV auto-survey (optional) ===== -->
+  <group if="$(arg survey)">
+    <!-- Route survey goals to OUR EGO goal entry (/move_base_simple/goal ->
+         global_path_planner -> /goal_elevated -> waypoint_generator). -->
+    <node pkg="uav_truth_tracker" type="uav_goal_arbiter.py"
+          name="uav_goal_arbiter" output="screen">
+      <param name="manual_only" value="false"/>
+      <param name="manual_goal_topic" value="/uav/manual_goal"/>
+      <param name="survey_goal_topic" value="/uav/survey_goal"/>
+      <param name="output_goal_topic" value="/move_base_simple/goal"/>
+      <param name="manual_stable_duration" value="5.0"/>
+    </node>
+
+    <!-- WARNING (see plan Risks): waypoints are numeric x,y along the road.
+         His survey compares them to /mavros/local_position/pose, which on this
+         framework is the UAV's MAVROS-local frame (origin at the UAV spawn,
+         rotated by spawn yaw). If reach-detection never fires, the survey still
+         advances on goal_timeout, but retune these coords into the MAVROS-local
+         frame for clean coverage. -->
+    <node pkg="uav_truth_tracker" type="mine_survey_waypoints.py"
+          name="mine_survey_waypoints" output="screen">
+      <param name="goal_topic" value="/uav/survey_goal"/>
+      <param name="pose_topic" value="/mavros/local_position/pose"/>
+      <param name="frame_id" value="$(arg map_frame)"/>
+      <param name="flight_height" value="$(arg survey_flight_height)"/>
+      <param name="dwell" value="8.0"/>
+      <param name="start_delay" value="5.0"/>
+      <param name="candidate_hold_duration" value="18.0"/>
+      <param name="candidate_map_topic" value="/mine_detection/map"/>
+      <param name="minimum_confirmed_mines" value="$(arg expected_mines)"/>
+      <param name="max_rescan_rounds" value="3"/>
+      <param name="rescan_wait_duration" value="10.0"/>
+      <param name="reach_radius" value="1.2"/>
+      <param name="goal_timeout" value="90.0"/>
+      <param name="completion_loiter_x" value="$(arg survey_loiter_x)"/>
+      <param name="completion_loiter_y" value="$(arg survey_loiter_y)"/>
+      <param name="completion_loiter_dwell" value="3.0"/>
+      <!-- World-space lawnmower over x=[0,14], y=[-5,3], converted into
+           MAVROS-local/map_local coordinates. This covers the field rather
+           than steering at the known mine locations. -->
+      <rosparam param="waypoints" subst_value="true">
+        - [$(arg survey_x_min), $(arg survey_y_low)]
+        - [$(arg survey_x_max), $(arg survey_y_low)]
+        - [$(arg survey_x_max), $(arg survey_y_mid)]
+        - [$(arg survey_x_min), $(arg survey_y_mid)]
+        - [$(arg survey_x_min), $(arg survey_y_high)]
+        - [$(arg survey_x_max), $(arg survey_y_high)]
+      </rosparam>
+    </node>
+  </group>
+</launch>

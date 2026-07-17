@@ -1062,34 +1062,5 @@
     </include>
     <!-- FOREST_END -->
 
-    <!-- ===== Landmines: the STEP-3 grasp targets =====
-         Baked into the world rather than spawned at runtime ON PURPOSE.
-         elevation_mapping FUSES rather than replaces, so a model that appears after the
-         robot has already mapped that ground as flat is rejected as an outlier and never
-         enters the map (the same reason egocentric_nav.launch spawns its test ramp at
-         launch, not later). A runtime-spawned mine would be invisible to the terrain
-         stack — and, more to the point, to the UAV pass that is supposed to find it.
-         (grasp_test.launch DOES spawn one at runtime; that harness runs no elevation
-         map, so nothing is there to reject it.)
-
-         Placed on the flat grass apron near spawn (the heightmap escarpment starts
-         ~30 m out). The model's disc bottom is at its own z=0, so pose z=0 rests it
-         exactly on the ground. Grasp feature = the 40x40x60 mm yellow detonator, top
-         face 85 mm up. -->
-    <include>
-      <uri>model://landmine</uri>
-      <name>landmine_1</name>
-      <pose>6.0 1.0 0 0 0 0</pose>
-    </include>
-    <include>
-      <uri>model://landmine</uri>
-      <name>landmine_2</name>
-      <pose>12.0 -4.0 0 0 0 0.6</pose>
-    </include>
-    <include>
-      <uri>model://landmine</uri>
-      <name>landmine_3</name>
-      <pose>18.0 3.0 0 0 0 -0.4</pose>
-    </include>
   </world>
 </sdf>

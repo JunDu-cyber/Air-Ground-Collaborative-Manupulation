@@ -24,6 +24,7 @@ Everything reaches the planner through /ugv/goal, so a hand-published /ugv/goal
 still works for manual testing. RViz markers on /target_tour_markers show the
 targets + the numbered visiting order.
 """
+import json
 import math
 import threading
 
@@ -34,6 +35,7 @@ import sensor_msgs.point_cloud2 as pc2
 from geometry_msgs.msg import PoseStamped, PointStamped
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import PointCloud2
+from std_msgs.msg import String
 from std_srvs.srv import Trigger, TriggerResponse
 from visualization_msgs.msg import Marker, MarkerArray
 
@@ -48,7 +50,15 @@ class Tgt(object):
 
 
 class TargetTour(object):
-    COLLECT, TOUR, DONE = 'COLLECT', 'TOUR', 'DONE'
+    COLLECT = 'COLLECT'
+    NAV_MINE = 'NAV_TO_MINE'
+    ALIGN = 'ALIGN'
+    GRASP = 'GRASP'
+    NAV_HOME = 'NAV_HOME'
+    PLACE = 'PLACE'
+    DONE = 'DONE'
+    FAILED = 'FAILED'
+    ACTIVE = (NAV_MINE, ALIGN, GRASP, NAV_HOME, PLACE)
 
     def __init__(self):
         self.detected_topic = rospy.get_param('~detected_topic', '/detected_targets')
@@ -73,7 +83,15 @@ class TargetTour(object):
         self.grasp_on_arrival = bool(rospy.get_param('~grasp_on_arrival', False))
         self.grasp_srv = rospy.get_param('~grasp_service', '/grasp/execute')
         self.grasp_wait = float(rospy.get_param('~grasp_wait', 180.0))
-        self.grasping = False
+        self.align_before_grasp = bool(rospy.get_param('~align_before_grasp', True))
+        self.align_srv = rospy.get_param('~align_service', '/ugv/align_to_mine')
+        self.place_srv = rospy.get_param('~place_service', '/grasp/place')
+        self.home_tolerance = float(rospy.get_param('~home_tolerance', 0.6))
+        self.auto_status_topic = rospy.get_param('~auto_start_status_topic',
+                                                  '/mine_survey/status')
+        self.auto_status_token = rospy.get_param('~auto_start_status_token', 'COMPLETE')
+        self.auto_start_requested = False
+        self.working = False
 
         self.lock = threading.Lock()
         self.targets = []          # collected, in odom
@@ -81,6 +99,7 @@ class TargetTour(object):
         self.order = []            # indices into self.targets, visiting order
         self.cur = 0
         self.odom = None           # (x, y)
+        self.home = None           # first stable odometry pose; mission origin
         self.terrain = None        # latest /terrain_map PointCloud2
         self.goal_start = 0.0
         self.last_pub = 0.0
@@ -91,21 +110,38 @@ class TargetTour(object):
         self.goal_pub = rospy.Publisher(self.goal_topic, PoseStamped, queue_size=1)
         self.marker_pub = rospy.Publisher('/target_tour_markers', MarkerArray,
                                           queue_size=1, latch=True)
+        self.status_pub = rospy.Publisher('/ugv/tour_status', String,
+                                          queue_size=1, latch=True)
         rospy.Subscriber(self.detected_topic, WorldTarget, self._target_cb, queue_size=20)
         rospy.Subscriber(self.odom_topic, Odometry, self._odom_cb, queue_size=5)
         rospy.Subscriber(self.terrain_topic, PointCloud2, self._terrain_cb, queue_size=1)
+        if self.auto_status_topic:
+            rospy.Subscriber(self.auto_status_topic, String, self._survey_status_cb,
+                             queue_size=2)
         rospy.Service('/ugv/start_tour', Trigger, self._start_cb)
         rospy.Timer(rospy.Duration(0.2), self._loop)
 
         rospy.loginfo('[target_tour] collecting on %s -> drive %s ; call /ugv/start_tour to begin',
                       self.detected_topic, self.goal_topic)
+        self._publish_status('waiting for confirmed targets and survey completion')
 
     # ---------- inputs ----------
     def _odom_cb(self, msg):
         self.odom = (msg.pose.pose.position.x, msg.pose.pose.position.y)
+        if self.home is None:
+            self.home = self.odom
+            rospy.logwarn('[target_tour] latched mission origin at odom=(%.3f, %.3f)',
+                          self.home[0], self.home[1])
 
     def _terrain_cb(self, msg):
         self.terrain = msg
+
+    def _survey_status_cb(self, msg):
+        if msg.data.strip() != self.auto_status_token:
+            return
+        with self.lock:
+            self.auto_start_requested = True
+        rospy.logwarn('[target_tour] survey COMPLETE received; auto-start armed')
 
     def _target_cb(self, msg):
         pt = self._to_odom(msg.point)
@@ -145,20 +181,25 @@ class TargetTour(object):
     # ---------- trigger + ordering ----------
     def _start_cb(self, _req):
         with self.lock:
-            if not self.targets:
-                return TriggerResponse(success=False, message='no targets collected')
-            if self.state == self.TOUR:
-                return TriggerResponse(success=False, message='tour already running')
-            self.order = self._compute_order()
-            self.state = self.TOUR
-            self.cur = 0
-            self.goal_start = rospy.Time.now().to_sec()
-            self.last_pub = 0.0
-            if self.order:
-                self._publish_goal(self.order[0])
-            msg = 'tour started: %d targets, order=%s' % (len(self.order), self.order)
-            rospy.loginfo('[target_tour] %s', msg)
-            return TriggerResponse(success=True, message=msg)
+            ok, msg = self._begin_tour_locked()
+            return TriggerResponse(success=ok, message=msg)
+
+    def _begin_tour_locked(self):
+        if not self.targets:
+            return False, 'no targets collected'
+        if self.home is None:
+            return False, 'mission origin not latched yet'
+        if self.state in self.ACTIVE:
+            return False, 'tour already running'
+        if self.state in (self.DONE, self.FAILED):
+            return False, 'tour already finished; restart the node for a new mission'
+        self.order = self._compute_order()
+        self.cur = 0
+        self._set_state(self.NAV_MINE, 'tour started')
+        self._publish_current_mine()
+        msg = 'tour started: %d targets, order=%s' % (len(self.order), self.order)
+        rospy.logwarn('[target_tour] %s', msg)
+        return True, msg
 
     def _terrain_cost(self, x, y):
         """Max /terrain_map cost within terrain_sample_radius of (x,y); None if no coverage."""
@@ -174,31 +215,19 @@ class TargetTour(object):
         return best
 
     def _compute_order(self):
-        """Greedy nearest-neighbor from the UGV pose; untraversable targets last."""
-        sx, sy = self.odom if self.odom else (0.0, 0.0)
-        keep, deferred = [], []
-        for i in range(len(self.targets)):
-            c = self._terrain_cost(self.targets[i].x, self.targets[i].y)
-            if c is not None and c > self.obstacle_cost_thre:
-                deferred.append(i)
-            else:
-                keep.append(i)
-        if deferred:
+        """Each successful pick returns home, so sort from home, unsafe last."""
+        hx, hy = self.home
+        scored = []
+        for i, target in enumerate(self.targets):
+            cost = self._terrain_cost(target.x, target.y)
+            deferred = cost is not None and cost > self.obstacle_cost_thre
+            distance2 = (target.x - hx) ** 2 + (target.y - hy) ** 2
+            scored.append((deferred, distance2, i))
+        deferred_count = sum(1 for item in scored if item[0])
+        if deferred_count:
             rospy.logwarn('[target_tour] %d target(s) on untraversable terrain -> deprioritized',
-                          len(deferred))
-
-        def nn_chain(pool, cx, cy):
-            seq = []
-            while pool:
-                j = min(pool, key=lambda i: (self.targets[i].x - cx) ** 2 + (self.targets[i].y - cy) ** 2)
-                seq.append(j)
-                pool.remove(j)
-                cx, cy = self.targets[j].x, self.targets[j].y
-            return seq, cx, cy
-
-        order, cx, cy = nn_chain(keep, sx, sy)
-        tail, _, _ = nn_chain(deferred, cx, cy)
-        return order + tail
+                          deferred_count)
+        return [item[2] for item in sorted(scored)]
 
     # ---------- drive loop ----------
     def _publish_goal(self, idx):
@@ -213,66 +242,134 @@ class TargetTour(object):
         self.goal_pub.publish(ps)
         self.last_pub = rospy.Time.now().to_sec()
 
+    def _publish_home(self):
+        ps = PoseStamped()
+        ps.header.stamp = rospy.Time.now()
+        ps.header.frame_id = self.target_frame
+        ps.pose.position.x, ps.pose.position.y = self.home
+        ps.pose.orientation.w = 1.0
+        self.goal_pub.publish(ps)
+        self.last_pub = rospy.Time.now().to_sec()
+
+    def _set_state(self, state, detail=''):
+        self.state = state
+        self.goal_start = rospy.Time.now().to_sec()
+        self.last_pub = 0.0
+        self._publish_status(detail)
+
+    def _publish_status(self, detail=''):
+        payload = {
+            'state': self.state,
+            'current': min(self.cur + 1, len(self.order)) if self.order else 0,
+            'total': len(self.order),
+            'detail': detail,
+        }
+        self.status_pub.publish(String(data=json.dumps(payload, sort_keys=True)))
+
+    def _publish_current_mine(self):
+        if self.cur >= len(self.order):
+            self._set_state(self.DONE, 'all mines placed at origin')
+            rospy.logwarn('[target_tour] mission complete: %d mines processed', len(self.order))
+            return
+        self._publish_goal(self.order[self.cur])
+
     def _loop(self, _evt):
         with self.lock:
             self._publish_markers()
-            if self.state != self.TOUR or self.odom is None:
+            if (self.state == self.COLLECT and self.auto_start_requested and
+                    self.targets and self.home is not None):
+                self._begin_tour_locked()
+            if self.state not in (self.NAV_MINE, self.NAV_HOME) or self.odom is None:
                 return
-            if self.cur >= len(self.order):
-                self.state = self.DONE
-                rospy.loginfo('[target_tour] tour complete (%d targets visited)', len(self.order))
+            if self.working:
                 return
+            now = rospy.Time.now().to_sec()
+            if self.state == self.NAV_HOME:
+                d = math.hypot(self.home[0] - self.odom[0], self.home[1] - self.odom[1])
+                if d < self.home_tolerance:
+                    self.working = True
+                    self._set_state(self.PLACE, 'arrived at origin')
+                    threading.Thread(target=self._place_then_continue, daemon=True).start()
+                elif now - self.goal_start > self.goal_timeout:
+                    self._set_state(self.FAILED, 'home navigation timed out while carrying')
+                    rospy.logerr('[target_tour] FAILED: could not return home while carrying')
+                elif now - self.last_pub > self.republish_period:
+                    self._publish_home()
+                return
+
             idx = self.order[self.cur]
             t = self.targets[idx]
             d = math.hypot(t.x - self.odom[0], t.y - self.odom[1])
-            now = rospy.Time.now().to_sec()
-            if self.grasping:
-                return                                   # a grasp is running; do not re-trigger
             if d < self.reach_tolerance:
                 rospy.loginfo('[target_tour] reached %d/%d %s (d=%.2f)',
                               self.cur + 1, len(self.order), t.cls, d)
                 if self.grasp_on_arrival:
-                    # Grasp in a THREAD: /grasp/execute blocks for the whole look-plan-pick, and
-                    # this runs on a 5 Hz timer holding self.lock -- calling it inline would stall
-                    # the tour and every callback. The grasp's own parking brake pins the base, so
-                    # the planner cannot drive off mid-pick even though its goal is still live.
-                    self.grasping = True
-                    threading.Thread(target=self._grasp_then_advance, daemon=True).start()
+                    self.working = True
+                    threading.Thread(target=self._align_grasp_then_return,
+                                     daemon=True).start()
                 else:
-                    self._advance(now)
+                    self._advance_to_next('visited without grasp')
             elif now - self.goal_start > self.goal_timeout:
                 rospy.logwarn('[target_tour] %d/%d timeout (d=%.2f) -> skip',
                               self.cur + 1, len(self.order), d)
-                self._advance(now)
+                self._advance_to_next('mine navigation timed out')
             elif now - self.last_pub > self.republish_period:
                 self._publish_goal(idx)
 
-    def _grasp_then_advance(self):
-        """Call the grasp service, then advance -- WHATEVER the outcome. A failed grasp must
-        never strand the tour; we log it and move to the next mine."""
-        ok, msg = False, 'no service'
+    @staticmethod
+    def _call_trigger(service, timeout):
         try:
-            rospy.wait_for_service(self.grasp_srv, timeout=10.0)
-            res = rospy.ServiceProxy(self.grasp_srv, Trigger)()
-            ok, msg = bool(res.success), res.message
+            rospy.wait_for_service(service, timeout=timeout)
+            response = rospy.ServiceProxy(service, Trigger)()
+            return bool(response.success), response.message
         except Exception as exc:  # noqa: BLE001
-            msg = str(exc)
-        rospy.loginfo('[target_tour] grasp %s: %s', 'OK' if ok else 'FAILED', msg)
-        with self.lock:
-            self.grasping = False
-            self._advance(rospy.Time.now().to_sec())
+            return False, str(exc)
 
-    def _advance(self, now):
+    def _align_grasp_then_return(self):
+        ok, msg = True, 'alignment disabled'
+        if self.align_before_grasp:
+            with self.lock:
+                self._set_state(self.ALIGN, 're-acquiring mine with wrist camera')
+            ok, msg = self._call_trigger(self.align_srv, self.grasp_wait)
+            rospy.loginfo('[target_tour] align %s: %s', 'OK' if ok else 'FAILED', msg)
+        if ok:
+            with self.lock:
+                self._set_state(self.GRASP, 'picking mine in carry mode')
+            ok, msg = self._call_trigger(self.grasp_srv, self.grasp_wait)
+            rospy.loginfo('[target_tour] grasp %s: %s', 'OK' if ok else 'FAILED', msg)
+        with self.lock:
+            self.working = False
+            if ok:
+                self._set_state(self.NAV_HOME, 'mine held; returning to origin')
+                self._publish_home()
+            else:
+                self._advance_to_next('alignment/grasp failed: %s' % msg)
+
+    def _place_then_continue(self):
+        ok, msg = self._call_trigger(self.place_srv, self.grasp_wait)
+        rospy.loginfo('[target_tour] place %s: %s', 'OK' if ok else 'FAILED', msg)
+        with self.lock:
+            self.working = False
+            if not ok:
+                self._set_state(self.FAILED, 'place failed at origin: %s' % msg)
+                return
+            self._advance_to_next('mine placed at origin')
+
+    def _advance_to_next(self, detail):
         self.cur += 1
-        self.goal_start = now
-        if self.cur < len(self.order):
-            self._publish_goal(self.order[self.cur])
+        if self.cur >= len(self.order):
+            self._set_state(self.DONE, detail)
+            rospy.logwarn('[target_tour] mission DONE (%d targets)', len(self.order))
+        else:
+            self._set_state(self.NAV_MINE, detail)
+            self._publish_current_mine()
 
     # ---------- viz ----------
     def _publish_markers(self):
         ma = MarkerArray()
-        visited = set(self.order[:self.cur]) if self.state in (self.TOUR, self.DONE) else set()
-        cur_idx = self.order[self.cur] if (self.state == self.TOUR and self.cur < len(self.order)) else -1
+        visited = set(self.order[:self.cur]) if self.state != self.COLLECT else set()
+        cur_idx = self.order[self.cur] if (self.state in self.ACTIVE and
+                                           self.cur < len(self.order)) else -1
         for i, t in enumerate(self.targets):
             m = Marker()
             m.header.frame_id = self.target_frame

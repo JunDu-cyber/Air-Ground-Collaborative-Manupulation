@@ -1,0 +1,27 @@
+<launch>
+  <node pkg="tf2_ros" type="static_transform_publisher" name="test_lidar_tf"
+        args="0 0 0 0 0 0 base_link velodyne"/>
+
+  <node pkg="sensor_filters" type="pointcloud2_filter_chain"
+        name="range_filter_test" output="screen">
+    <rosparam command="load"
+              file="$(find mobile_manipulator)/config/elevation_range_filter.yaml"/>
+    <remap from="~input" to="/test/range/input"/>
+    <remap from="~output" to="/test/range/output"/>
+  </node>
+
+  <node pkg="sensor_filters" type="pointcloud2_filter_chain"
+        name="range_filter_missing_tf_test" output="screen">
+    <rosparam param="cloud_filter_chain">
+      - name: ugv_elevation_horizontal_range
+        type: mobileManipulator/HorizontalRangeFilterPointCloud2
+        params: {target_frame: deliberately_missing_frame, max_xy_distance: 20.0}
+    </rosparam>
+    <remap from="~input" to="/test/missing_tf/input"/>
+    <remap from="~output" to="/test/missing_tf/output"/>
+  </node>
+
+  <test test-name="elevation_range_filter"
+        pkg="mobile_manipulator" type="test_elevation_range_filter.py"
+        time-limit="30"/>
+</launch>

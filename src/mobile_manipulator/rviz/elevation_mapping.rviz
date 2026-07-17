@@ -3,38 +3,292 @@ Panels:
     Help Height: 0
     Name: Displays
     Property Tree Widget:
-      Expanded: ~
+      Expanded:
+        - /Global Options1
       Splitter Ratio: 0.5
-    Tree Height: 600
+    Tree Height: 480
+Preferences:
+  PromptSaveOnExit: true
+Toolbars:
+  toolButtonStyle: 2
 Visualization Manager:
   Class: ""
   Displays:
-    - Class: rviz/Grid
+    - Alpha: 0.5
+      Cell Size: 1
+      Class: rviz/Grid
       Color: 160; 160; 164
       Enabled: true
       Line Style:
-        Line Width: 0.03
+        Line Width: 0.029999999329447746
         Value: Lines
       Name: Grid
       Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
       Plane: XY
       Plane Cell Count: 50
       Reference Frame: <Fixed Frame>
       Value: true
     - Alpha: 1
       Class: rviz/RobotModel
+      Collision Enabled: false
       Enabled: true
+      Links:
+        All Links Enabled: true
+        Expand Joint Details: false
+        Expand Link Details: false
+        Expand Tree: false
+        Link Tree Style: Links in Alphabetic Order
+        base_ballast:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        base_footprint:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        base_laser:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        base_laser_mount:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        base_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        front_bumper_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        front_left_wheel_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        front_right_wheel_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        grasp_tcp:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        imu_lidar_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        imu_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        inertial_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        left_inner_finger:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_inner_finger_pad:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_inner_knuckle:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_outer_finger:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        left_outer_knuckle:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        realsense_camera_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        realsense_camera_optical_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        rear_bumper_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        rear_left_wheel_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        rear_right_wheel_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_inner_finger:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_inner_finger_pad:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_inner_knuckle:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_outer_finger:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        right_outer_knuckle:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        robotiq_140_base_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        robotiq_arg2f_base_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        top_chassis_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        top_plate_front_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        top_plate_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        top_plate_rear_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        ur5_base:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        ur5_base_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        ur5_base_link_inertia:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        ur5_flange:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        ur5_forearm_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        ur5_shoulder_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        ur5_tool0:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        ur5_upper_arm_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        ur5_wrist_1_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        ur5_wrist_2_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        ur5_wrist_3_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        user_rail_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        velodyne:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        velodyne_base_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        velodyne_mast_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
       Name: RobotModel
       Robot Description: robot_description
       TF Prefix: ""
+      Update Interval: 0
       Value: true
       Visual Enabled: true
     - Class: rviz/TF
       Enabled: false
+      Filter (blacklist): ""
+      Filter (whitelist): ""
+      Frame Timeout: 15
+      Frames:
+        All Enabled: true
+      Marker Alpha: 1
+      Marker Scale: 1
       Name: TF
       Show Arrows: true
       Show Axes: true
       Show Names: false
+      Tree:
+        {}
+      Update Interval: 0
       Value: false
     - Alpha: 1
       Autocompute Intensity Bounds: true
@@ -42,14 +296,11 @@ Visualization Manager:
       Color: 200; 200; 200
       Color Layer: slope
       Color Transformer: GridMapLayer
-      ColorMap: default
       Enabled: true
-      Grid Cell Decimation: 1
-      Grid Line Thickness: 0.1
       Height Layer: elevation_filled
       Height Transformer: GridMapLayer
       History Length: 1
-      Invert ColorMap: false
+      Invert Rainbow: false
       Max Color: 255; 255; 255
       Max Intensity: 10
       Min Color: 0; 0; 0
@@ -58,7 +309,7 @@ Visualization Manager:
       Show Grid Lines: false
       Topic: /elevation_mapping/elevation_map_postprocessed
       Unreliable: false
-      Use ColorMap: true
+      Use Rainbow: true
       Value: true
     - Alpha: 1
       Autocompute Intensity Bounds: true
@@ -66,14 +317,11 @@ Visualization Manager:
       Color: 200; 200; 200
       Color Layer: elevation
       Color Transformer: GridMapLayer
-      ColorMap: default
       Enabled: true
-      Grid Cell Decimation: 1
-      Grid Line Thickness: 0.1
       Height Layer: elevation
       Height Transformer: GridMapLayer
       History Length: 1
-      Invert ColorMap: false
+      Invert Rainbow: false
       Max Color: 255; 255; 255
       Max Intensity: 10
       Min Color: 0; 0; 0
@@ -82,7 +330,7 @@ Visualization Manager:
       Show Grid Lines: false
       Topic: /elevation_mapping/elevation_map
       Unreliable: false
-      Use ColorMap: true
+      Use Rainbow: true
       Value: true
     - Alpha: 1
       Autocompute Intensity Bounds: true
@@ -90,35 +338,73 @@ Visualization Manager:
         Max Value: 10
         Min Value: -10
         Value: true
+      Axis: Z
+      Channel Name: intensity
       Class: rviz/PointCloud2
       Color: 255; 255; 255
       Color Transformer: AxisColor
       Decay Time: 0
       Enabled: false
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Min Color: 0; 0; 0
       Name: Elevation Cloud
-      Size (m): 0.05
+      Position Transformer: ""
+      Queue Size: 10
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.05000000074505806
       Style: Boxes
       Topic: /elevation_mapping/elevation_cloud
+      Unreliable: false
       Use Fixed Frame: true
+      Use rainbow: true
       Value: false
     - Alpha: 0.5
       Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 7.3195929527282715
+        Min Value: -3.0808486938476562
+        Value: true
+      Axis: Z
+      Channel Name: intensity
       Class: rviz/PointCloud2
       Color: 0; 255; 0
       Color Transformer: AxisColor
       Decay Time: 0
       Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Min Color: 0; 0; 0
       Name: UAV LiDAR Cloud (filtered, PointCloud2)
-      Size (m): 0.1
+      Position Transformer: XYZ
+      Queue Size: 10
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.10000000149011612
       Style: Points
       Topic: /uav0/mapping/velodyne_points_sensor
+      Unreliable: false
       Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+    - Class: rviz/Image
+      Enabled: true
+      Image Topic: /mine_detection/debug_image
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Image
+      Normalize Range: true
+      Queue Size: 2
+      Transport Hint: raw
+      Unreliable: false
       Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
     Default Light: true
-    Fixed Frame: map
+    Fixed Frame: odom
     Frame Rate: 30
   Name: root
   Tools:
@@ -126,22 +412,41 @@ Visualization Manager:
     - Class: rviz/Select
     - Class: rviz/FocusCamera
     - Class: rviz/Measure
+    - Class: rviz/SetGoal
+      Topic: /move_base_simple/goal
   Value: true
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 60
+      Distance: 44.485511779785156
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Field of View: 0.7853981852531433
       Focal Point:
-        X: 0
-        Y: 0
-        Z: 0
+        X: 2.17189359664917
+        Y: -2.4026169776916504
+        Z: -3.3846864700317383
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05000000074505806
+      Invert Z Axis: false
       Name: Current View
-      Pitch: 0.7
+      Near Clip Distance: 0.009999999776482582
+      Pitch: 0.5100001096725464
       Target Frame: base_link
-      Yaw: 0.8
+      Yaw: 0.15000048279762268
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
   Height: 846
+  Hide Left Dock: false
+  Hide Right Dock: false
+  Image:
+    collapsed: false
+  QMainWindow State: 000000ff00000000fd00000001000000000000015f000002ecfc0200000002fb000000100044006900730070006c006100790073010000004100000224000000d000fffffffb0000000a0049006d006100670065010000026b000000c20000001900ffffff0000034b000002ec00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Width: 1200
+  X: 500
+  Y: 490
