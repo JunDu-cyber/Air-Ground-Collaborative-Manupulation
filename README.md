@@ -4,7 +4,6 @@ A ROS Noetic / Gazebo Classic research workspace for a simulated **UAV–UGV col
 
 > **Scope.** This is a simulation and course/research project, not a real-world explosive-ordnance-disposal system. Run it only in the supplied Gazebo/PX4 environment.
 
-![Husky–UR5 grasp simulation](assets/grasp.gif)
 
 ## Mission pipeline
 
