@@ -1,15 +1,16 @@
 # elevation_mapping config for the OFFLINE PCD path (pcd_to_elevation.launch).
 #
-# This is the pre-egocentric, robot-centric-in-`map` config. The shared
+# This is the simple offline, robot-centric config. The shared
 # elevation_mapping.yaml was made egocentric (map_frame=odom, UAV pose-error
 # propagation via /uav/pose_cov, robot_base_frame_id=a UAV sensor frame), which
 # only makes sense for an ONLINE per-sensor cloud. A pre-accumulated PCD has no
-# per-sensor range / live UAV pose, so it uses this simpler config: the map is
-# anchored in `map`, the pose comes from the static map->base_link TF that
-# pcd_to_elevation.launch publishes, and there is no pose-covariance channel.
+# per-sensor range / live UAV pose, so it uses this simpler config: the pose
+# comes from the static fixed-frame->base_link TF published by
+# pcd_to_elevation.launch, and there is no pose-covariance channel. The launch
+# file overrides map_frame_id with its frame_id argument (odom by default).
 
 # --- Frames ---
-map_frame_id:                     "map"
+map_frame_id:                     "map"           # legacy fallback; launch overrides it
 robot_base_frame_id:              "base_link"
 track_point_frame_id:             "base_link"
 track_point_x:                    0.0

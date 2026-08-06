@@ -16,27 +16,37 @@
   <build_depend>message_generation</build_depend>
   <exec_depend>message_runtime</exec_depend>
 
+  <depend>actionlib</depend>
+  <depend>control_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>gazebo_link_attacher</depend>
+  <depend>gazebo_msgs</depend>
   <depend>rospy</depend>
-  <depend>std_msgs</depend>
   <depend>geometry_msgs</depend>
-  <depend>sensor_msgs</depend>
-  <depend>shape_msgs</depend>
   <depend>moveit_msgs</depend>
   <depend>moveit_task_constructor_core</depend>
   <depend>moveit_task_constructor_msgs</depend>
   <depend>moveit_commander</depend>
+  <depend>sensor_msgs</depend>
+  <depend>shape_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>tf</depend>
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
-  <depend>cv_bridge</depend>
+  <depend>trajectory_msgs</depend>
+  <depend>visualization_msgs</depend>
   <depend>mobile_manipulator</depend>
   <!-- The close drives the gripper's FollowJointTrajectory action one rung at a time, so it
        can stop the jaws the instant they touch the block. -->
-  <depend>control_msgs</depend>
   <!-- The grasp IS a weld. The 2F-140's mimic joints are kinematic (SetPosition), so the
        fingers exert no force and no friction grip is possible in Gazebo at any commanded angle.
        gazebo_grasp_fix cannot help: it welds only on OPPOSING CONTACT FORCES, which a kinematic
        finger never produces. -->
-  <depend>gazebo_link_attacher</depend>
+  <exec_depend>gpd_ros</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>rviz</exec_depend>
 
   <export/>
 </package>

@@ -15,7 +15,7 @@
 ## STEP 0 — 清场 + 构建
 
 ```bash
-cd /home/jun/learning_ws
+cd "$(git rev-parse --show-toplevel)"
 pgrep -f "gzserver|gzclient|rosmaster|dlio_odom" | while read p; do kill -9 $p; done
 ss -ltn | grep -q :11311 && echo "PORT BUSY" || echo "port free"
 source /opt/ros/noetic/setup.bash

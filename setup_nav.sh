@@ -16,6 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WS_DIR="$SCRIPT_DIR"
 SRC="$WS_DIR/src"
 AEDE="$SRC/autonomous_exploration_development_environment"
+SKIP_BUILD="${SETUP_NAV_SKIP_BUILD:-0}"
 
 echo "============================================"
 echo "  Egocentric UGV navigation stack setup"
@@ -57,9 +58,11 @@ if [ "${BUILD_FASTLIO:-0}" = "1" ]; then
   fi
   ( cd FAST_LIO && git submodule update --init --recursive )   # ikd-Tree, IKFoM_toolkit
   rm -f FAST_LIO/CATKIN_IGNORE
+  rm -f livox_ros_driver/CATKIN_IGNORE
 else
   [ -d FAST_LIO ] || git clone --depth 1 https://github.com/hku-mars/FAST_LIO.git || true
   [ -d FAST_LIO ] && touch FAST_LIO/CATKIN_IGNORE
+  [ -d livox_ros_driver ] && touch livox_ros_driver/CATKIN_IGNORE
 fi
 
 # ---- 3. CMU AEDE: build only the subset we need ----------------------------
@@ -96,13 +99,17 @@ else
 fi
 
 # ---- 5. build --------------------------------------------------------------
-echo "[5/5] building (catkin build — this workspace uses catkin_tools)..."
-cd "$WS_DIR"
-PKGS="loam_interface local_planner terrain_analysis terrain_analysis_ext \
-  sensor_scan_generation direct_lidar_inertial_odometry robot_body_filter \
-  terrain_cost_adapter far_planner graph_decoder"
-[ "${BUILD_FASTLIO:-0}" = "1" ] && PKGS="$PKGS livox_ros_driver fast_lio"
-catkin build $PKGS -j"$(nproc --ignore=2)"
+if [ "$SKIP_BUILD" = "1" ]; then
+  echo "[5/5] source preparation complete; build delegated to setup_uav.sh"
+else
+  echo "[5/5] building (catkin build — this workspace uses catkin_tools)..."
+  cd "$WS_DIR"
+  PKGS="loam_interface local_planner terrain_analysis terrain_analysis_ext \
+    sensor_scan_generation direct_lidar_inertial_odometry robot_body_filter \
+    terrain_cost_adapter far_planner graph_decoder"
+  [ "${BUILD_FASTLIO:-0}" = "1" ] && PKGS="$PKGS livox_ros_driver fast_lio"
+  catkin build $PKGS -j"$(nproc --ignore=2)"
+fi
 
 echo ""
 echo "============================================"

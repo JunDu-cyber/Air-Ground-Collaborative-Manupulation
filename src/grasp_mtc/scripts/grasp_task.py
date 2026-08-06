@@ -62,6 +62,7 @@ import time
 import actionlib
 import rospy
 from control_msgs.msg import FollowJointTrajectoryAction, FollowJointTrajectoryGoal
+from gazebo_msgs.msg import LinkStates, ModelStates
 from geometry_msgs.msg import PoseStamped, Vector3Stamped
 from moveit.task_constructor import core, stages
 # REQUIRED, even though it looks unused. InterfaceState.scene returns a C++
@@ -187,7 +188,9 @@ ROBOT_MODEL = 'husky_ur5'
 # that name exists in the physics world ("no such link: robotiq_arg2f_base_link"). The wrist IS
 # the palm as far as the solver is concerned -- rigidly the same body.
 PALM = 'ur5_wrist_3_link'
-OBJECT_MODEL, OBJECT_LINK = 'landmine', 'body'      # link name from the landmine SDF
+OBJECT_LINK = 'body'                                # link name from the landmine SDF
+OBJECT_MODEL_PREFIX = 'landmine'
+OBJECT_SELECT_MAX_DISTANCE = 0.75
 
 # THE PARKING BRAKE, and it is not optional.
 #
@@ -643,6 +646,16 @@ class GraspNode(object):
         # True while the mine is joined to the palm by a real Gazebo joint. That joint IS the
         # grasp: a kinematic finger cannot hold anything. See _close_and_weld.
         self.welded = False
+        # The full mission spawns landmine_01 ... landmine_05, while the standalone harness
+        # uses the unsuffixed name landmine. Select the physical model only when the wrist is
+        # already at the camera-derived grasp pose, then keep that identity until /grasp/place
+        # releases it. Gazebo state is used only to identify which rigid body to weld; it never
+        # supplies or adjusts the grasp target.
+        self.object_model = None
+        self._model_states = None
+        self._link_states = None
+        self.object_select_max_distance = float(rospy.get_param(
+            '~object_select_max_distance', OBJECT_SELECT_MAX_DISTANCE))
         self._add_ground()
         # The close drives the controller's ACTION directly (we need per-rung arrival, and we
         # must be able to accept GOAL_TOLERANCE_VIOLATED as "arrived"). The topic publisher is
@@ -651,6 +664,10 @@ class GraspNode(object):
         self.grip_pub = rospy.Publisher('/gripper_controller/command',
                                         JointTrajectory, queue_size=1)
         rospy.Subscriber('/joint_states', JointState, self._js_cb, queue_size=5)
+        rospy.Subscriber('/gazebo/model_states', ModelStates,
+                         self._model_states_cb, queue_size=1)
+        rospy.Subscriber('/gazebo/link_states', LinkStates,
+                         self._link_states_cb, queue_size=1)
         # The WRIST camera's detection (base_link, grasp-accurate), NOT the UAV's coarse seam.
         # See landmine_detector.py: /detected_targets is what the TOUR collects, and a grasp must
         # never be planned from a 12 m aerial fix.
@@ -680,6 +697,123 @@ class GraspNode(object):
     def _js_cb(self, msg):
         if 'finger_joint' in msg.name:
             self._finger_q = msg.position[msg.name.index('finger_joint')]
+
+    def _model_states_cb(self, msg):
+        self._model_states = msg
+
+    def _link_states_cb(self, msg):
+        self._link_states = msg
+
+    @staticmethod
+    def _pose_by_name(msg, exact_name=None, suffix=None):
+        """Return one pose from ModelStates/LinkStates without assuming list alignment."""
+        if msg is None or len(msg.name) != len(msg.pose):
+            return None
+        for name, pose in zip(msg.name, msg.pose):
+            if exact_name is not None and name == exact_name:
+                return pose
+            if suffix is not None and name.endswith(suffix):
+                return pose
+        return None
+
+    @staticmethod
+    def _world_point(robot_pose, local_point):
+        """Transform a base-frame point with a Gazebo world-frame model pose."""
+        qx = robot_pose.orientation.x
+        qy = robot_pose.orientation.y
+        qz = robot_pose.orientation.z
+        qw = robot_pose.orientation.w
+        x, y, z = local_point.x, local_point.y, local_point.z
+
+        # Quaternion-vector rotation, expanded here to avoid adding another runtime library.
+        r00 = 1.0 - 2.0 * (qy * qy + qz * qz)
+        r01 = 2.0 * (qx * qy - qz * qw)
+        r02 = 2.0 * (qx * qz + qy * qw)
+        r10 = 2.0 * (qx * qy + qz * qw)
+        r11 = 1.0 - 2.0 * (qx * qx + qz * qz)
+        r12 = 2.0 * (qy * qz - qx * qw)
+        r20 = 2.0 * (qx * qz - qy * qw)
+        r21 = 2.0 * (qy * qz + qx * qw)
+        r22 = 1.0 - 2.0 * (qx * qx + qy * qy)
+
+        return (
+            robot_pose.position.x + r00 * x + r01 * y + r02 * z,
+            robot_pose.position.y + r10 * x + r11 * y + r12 * z,
+            robot_pose.position.z + r20 * x + r21 * y + r22 * z,
+        )
+
+    def _palm_world_position(self):
+        """Get the wrist position in Gazebo's world frame, with a base-pose fallback."""
+        palm_pose = self._pose_by_name(
+            self._link_states, exact_name='%s::%s' % (ROBOT_MODEL, PALM))
+        if palm_pose is None:
+            # Some Gazebo builds prepend a namespace to link names. Restrict the suffix to
+            # the robot and palm together so another model cannot be mistaken for this wrist.
+            palm_pose = self._pose_by_name(
+                self._link_states, suffix='%s::%s' % (ROBOT_MODEL, PALM))
+        if palm_pose is not None:
+            p = palm_pose.position
+            return p.x, p.y, p.z, '/gazebo/link_states'
+
+        # Fixed-joint reduction can omit wrist links from /gazebo/link_states. At the moment
+        # this runs, grasp_tcp is already at the visual grasp pose; combine that base-frame
+        # pose with the Gazebo model pose to obtain an equivalent world-frame reference.
+        robot_pose = self._pose_by_name(self._model_states, exact_name=ROBOT_MODEL)
+        if robot_pose is None:
+            return None
+        try:
+            tcp = self.arm.get_current_pose(TCP)
+        except Exception as exc:  # noqa: BLE001
+            rospy.logwarn('[grasp_task] could not read TCP pose for mine selection: %s', exc)
+            return None
+        frame = (tcp.header.frame_id or '').lstrip('/')
+        if frame not in (self.frame.lstrip('/'), 'base_link'):
+            rospy.logerr('[grasp_task] cannot combine TCP frame %s with Gazebo base pose; '
+                         'expected %s/base_link', frame or '<empty>', self.frame)
+            return None
+        xyz = self._world_point(robot_pose, tcp.pose.position)
+        return xyz[0], xyz[1], xyz[2], 'base pose + MoveIt TCP'
+
+    def _select_object_model(self):
+        """Choose the physical mine nearest the wrist after visual alignment.
+
+        This is deliberately an identity lookup, not a perception shortcut: reach planning
+        and final approach have already used the wrist camera target before this method runs.
+        """
+        states = self._model_states
+        if states is None or len(states.name) != len(states.pose):
+            rospy.logerr('[grasp_task] no valid /gazebo/model_states for physical weld')
+            return None
+        reference = self._palm_world_position()
+        if reference is None:
+            rospy.logerr('[grasp_task] no world-frame wrist pose for physical mine selection')
+            return None
+        rx, ry, rz, source = reference
+
+        ranked = []
+        for name, pose in zip(states.name, states.pose):
+            if name != OBJECT_MODEL_PREFIX and not name.startswith(OBJECT_MODEL_PREFIX + '_'):
+                continue
+            dx = pose.position.x - rx
+            dy = pose.position.y - ry
+            dz = pose.position.z - rz
+            ranked.append((dx * dx + dy * dy + dz * dz, name, dx, dy, dz))
+        if not ranked:
+            rospy.logerr('[grasp_task] Gazebo contains no %s or %s_* model',
+                         OBJECT_MODEL_PREFIX, OBJECT_MODEL_PREFIX)
+            return None
+
+        d2, name, dx, dy, dz = min(ranked, key=lambda row: row[0])
+        distance = d2 ** 0.5
+        if distance > self.object_select_max_distance:
+            rospy.logerr('[grasp_task] nearest physical mine %s is %.3f m from wrist '
+                         '(limit %.3f m, source=%s); refusing the weld',
+                         name, distance, self.object_select_max_distance, source)
+            return None
+        rospy.loginfo('[grasp_task] physical mine selected: %s, wrist offset '
+                      '(%.3f, %.3f, %.3f) m, distance %.3f m via %s',
+                      name, dx, dy, dz, distance, source)
+        return name
 
     def _command_jaws(self, q, duration):
         """Send one jaw position and wait for the controller to get there.
@@ -772,11 +906,14 @@ class GraspNode(object):
 
     def _weld(self):
         """Join the mine rigidly to the palm. This IS the grasp -- see the module docstring."""
+        object_model = self._select_object_model()
+        if object_model is None:
+            return False
         try:
             rospy.wait_for_service(WELD_SRV, timeout=5.0)
             res = rospy.ServiceProxy(WELD_SRV, Attach)(
                 model_name_1=ROBOT_MODEL, link_name_1=PALM,
-                model_name_2=OBJECT_MODEL, link_name_2=OBJECT_LINK,
+                model_name_2=object_model, link_name_2=OBJECT_LINK,
                 silence_collisions=False)
         except Exception as exc:  # noqa: BLE001
             rospy.logerr('[grasp_task] weld service failed: %s', exc)
@@ -784,20 +921,34 @@ class GraspNode(object):
         if not res.ok:
             rospy.logerr('[grasp_task] weld refused: %s', res.message)
             return False
+        self.object_model = object_model
         self.welded = True
-        rospy.loginfo('[grasp_task] welded: %s', res.message)
+        rospy.loginfo('[grasp_task] welded %s: %s', object_model, res.message)
         return True
 
     def _unweld(self):
         """Release. Idempotent by design: a release must never be able to throw."""
+        if not self.welded:
+            self.object_model = None
+            return True
+        object_model = self.object_model
+        if not object_model:
+            rospy.logerr('[grasp_task] held-object identity is missing; cannot detach safely')
+            return False
         try:
             rospy.wait_for_service(UNWELD_SRV, timeout=5.0)
             res = rospy.ServiceProxy(UNWELD_SRV, Attach)(
                 model_name_1=ROBOT_MODEL, link_name_1=PALM,
-                model_name_2=OBJECT_MODEL, link_name_2=OBJECT_LINK,
+                model_name_2=object_model, link_name_2=OBJECT_LINK,
                 silence_collisions=False)
+            if not res.ok:
+                rospy.logerr('[grasp_task] unweld of %s refused: %s',
+                             object_model, res.message)
+                return False
             self.welded = False
-            return bool(res.ok)
+            self.object_model = None
+            rospy.loginfo('[grasp_task] unwelded %s: %s', object_model, res.message)
+            return True
         except Exception as exc:  # noqa: BLE001
             rospy.logerr('[grasp_task] unweld service failed: %s', exc)
             return False
@@ -952,12 +1103,17 @@ class GraspNode(object):
                 # Holding a mine mid-air with no plan to set it down. Unwelding drops it ~10 cm
                 # onto flat ground: not pretty, but bounded and known, unlike improvising.
                 rospy.logerr('[grasp_task] no lower plan; releasing where we are')
-                self._unweld()
+                if not self._unweld():
+                    return TriggerResponse(
+                        success=False,
+                        message='lower planning failed; detach failed and mine remains locked')
                 self._open_jaws()
                 return TriggerResponse(success=False, message='lower planning failed; dropped')
             lower.execute(lower.solutions[0])
 
-            self._unweld()
+            if not self._unweld():
+                return TriggerResponse(success=False,
+                                       message='place detach failed; mine remains locked')
             rospy.sleep(0.5)
 
             rel = build_release_task()
@@ -1235,7 +1391,9 @@ class GraspNode(object):
         # it to being a free physical object BEFORE the jaws move, so opening them releases
         # nothing and drops nothing. Opening first would leave a welded mine hanging off the
         # palm; unwelding while still high would drop it.
-        self._unweld()
+        if not self._unweld():
+            return TriggerResponse(success=False,
+                                   message='release detach failed; mine remains locked')
         rospy.sleep(0.5)
 
         rel = build_release_task()

@@ -19,6 +19,7 @@
        ==================================================================== -->
 
   <arg name="rviz" default="true"/>
+  <arg name="map_output_dir" default="$(env HOME)/pointcloud_maps"/>
   <!-- egocentric:=true ties the UAV map to the UGV's DLIO `odom` via a
        capture-once-then-latch anchor (airground_anchor_latch.py) instead of the
        static map->uav0/map_local TF, and expresses the UAV pose covariance in
@@ -120,6 +121,11 @@
     <!-- Re-frame RViz 2D Nav Goals (clicked in the shared world map) into the UAV's
          MAVROS-local frame so the UAV flies to where you clicked, not 18 m off. -->
     <arg name="goal_target_frame" value="uav0/map_local"/>
+    <!-- The integrated stack owns odom, not map. Export and record the UAV
+         point cloud in that shared fixed frame so TF lookup cannot dead-end. -->
+    <arg name="points_target_frame" value="$(eval 'odom' if arg('egocentric') else 'map')"/>
+    <arg name="map_output_dir" value="$(arg map_output_dir)"/>
+    <arg name="save_map_origin" value="$(eval 'false' if arg('egocentric') else 'true')"/>
     <!-- Disable the relay's odom-age drop: MAVROS odom is FCU/wall-clock stamped
          while the cloud is sim-time, so the cross-clock age check would drop EVERY
          frame (map stops updating mid-flight). Velocity-based motion filtering still

@@ -50,6 +50,15 @@
        so a goal clicked in the shared world map lands where clicked. -->
   <arg name="goal_target_frame" default=""/>
 
+  <!-- Fixed frame used by the exported/saved UAV point cloud. Standalone
+       mapping keeps map; the egocentric integration overrides it with odom
+       because that stack deliberately has no global map frame. -->
+  <arg name="points_target_frame" default="map"/>
+  <arg name="map_output_dir" default="$(env HOME)/pointcloud_maps"/>
+  <!-- GPS/UTM sidecar is meaningful only when the saved cloud is in the
+       legacy UAV map frame. Egocentric odom recording disables it. -->
+  <arg name="save_map_origin" default="true"/>
+
   <!-- Max age (s) between the LiDAR cloud stamp and the MAVROS odom stamp before the
        relay drops the frame as 'old_odom'. <=0 DISABLES the check. The cloud is on
        Gazebo SIM time but MAVROS stamps odom with the FCU/wall clock; in the
@@ -131,7 +140,7 @@
     <arg name="raw_input_topic" value="/uav0/velodyne_points_raw"/>
     <arg name="input_topic" value="/uav0/mapping/velodyne_points_sensor"/>
     <arg name="output_topic" value="/uav0/mapping/points_world"/>
-    <arg name="target_frame" value="map"/>
+    <arg name="target_frame" value="$(arg points_target_frame)"/>
     <arg name="publish_rate" value="0.0"/>
     <arg name="imu_topic" value="/mavros/imu/data"/>
     <arg name="odom_topic" value="/mavros/local_position/odom"/>
@@ -172,7 +181,7 @@
     <!-- Map recorder: require repeated observations so single-frame boundary returns
          and pose jitter do not enter the saved map. -->
     <arg name="start_map_recorder" value="true"/>
-    <arg name="map_output_dir" value="$(env HOME)/pointcloud_maps"/>
+    <arg name="map_output_dir" value="$(arg map_output_dir)"/>
     <arg name="map_name" value="uav_points_map"/>
     <!-- min_observations=1：单次飞过(单帧)的区域也记录下来，否则全局规划高效单程飞行时
          很多地方只看一次会被丢 → "后面不记录"。噪点交给 clean_pcd + 投影器去处理。 -->
@@ -355,9 +364,10 @@
 
   <!-- ===== GPS 锚定：建图时自动记录 UAV map 原点(UTM) 到 sidecar，
        供 UGV 侧 pcd_to_occupancy_map 开机自动对齐，无需手填经纬度。 ===== -->
-  <node pkg="uav_truth_tracker" type="uav_map_origin_saver.py"
+  <node if="$(arg save_map_origin)"
+        pkg="uav_truth_tracker" type="uav_map_origin_saver.py"
         name="uav_map_origin_saver" output="screen">
-    <param name="origin_file" value="$(env HOME)/pointcloud_maps/uav_map_origin.yaml"/>
+    <param name="origin_file" value="$(arg map_output_dir)/uav_map_origin.yaml"/>
   </node>
 
 </launch>

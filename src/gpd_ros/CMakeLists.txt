@@ -4,26 +4,22 @@ project(gpd_ros)
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
-find_package(catkin REQUIRED COMPONENTS cmake_modules eigen_conversions message_generation roscpp rospy sensor_msgs std_msgs)
+find_package(catkin REQUIRED COMPONENTS cmake_modules eigen_conversions geometry_msgs message_generation roscpp rospy sensor_msgs std_msgs)
 
-# PCL
-find_package(PCL 1.9 REQUIRED)
-include_directories(${PCL_INCLUDE_DIRS})
-link_directories(${PCL_LIBRARY_DIRS})
-add_definitions(${PCL_DEFINITIONS})
-
-# OpenCV
-find_package(OpenCV REQUIRED)
-
-## System dependencies are found with CMake's conventions
-find_library(GPD_LIB NAMES gpd PATHS /usr/local/lib PATH_SUFFIXES lib NO_DEFAULT_PATH)
+# libgpd is optional: the default analytic grasp source only needs this
+# package's messages.  When libgpd is absent, keep message generation enabled
+# and omit the GPD C++ detector targets so a clean workspace still builds.
+find_library(GPD_LIB NAMES gpd PATHS /usr/local/lib /usr/lib /usr/lib/x86_64-linux-gnu)
 if (GPD_LIB)
   message(STATUS "Library GPD found in ${GPD_LIB}")
+  find_package(PCL 1.9 REQUIRED)
+  find_package(OpenCV REQUIRED)
+  include_directories(${PCL_INCLUDE_DIRS})
+  link_directories(${PCL_LIBRARY_DIRS})
+  add_definitions(${PCL_DEFINITIONS})
 else()
-  message(FATAL_ERROR "Library GPD not found")
+  message(WARNING "Library GPD not found: building gpd_ros messages only; use the default GRASP_SOURCE=analytic")
 endif()
-include_directories(${GPD_LIB_INCLUDE_DIR})
-message(STATUS "gpd_include_dir: ${GPD_LIB_INCLUDE_DIR}")
 
 set(CMAKE_CXX_FLAGS "-O3 -fopenmp -fPIC -Wno-deprecated -Wenum-compare -Wno-ignored-attributes -std=c++14")
 
@@ -49,7 +45,6 @@ generate_messages(DEPENDENCIES geometry_msgs sensor_msgs std_msgs)
 catkin_package(
 INCLUDE_DIRS include
 CATKIN_DEPENDS cmake_modules eigen_conversions geometry_msgs message_runtime roscpp sensor_msgs std_msgs
-DEPENDS PCL
 # CATKIN_DEPENDS cmake_modules eigen_conversions geometry_msgs message_runtime roscpp sensor_msgs std_msgs
 # DEPENDS Eigen OpenCV PCL
 )
@@ -60,7 +55,10 @@ DEPENDS PCL
 
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
-include_directories(include ${catkin_INCLUDE_DIRS} ${PCL_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS})
+include_directories(include ${catkin_INCLUDE_DIRS})
+
+if (GPD_LIB)
+include_directories(${PCL_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS})
 
 ## Declare a C++ library
 add_library(${PROJECT_NAME}_grasp_messages src/${PROJECT_NAME}/grasp_messages.cpp)
@@ -96,3 +94,4 @@ target_link_libraries(${PROJECT_NAME}_grasp_plotter
 target_link_libraries(${PROJECT_NAME}_grasp_messages
                       ${GPD_LIB}
                       ${catkin_LIBRARIES})
+endif()

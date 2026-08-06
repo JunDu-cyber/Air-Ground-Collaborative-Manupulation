@@ -28,7 +28,9 @@ void GraphExtractor::LoadParmas() {
     const std::string prefix = "/boundary_handler/";
     nh.param<std::string>(prefix + "world_frame", ge_params_.frame_id, "map");
     std::string folder_path;
-    nh.param<std::string>(prefix + "folder_path", folder_path, "/home/usr/far_planner/boundary_handler/data/");
+    // boundary_handler.launch supplies $(find far_planner)/data/. Keep the direct-node
+    // fallback relative to the caller instead of embedding an upstream developer's home.
+    nh.param<std::string>(prefix + "folder_path", folder_path, "./");
     nh.param<std::string>(prefix + "boundary_file", ge_params_.bd_file_path, "boundary.ply");
     nh.param<std::string>(prefix + "traj_file", ge_params_.traj_file_path, "traj.txt");
     nh.param<std::string>(prefix + "graph_file", ge_params_.vgraph_path, "boundary_graph.vgh");

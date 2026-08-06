@@ -2,11 +2,19 @@ cmake_minimum_required(VERSION 3.0.2)
 project(grasp_mtc)
 
 find_package(catkin REQUIRED COMPONENTS
-  rospy
-  std_msgs
+  actionlib
+  control_msgs
+  gazebo_msgs
   geometry_msgs
-  sensor_msgs
   message_generation
+  moveit_msgs
+  rospy
+  sensor_msgs
+  shape_msgs
+  std_msgs
+  std_srvs
+  trajectory_msgs
+  visualization_msgs
 )
 
 add_service_files(
@@ -22,7 +30,20 @@ generate_messages(
 )
 
 catkin_package(
-  CATKIN_DEPENDS rospy std_msgs geometry_msgs sensor_msgs message_runtime
+  CATKIN_DEPENDS
+    actionlib
+    control_msgs
+    gazebo_msgs
+    geometry_msgs
+    message_runtime
+    moveit_msgs
+    rospy
+    sensor_msgs
+    shape_msgs
+    std_msgs
+    std_srvs
+    trajectory_msgs
+    visualization_msgs
 )
 
 catkin_install_python(PROGRAMS

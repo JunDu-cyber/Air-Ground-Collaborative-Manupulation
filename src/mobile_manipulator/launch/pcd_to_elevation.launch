@@ -14,21 +14,23 @@
        ==================================================================== -->
 
   <arg name="pcd_file" default="$(env HOME)/pointcloud_maps/uav_points_map_latest.pcd"/>
+  <arg name="frame_id" default="odom"
+       doc="Frame already encoded by the saved PCD; the integrated recorder uses odom."/>
   <arg name="rviz"     default="true"/>
   <!-- 离线模式：无机器人时发布静态 base_link TF，让 elevation_mapping 正常工作。
        如果已有机器人在跑，设为 false 避免 TF 冲突。 -->
   <arg name="static_tf" default="true"/>
 
-  <!-- 0. 静态 TF：map → base_link（离线处理用，无机器人时必需） -->
+  <!-- 0. 静态 TF：点云坐标系 → base_link（离线处理用，无机器人时必需） -->
   <node if="$(arg static_tf)" pkg="tf2_ros" type="static_transform_publisher"
-        name="static_base_link" args="0 0 0 0 0 0 map base_link"/>
+        name="static_base_link" args="0 0 0 0 0 0 $(arg frame_id) base_link"/>
 
   <!-- 1. PCD 回放：将保存的点云发布到 ROS -->
   <node name="pcd_pointcloud_publisher" pkg="uav_truth_tracker"
         type="pcd_pointcloud_publisher.py" output="screen">
     <param name="pcd_file" value="$(arg pcd_file)"/>
     <param name="output_topic" value="/uav0/mapping/points_saved"/>
-    <param name="frame_id" value="map"/>
+    <param name="frame_id" value="$(arg frame_id)"/>
     <param name="publish_rate" value="1.0"/>
     <param name="latch" value="true"/>
   </node>
@@ -59,6 +61,9 @@
         file="$(find mobile_manipulator)/config/elevation_mapping_pcd.yaml"/>
     <rosparam command="load"
         file="$(find mobile_manipulator)/config/elevation_postprocessor.yaml"/>
+    <!-- Override the legacy YAML fallback so the mapper, replayed cloud,
+         static TF and RViz all use the same caller-selected fixed frame. -->
+    <param name="map_frame_id" value="$(arg frame_id)"/>
   </node>
 
   <!-- 4. 可视化：GridMap → 彩色点云 + 地图轮廓 -->

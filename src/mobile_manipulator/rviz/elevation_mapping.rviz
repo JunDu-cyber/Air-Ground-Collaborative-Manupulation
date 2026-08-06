@@ -388,6 +388,35 @@ Visualization Manager:
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: false
+      Channel Name: intensity
+      Class: rviz/PointCloud2
+      Color Transformer: Intensity
+      Decay Time: 0
+      Enabled: true
+      Max Intensity: 0.3
+      Min Intensity: 0
+      Name: UGV Traversability (/terrain_map)
+      Position Transformer: XYZ
+      Queue Size: 10
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.2199999988079071
+      Style: Flat Squares
+      Topic: /terrain_map
+      Unreliable: false
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /target_tour_markers
+      Name: Confirmed Mine Tour
+      Namespaces:
+        {}
+      Queue Size: 100
+      Value: true
     - Class: rviz/Image
       Enabled: true
       Image Topic: /mine_detection/debug_image

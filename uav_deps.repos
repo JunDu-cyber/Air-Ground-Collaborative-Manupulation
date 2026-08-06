@@ -2,4 +2,4 @@ repositories:
   ego-planner:
     type: git
     url: https://github.com/ZJU-FAST-Lab/ego-planner.git
-    version: master
+    version: bfda51284c8c1b476043255a8145ef925a3778a5

@@ -1,0 +1,15 @@
+[submodule "src/direct_lidar_inertial_odometry"]
+	path = src/direct_lidar_inertial_odometry
+	url = https://github.com/vectr-ucla/direct_lidar_inertial_odometry.git
+[submodule "src/autonomous_exploration_development_environment"]
+	path = src/autonomous_exploration_development_environment
+	url = https://github.com/HongbiaoZ/autonomous_exploration_development_environment.git
+[submodule "src/FAST_LIO"]
+	path = src/FAST_LIO
+	url = https://github.com/hku-mars/FAST_LIO.git
+[submodule "src/livox_ros_driver"]
+	path = src/livox_ros_driver
+	url = https://github.com/Livox-SDK/livox_ros_driver.git
+[submodule "src/robot_body_filter"]
+	path = src/robot_body_filter
+	url = https://github.com/peci1/robot_body_filter.git

@@ -1,5 +1,12 @@
 # UAV Truth Tracker
 
+> **Historical subsystem notes.** Most of this document records the retained
+> dual-UAV tracking/interception experiments and their standalone launch files;
+> it is not the run guide for the current course demining mission. For the
+> submitted UAV–UGV workflow, dependencies, launch order, inputs, outputs, and
+> acceptance checks, use the repository [README](../../README.md) and start only
+> through [`airground_takeoff.sh`](../../airground_takeoff.sh).
+
 This package contains the staged dual-UAV truth-tracking and intercept loop for the PX4 + MAVROS + Gazebo Classic simulation.
 
 The prediction-focused Stage 5 path is stable: `/uav1` flies a 3D target trajectory, `/target_state_estimator_node.py` predicts an intercept point from observations only, and `/uav0` uses velocity guidance to intercept. Stage 6 adds a Gazebo Classic 32-channel Velodyne-style 3D LiDAR observation path while keeping ego_planner disabled.
@@ -79,7 +86,7 @@ For Stage 6 LiDAR tests, `/uav0` can instead use `models/iris_depth_camera_lidar
 
 ## Build
 
-From `/home/lnwuu/ego_ws`:
+From `$HOME/ego_ws`:
 
 ```bash
 catkin_make
@@ -92,8 +99,8 @@ In a new terminal:
 
 ```bash
 source /opt/ros/noetic/setup.bash
-source /home/lnwuu/ego_ws/devel/setup.bash
-cd /home/lnwuu/PX4-Autopilot
+source $HOME/ego_ws/devel/setup.bash
+cd $HOME/PX4-Autopilot
 source Tools/simulation/gazebo-classic/setup_gazebo.bash $(pwd) $(pwd)/build/px4_sitl_default
 export ROS_PACKAGE_PATH=$ROS_PACKAGE_PATH:$(pwd):$(pwd)/Tools/simulation/gazebo-classic/sitl_gazebo-classic
 roslaunch uav_truth_tracker dual_uav_mavros_sitl.launch
@@ -102,7 +109,7 @@ roslaunch uav_truth_tracker dual_uav_mavros_sitl.launch
 Optional world override:
 
 ```bash
-roslaunch uav_truth_tracker dual_uav_mavros_sitl.launch world:=/home/lnwuu/.gazebo/worlds/rugged_mountain.world
+roslaunch uav_truth_tracker dual_uav_mavros_sitl.launch world:=$HOME/.gazebo/worlds/rugged_mountain.world
 ```
 
 ## Check MAVROS Odometry
@@ -310,7 +317,7 @@ roslaunch uav_truth_tracker intercept_depth_lidar_fusion_chase.launch \
   estimator_model:=kalman_cv
 ```
 
-One-key fusion startup from `/home/lnwuu/ego_ws`:
+One-key fusion startup from `$HOME/ego_ws`:
 
 ```bash
 ./one_key_intercept.sh fusion
@@ -409,7 +416,7 @@ labels. `target_yolo_detector_node.py`, `target_lidar_detector_node.py`,
 Collect a first dataset while `/uav0` follows `/uav1` using the LiDAR baseline:
 
 ```bash
-cd /home/lnwuu/ego_ws
+cd $HOME/ego_ws
 YOLO_MAX_IMAGES=3000 TARGET_MODE=figure8_3d UAV1_SPEED=0.8 \
   ./one_key_intercept.sh yolo_collect_light
 ```
@@ -425,7 +432,7 @@ generate labels. It is a dataset-generation tool, not a valid online chase
 evaluation:
 
 ```bash
-cd /home/lnwuu/ego_ws
+cd $HOME/ego_ws
 WORLD=$HOME/PX4-Autopilot/Tools/simulation/gazebo-classic/sitl_gazebo-classic/worlds/warehouse.world \
 PX4_GAZEBO_GUI=false \
 YOLO_MAX_IMAGES=0 \
@@ -443,7 +450,7 @@ identified and repeated sessions do not overwrite older files.
 Run the default multi-world collection sequence:
 
 ```bash
-cd /home/lnwuu/ego_ws
+cd $HOME/ego_ws
 IMAGES_PER_WORLD=1000 PX4_GAZEBO_GUI=false \
   rosrun uav_truth_tracker collect_uav_yolo_multiworld.sh
 ```
@@ -609,7 +616,7 @@ roslaunch uav_truth_tracker dual_uav_mavros_sitl.launch \
   uav0_sdf_jinja:=$(rospack find uav_truth_tracker)/models/iris_depth_camera_lidar/iris_depth_camera_lidar.sdf.jinja
 ```
 
-One-key Stage 6 startup from `/home/lnwuu/ego_ws`:
+One-key Stage 6 startup from `$HOME/ego_ws`:
 
 ```bash
 ./one_key lidar
@@ -893,7 +900,7 @@ In RViz, add `MarkerArray` with topic `/uav_models/markers`. The marker publishe
 Each UAV must receive setpoints before switching to OFFBOARD. Start namespaced hover setpoint streams:
 
 ```bash
-source /home/lnwuu/ego_ws/devel/setup.bash
+source $HOME/ego_ws/devel/setup.bash
 roslaunch uav_truth_tracker dual_hover_check.launch
 ```
 
@@ -922,7 +929,7 @@ roslaunch uav_truth_tracker dual_hover_check.launch auto_offboard:=true auto_arm
 In another terminal:
 
 ```bash
-source /home/lnwuu/ego_ws/devel/setup.bash
+source $HOME/ego_ws/devel/setup.bash
 roslaunch uav_truth_tracker intercept_truth_tracking.launch prediction_time:=1.5
 ```
 
@@ -994,7 +1001,7 @@ The tracker defaults to position-difference velocity (`velocity_source:=diff`) b
 
 ### One-Key Hover Bringup
 
-From `/home/lnwuu/ego_ws`:
+From `$HOME/ego_ws`:
 
 ```bash
 ./one_key_intercept.sh
@@ -1014,7 +1021,7 @@ Both should show `armed: True` and `mode: "OFFBOARD"`.
 After both UAVs are hovering, start the chase loop manually:
 
 ```bash
-source /home/lnwuu/ego_ws/devel/setup.bash
+source $HOME/ego_ws/devel/setup.bash
 roslaunch uav_truth_tracker intercept_truth_chase.launch
 ```
 
@@ -1036,8 +1043,8 @@ After `intercept_truth_chase.launch` is publishing steadily, stop the `Dual_Hove
 
 ```bash
 source /opt/ros/noetic/setup.bash
-source /home/lnwuu/ego_ws/devel/setup.bash
-cd /home/lnwuu/PX4-Autopilot
+source $HOME/ego_ws/devel/setup.bash
+cd $HOME/PX4-Autopilot
 source Tools/simulation/gazebo-classic/setup_gazebo.bash $(pwd) $(pwd)/build/px4_sitl_default
 export ROS_PACKAGE_PATH=$ROS_PACKAGE_PATH:$(pwd):$(pwd)/Tools/simulation/gazebo-classic/sitl_gazebo-classic
 roslaunch uav_truth_tracker dual_uav_mavros_sitl.launch
@@ -1046,7 +1053,7 @@ roslaunch uav_truth_tracker dual_uav_mavros_sitl.launch
 2. Start hover setpoint streams, switch both vehicles to OFFBOARD, and arm them:
 
 ```bash
-source /home/lnwuu/ego_ws/devel/setup.bash
+source $HOME/ego_ws/devel/setup.bash
 roslaunch uav_truth_tracker dual_hover_check.launch
 ```
 
@@ -1065,7 +1072,7 @@ rosservice call /uav1/mavros/cmd/arming "value: true"
 3. Start the chase loop:
 
 ```bash
-source /home/lnwuu/ego_ws/devel/setup.bash
+source $HOME/ego_ws/devel/setup.bash
 roslaunch uav_truth_tracker intercept_truth_chase.launch
 ```
 

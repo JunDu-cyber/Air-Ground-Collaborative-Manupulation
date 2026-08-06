@@ -1,6 +1,10 @@
-# 空地协同操作系统 — 项目进展总结（供分析用）
+# 空地协同操作系统 — 历史研发记录
 
-> 本文是一份**自包含**的项目进展说明，用于发给外部模型分析。读者没有仓库访问权限，因此本文把架构、数据流、关键工程决策（含"为什么"）、以及尚未解决的问题都写清楚了。
+> **历史记录，不是当前运行说明。** 本文保留早期 UAV 建图、双 EKF/GPS 导航与地形代价的研究过程，部分架构、参数和入口已被后续系统取代。当前课程排雷任务的唯一验收说明是根目录 [`README.md`](README.md)，集成启动入口是 [`airground_takeoff.sh`](airground_takeoff.sh)。
+>
+> 请勿根据本文中的 `one_key_takeoff.sh`、旧 `map`/GPS 坐标链或历史默认参数启动当前五雷连续排雷演示。
+
+> 本文原为一份自包含的阶段性说明，记录当时的架构、数据流、关键工程决策及未解决问题。
 > 仓库：`Air-Ground-Collaborative-Manupulation`（ROS Noetic / Ubuntu 20.04 / Gazebo 11）。
 
 ---
@@ -219,7 +223,7 @@ roslaunch mobile_manipulator pcd_to_elevation.launch \
 
 ### 11.1 可移植性（队友 clone 后跑不起来的根因）
 - **依赖不在仓库**：`src/ego-planner/` 与 PX4 被 `.gitignore`，由 `setup_uav.sh` 现场 clone/安装。**必须先 `bash setup_uav.sh` 再 `catkin_make`**，否则缺 ego-planner 包必然编译失败。已在 README 置顶写明。
-- **去掉写死的绝对路径**：5 个 UAV marker/bridge 脚本的 iris 网格 `/home/lnwuu/PX4-Autopilot/...` → 经 `px4_paths.py`（`PX4_AUTOPILOT_PATH` 或 `~/PX4-Autopilot`）；`mobile_manipulator` 里 `/home/jun/learning_ws/...`（前一开发者）→ 包内相对路径；两个 `.sh` 的 `WS_DIR` → 从脚本位置推算 catkin 根。与队友独立提交的 `px4_paths` 方案合并（保留队友版）。删除指向他人机器的失效软链接 `etc`/`test_data`。
+- **去掉写死的绝对路径**：5 个 UAV marker/bridge 脚本的 iris 网格改为经 `px4_paths.py` 查找（`PX4_AUTOPILOT_PATH` 或 `~/PX4-Autopilot`）；`mobile_manipulator` 中旧开发机路径改为包内相对路径；两个 `.sh` 的 `WS_DIR` 改为从脚本位置推算 catkin 根。与队友独立提交的 `px4_paths` 方案合并（保留队友版），并删除指向旧机器的失效软链接 `etc`/`test_data`。
 
 ### 11.2 UGV 上坡打滑根因 = 地形没有摩擦
 轮子 `mu` 调到再高也打滑下滑——因为 Gazebo 接触摩擦由**两个面共同决定**，而坡所在的 `vrc_heightmap_1` 高程地形**碰撞面根本没定义摩擦**（用默认值，被地面端拖住）。修复：给地形碰撞面显式 `mu=2.0` + `kp/kd`，草地 `mu 0.5→1.5`，轮 `mu 3→4`/`kd 1→10`，DWA `acc_lim_x→1.0`（上坡不空转）。

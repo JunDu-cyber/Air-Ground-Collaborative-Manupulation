@@ -50,6 +50,13 @@ fi
 echo "[airground] starting air-ground co-sim (UAV mapping + static UGV, UGV-centric map) ..."
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+AIRGROUND_ENV_FILE=${AIRGROUND_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/airground/env.sh}
+if [[ -z "${PX4_DIR:-}" && -r "$AIRGROUND_ENV_FILE" ]]; then
+  # setup_uav.sh writes only the verified PX4_DIR here.  A caller-provided
+  # PX4_DIR takes precedence.
+  # shellcheck disable=SC1090
+  source "$AIRGROUND_ENV_FILE"
+fi
 PX4_DIR=${PX4_DIR:-$HOME/PX4-Autopilot}
 EGO_WS=${EGO_WS:-$SCRIPT_DIR}
 UGV_WS=${UGV_WS:-$SCRIPT_DIR}
@@ -234,18 +241,19 @@ UGV_UAV_PRIOR=${UGV_UAV_PRIOR:-true}
 UGV_ELEVATION_UPDATE=${UGV_ELEVATION_UPDATE:-false}
 UGV_MAP_SIZE=${UGV_MAP_SIZE:-120}
 UGV_MAP_RES=${UGV_MAP_RES:-0.35}
-# GRASP: on arrival at a detected mine, the tour calls /grasp/execute (which does its own
-# look + detect + GPD) and advances after. This is the NO-ALIGNMENT path -- it grasps from
-# wherever nav parks, so it only lands the pick when the mine falls in the arm's reachable band
-# (x in [0.60, 1.05] from base_link). The visual fine-alignment that would guarantee that is a
-# separate, not-yet-working stage; this wires the whole air-ground pipeline end to end anyway.
+# GRASP: after navigation, the tour first runs the wrist-camera fine-alignment service and
+# then calls /grasp/execute. The executor looks again, generates candidates, and requires the
+# mine to lie in the arm's measured reachable band (x in [0.60, 1.05] from base_link).
 UGV_GRASP=${UGV_GRASP:-true}
-GRASP_SOURCE=${GRASP_SOURCE:-gpd}
+# The analytic source is self-contained and is therefore the reproducible
+# default.  GPD remains available only when libgpd and its classifier weights
+# have been installed explicitly (GRASP_SOURCE=gpd).
+GRASP_SOURCE=${GRASP_SOURCE:-analytic}
 GRASP_DETECTOR=${GRASP_DETECTOR:-color}
 UAV_DETECT_DEVICE=${UAV_DETECT_DEVICE:-cpu}
-# Inference backend: tensorrt uses the C++ TensorRT runtime and landmine.onnx;
-# cpu keeps the Ultralytics fallback for machines without an NVIDIA device.
-UAV_DETECT_BACKEND=${UAV_DETECT_BACKEND:-tensorrt}
+# Inference backend: CPU/Ultralytics is the tested, hardware-independent
+# default. TensorRT remains an explicit opt-in for a configured NVIDIA host.
+UAV_DETECT_BACKEND=${UAV_DETECT_BACKEND:-cpu}
 if [ "$UAV_DETECT_BACKEND" = "tensorrt" ]; then
   UAV_TRT_RUNTIME=true
 else
@@ -303,11 +311,13 @@ else
 fi
 echo "[airground] elevation map owner: $ELEVATION_MODE ; gate=$AG_ENABLE_GATE"
 
-# 2.8 MANIPULATION: MoveIt move_group + the grasp pipeline (perception -> GPD -> MTC pick).
+# 2.8 MANIPULATION: MoveIt move_group + the grasp pipeline
+#     (perception -> selected candidate provider -> MTC pick).
 #     Started here because the pick needs the spawned robot + its ros_control controllers (up
 #     since the unpause) and DLIO's odom frame (the lift goes along odom +Z). move_group loads
 #     NO robot_description of its own -- the spawner already owns it; a second one could diverge.
-#     grasp_source:=gpd runs GPD behind the /get_grasps seam; detector:=color because
+#     grasp_source:=analytic is self-contained. grasp_source:=gpd runs the optional
+#     GPD backend behind the same /get_grasps seam; detector:=color because
 #     landmine.onnx cannot see this flat-shaded prop (a domain gap, not a bug).
 #     The tour aligns, grasps in carry mode, returns home, and places each mine.
 if [ "$UGV_GRASP" = "true" ]; then
@@ -364,6 +374,7 @@ roslaunch mobile_manipulator airground_egocentric.launch \
   rviz:='$START_RVIZ' \
   start_elevation:='$AG_START_ELEVATION' \
   enable_gate:='$AG_ENABLE_GATE' \
+  map_output_dir:='$UAV_POINTS_MAP_DIR' \
   uav_spawn_x:='$SPAWN_X' uav_spawn_y:='$SPAWN_Y' uav_spawn_z:='$MAP_LOCAL_Z' \
   flight_height:='$FLIGHT_H' \
   low_altitude:='$LOW_ALTITUDE' \
